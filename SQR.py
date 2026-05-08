@@ -603,6 +603,146 @@ def add_column_if_missing(table_name, column_name, column_sql):
         exec_db(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
 
 
+def first_existing_column(table_name, names):
+    for name in names:
+        if column_exists(table_name, name):
+            return name
+    return names[0]
+
+
+def spec_pk_col():
+    return first_existing_column("specializations", ["specialization_id", "id"])
+
+
+def spec_image_col():
+    return first_existing_column("specializations", ["image_url", "image"])
+
+
+def course_pk_col():
+    return first_existing_column("courses", ["course_id", "id"])
+
+
+def course_spec_col():
+    return first_existing_column("courses", ["specialization_id", "spec_id"])
+
+
+def course_link_col():
+    return first_existing_column("courses", ["course_link", "link"])
+
+
+def course_image_col():
+    return first_existing_column("courses", ["image_url", "image"])
+
+
+def course_video_col():
+    return first_existing_column("courses", ["video_url", "video"])
+
+
+def quiz_pk_col():
+    return first_existing_column("quizzes", ["quiz_id", "id"])
+
+
+def question_pk_col():
+    return first_existing_column("quiz_questions", ["question_id", "id"])
+
+
+def question_text_col():
+    return first_existing_column("quiz_questions", ["question_text", "question"])
+
+
+def question_option_col(letter):
+    mapping = {
+        "a": ["option_a", "option1"],
+        "b": ["option_b", "option2"],
+        "c": ["option_c", "option3"],
+        "d": ["option_d", "option4"]
+    }
+    return first_existing_column("quiz_questions", mapping[letter])
+
+
+def question_answer_col():
+    return first_existing_column("quiz_questions", ["correct_answer", "answer"])
+
+
+def row_value(row, *names):
+    for name in names:
+        if isinstance(row, dict) and name in row:
+            return row.get(name)
+    return None
+
+
+def normalize_specialization(row):
+    if not row:
+        return row
+    row = dict(row)
+    row["id"] = row_value(row, "id", "specialization_id")
+    row["specialization_id"] = row_value(row, "specialization_id", "id")
+    row["image"] = row_value(row, "image", "image_url")
+    row["image_url"] = row_value(row, "image_url", "image")
+    return row
+
+
+def normalize_course(row):
+    if not row:
+        return row
+    row = dict(row)
+    row["id"] = row_value(row, "id", "course_id")
+    row["course_id"] = row_value(row, "course_id", "id")
+    row["spec_id"] = row_value(row, "spec_id", "specialization_id")
+    row["specialization_id"] = row_value(row, "specialization_id", "spec_id")
+    row["link"] = row_value(row, "link", "course_link")
+    row["course_link"] = row_value(row, "course_link", "link")
+    row["image"] = row_value(row, "image", "image_url")
+    row["image_url"] = row_value(row, "image_url", "image")
+    row["video"] = row_value(row, "video", "video_url")
+    row["video_url"] = row_value(row, "video_url", "video")
+    return row
+
+
+def normalize_quiz(row):
+    if not row:
+        return row
+    row = dict(row)
+    row["id"] = row_value(row, "id", "quiz_id")
+    row["quiz_id"] = row_value(row, "quiz_id", "id")
+    return row
+
+
+def normalize_question(row):
+    if not row:
+        return row
+    row = dict(row)
+    row["id"] = row_value(row, "id", "question_id")
+    row["question_id"] = row_value(row, "question_id", "id")
+    row["question"] = row_value(row, "question", "question_text")
+    row["question_text"] = row_value(row, "question_text", "question")
+    row["option1"] = row_value(row, "option1", "option_a")
+    row["option2"] = row_value(row, "option2", "option_b")
+    row["option3"] = row_value(row, "option3", "option_c")
+    row["option4"] = row_value(row, "option4", "option_d")
+    row["option_a"] = row_value(row, "option_a", "option1")
+    row["option_b"] = row_value(row, "option_b", "option2")
+    row["option_c"] = row_value(row, "option_c", "option3")
+    row["option_d"] = row_value(row, "option_d", "option4")
+    row["answer"] = row_value(row, "answer", "correct_answer")
+    row["correct_answer"] = row_value(row, "correct_answer", "answer")
+    return row
+
+
+def insert_dynamic(table_name, values):
+    columns = []
+    params = []
+    for key, value in values.items():
+        if value is not None and column_exists(table_name, key):
+            columns.append(key)
+            params.append(value)
+    if not columns:
+        raise ValueError("No matching columns for insert")
+    placeholders = ",".join(["%s"] * len(columns))
+    column_sql = ",".join(f"`{c}`" for c in columns)
+    return query_db(f"INSERT INTO `{table_name}` ({column_sql}) VALUES ({placeholders})", tuple(params), commit=True)
+
+
 def ensure_runtime_schema():
     try:
         if table_exists("users"):
@@ -880,9 +1020,8 @@ def signup():
     name = data.get("name", "").strip()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "").strip()
-    requested_role = data.get("role", "student").strip().lower()
-    role = "admin" if requested_role == "admin" else "student"
-    current_mode = "admin" if role == "admin" else "student"
+    role = "student"
+    current_mode = "student"
 
     if not name or not email or not password:
         return jsonify({"error": "Name, email, and password are required"}), 400
@@ -910,8 +1049,6 @@ def signup():
         commit=True
     )
 
-    if role == "admin":
-        query_db("INSERT IGNORE INTO admins (user_id, admin_level) VALUES (%s,'manager')", (user_id,), commit=True)
 
     user = query_db(
         "SELECT * FROM users WHERE id=%s",
@@ -923,69 +1060,6 @@ def signup():
         "message": "Account created successfully",
         "token": generate_token(user),
         "user": clean_user(user)
-    }), 201
-
-
-@app.route("/api/signup", methods=["POST"])
-def signup():
-    data = request.get_json()
-
-    name = data.get("name", "").strip()
-    email = data.get("email", "").strip().lower()
-    password = data.get("password", "")
-
-    if not name or not email or not password:
-        return jsonify({"error": "Name, email, and password are required"}), 400
-
-    if len(password) < 6:
-        return jsonify({"error": "Password must be at least 6 characters"}), 400
-
-    conn = get_db()
-    cur = conn.cursor(dictionary=True)
-
-    cur.execute("SELECT id FROM users WHERE email=%s", (email,))
-    existing_user = cur.fetchone()
-
-    if existing_user:
-        cur.close()
-        conn.close()
-        return jsonify({"error": "Email already exists"}), 409
-
-    hashed_password = generate_password_hash(password)
-
-    cur.execute("""
-        INSERT INTO users (name, email, password, role)
-        VALUES (%s, %s, %s, %s)
-    """, (name, email, hashed_password, "student"))
-
-    conn.commit()
-    user_id = cur.lastrowid
-
-    user = {
-        "id": user_id,
-        "name": name,
-        "email": email,
-        "role": "student"
-    }
-
-    token = jwt.encode(
-        {
-            "id": user_id,
-            "email": email,
-            "role": "student",
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7)
-        },
-        app.config["SECRET_KEY"],
-        algorithm="HS256"
-    )
-
-    cur.close()
-    conn.close()
-
-    return jsonify({
-        "message": "Signup successful",
-        "token": token,
-        "user": user
     }), 201
 
 
@@ -1198,34 +1272,70 @@ def delete_course(course_id):
 
 @app.route("/api/quizzes", methods=["GET"])
 def get_quizzes():
-    spec_id = request.args.get("spec_id")
+    spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
     course_id = request.args.get("course_id")
+    qpk = quiz_pk_col()
+    cpk = course_pk_col()
+    cspec = course_spec_col()
+    qid = question_pk_col()
     if course_id:
-        quizzes = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY id DESC", (course_id,), fetchall=True)
+        quizzes = query_db(f"SELECT * FROM quizzes WHERE course_id=%s ORDER BY `{qpk}` DESC", (course_id,), fetchall=True)
     elif spec_id:
-        quizzes = query_db("SELECT q.* FROM quizzes q JOIN courses c ON q.course_id=c.id WHERE c.spec_id=%s ORDER BY q.id DESC", (spec_id,), fetchall=True)
+        quizzes = query_db(f"SELECT q.* FROM quizzes q JOIN courses c ON q.course_id=c.`{cpk}` WHERE c.`{cspec}`=%s ORDER BY q.`{qpk}` DESC", (spec_id,), fetchall=True)
     else:
-        quizzes = query_db("SELECT * FROM quizzes ORDER BY id DESC", fetchall=True)
+        quizzes = query_db(f"SELECT * FROM quizzes ORDER BY `{qpk}` DESC", fetchall=True)
+    fixed = []
     for quiz in quizzes:
-        quiz["questions"] = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id ASC", (quiz["id"],), fetchall=True)
-    return jsonify(quizzes)
+        quiz = normalize_quiz(quiz)
+        questions = query_db(f"SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY `{qid}` ASC", (quiz["id"],), fetchall=True)
+        quiz["questions"] = [normalize_question(q) for q in questions]
+        fixed.append(quiz)
+    return jsonify(fixed)
 
 
-@app.route("/api/quizzes", methods=["POST"])
+@app.route("/api/admin/quizzes", methods=["POST"])
 @admin_required
 def add_quiz():
     data = get_json()
     course_id = data.get("course_id")
-    spec_id = data.get("spec_id")
-    if course_id:
-        course = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
-        if not course:
-            return jsonify({"error": "Course not found"}), 404
-        spec_id = course["spec_id"]
-    if not course_id or not data.get("title"):
-        return jsonify({"error": "course_id and title are required because quizzes belong inside courses"}), 400
-    quiz_id = query_db("INSERT INTO quizzes (spec_id,course_id,title,description) VALUES (%s,%s,%s,%s)", (spec_id, course_id, data.get("title"), data.get("description")), commit=True)
-    return jsonify({"message": "Quiz added", "id": quiz_id}), 201
+    title = str(data.get("title", "")).strip()
+    description = str(data.get("description", "")).strip()
+    questions = data.get("questions", [])
+    if not course_id or not title:
+        return jsonify({"error": "course_id and title are required"}), 400
+    if not isinstance(questions, list) or not questions:
+        return jsonify({"error": "At least one question is required"}), 400
+    cpk = course_pk_col()
+    course = normalize_course(query_db(f"SELECT * FROM courses WHERE `{cpk}`=%s", (course_id,), fetchone=True))
+    if not course:
+        return jsonify({"error": "Course not found"}), 404
+    quiz_values = {
+        "course_id": course_id,
+        "spec_id": course.get("spec_id"),
+        "specialization_id": course.get("specialization_id"),
+        "title": title,
+        "description": description,
+        "total_questions": len(questions)
+    }
+    quiz_id = insert_dynamic("quizzes", quiz_values)
+    qt = question_text_col()
+    qa = question_option_col("a")
+    qb = question_option_col("b")
+    qc = question_option_col("c")
+    qd = question_option_col("d")
+    ans = question_answer_col()
+    for q in questions:
+        insert_dynamic("quiz_questions", {
+            "quiz_id": quiz_id,
+            qt: q.get("question_text") or q.get("question"),
+            qa: q.get("option_a") or q.get("option1"),
+            qb: q.get("option_b") or q.get("option2"),
+            qc: q.get("option_c") or q.get("option3"),
+            qd: q.get("option_d") or q.get("option4"),
+            ans: q.get("correct_answer") or q.get("answer"),
+            "score": q.get("score", 1)
+        })
+    return jsonify({"message": "Quiz added successfully", "quiz_id": quiz_id, "id": quiz_id}), 201
 
 
 @app.route("/api/quizzes/<int:quiz_id>", methods=["PUT"])
@@ -1253,14 +1363,26 @@ def delete_quiz(quiz_id):
 @admin_required
 def add_question():
     data = get_json()
-    question_id = query_db("INSERT INTO quiz_questions (quiz_id,question,option1,option2,option3,option4,answer) VALUES (%s,%s,%s,%s,%s,%s,%s)", (data.get("quiz_id"), data.get("question"), data.get("option1"), data.get("option2"), data.get("option3"), data.get("option4"), data.get("answer")), commit=True)
-    return jsonify({"message": "Question added", "id": question_id}), 201
+    question_id = insert_dynamic("quiz_questions", {
+        "quiz_id": data.get("quiz_id"),
+        question_text_col(): data.get("question_text") or data.get("question"),
+        question_option_col("a"): data.get("option_a") or data.get("option1"),
+        question_option_col("b"): data.get("option_b") or data.get("option2"),
+        question_option_col("c"): data.get("option_c") or data.get("option3"),
+        question_option_col("d"): data.get("option_d") or data.get("option4"),
+        question_answer_col(): data.get("correct_answer") or data.get("answer"),
+        "score": data.get("score", 1)
+    })
+    quiz_id = data.get("quiz_id")
+    if quiz_id and column_exists("quizzes", "total_questions"):
+        exec_db(f"UPDATE quizzes SET total_questions=(SELECT COUNT(*) FROM quiz_questions WHERE quiz_id=%s) WHERE `{quiz_pk_col()}`=%s", (quiz_id, quiz_id))
+    return jsonify({"message": "Question added", "id": question_id, "question_id": question_id}), 201
 
 
 @app.route("/api/quiz-questions/<int:question_id>", methods=["DELETE"])
 @admin_required
 def delete_question(question_id):
-    exec_db("DELETE FROM quiz_questions WHERE id=%s", (question_id,))
+    exec_db(f"DELETE FROM quiz_questions WHERE `{question_pk_col()}`=%s", (question_id,))
     return jsonify({"message": "Question deleted"})
 
 
@@ -1269,19 +1391,27 @@ def delete_question(question_id):
 def submit_quiz(quiz_id):
     data = get_json()
     answers = data.get("answers", {})
-    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s", (quiz_id,), fetchall=True)
+    raw_questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s", (quiz_id,), fetchall=True)
+    questions = [normalize_question(q) for q in raw_questions]
     if not questions:
         return jsonify({"error": "Quiz has no questions"}), 404
-    correct = sum(1 for q in questions if str(answers.get(str(q["id"]), "")).strip().lower() == str(q["answer"]).strip().lower())
+    correct = 0
+    for q in questions:
+        qid = str(q.get("id") or q.get("question_id"))
+        selected = answers.get(qid)
+        if selected is None:
+            selected = answers.get(qid.lower(), "")
+        if str(selected).strip().lower() == str(q.get("answer") or q.get("correct_answer") or "").strip().lower():
+            correct += 1
     score = int((correct / len(questions)) * 100)
-    quiz = query_db("SELECT * FROM quizzes WHERE id=%s", (quiz_id,), fetchone=True)
+    quiz = normalize_quiz(query_db(f"SELECT * FROM quizzes WHERE `{quiz_pk_col()}`=%s", (quiz_id,), fetchone=True))
     passed = 1 if score >= 60 else 0
     course_progress = 0
     specialization_progress = 0
     if quiz:
         query_db("INSERT INTO quiz_attempts (user_id,quiz_id,course_id,score,passed,answers_json) VALUES (%s,%s,%s,%s,%s,%s)", (request.current_user["id"], quiz_id, quiz.get("course_id"), score, passed, json.dumps(answers, ensure_ascii=False)), commit=True)
         if quiz.get("course_id"):
-            course = query_db("SELECT * FROM courses WHERE id=%s", (quiz.get("course_id"),), fetchone=True)
+            course = normalize_course(query_db(f"SELECT * FROM courses WHERE `{course_pk_col()}`=%s", (quiz.get("course_id"),), fetchone=True))
             if course:
                 query_db("INSERT IGNORE INTO specialization_enrollments (user_id,spec_id,progress,status) VALUES (%s,%s,0,'not_started')", (request.current_user["id"], course["spec_id"]), commit=True)
                 query_db("INSERT IGNORE INTO course_enrollments (user_id,course_id,progress,status) VALUES (%s,%s,0,'not_started')", (request.current_user["id"], quiz.get("course_id")), commit=True)
@@ -1975,6 +2105,41 @@ def get_job_recommendations():
         ORDER BY jr.created_at DESC
     """, (request.current_user["id"],), fetchall=True)
     return jsonify(rows)
+
+
+
+@app.route("/api/admin/specializations", methods=["POST"])
+@admin_required
+def admin_add_specialization_alias():
+    return add_specialization()
+
+
+@app.route("/api/admin/courses", methods=["POST"])
+@admin_required
+def admin_add_course_alias():
+    return add_course()
+
+
+@app.route("/api/admin/jobs", methods=["POST"])
+@admin_required
+def admin_add_job_alias():
+    return add_job()
+
+
+@app.route("/api/admin/certificates", methods=["POST"])
+@admin_required
+def admin_add_certificate_alias():
+    return add_certificate()
+
+
+@app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
+@admin_required
+def update_user_role_alias(user_id):
+    data = get_json()
+    role = data.get("role", "student")
+    if role == "admin":
+        return make_admin(user_id)
+    return make_student(user_id)
 
 
 @app.route("/api/admin/stats")
