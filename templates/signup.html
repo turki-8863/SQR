@@ -12,14 +12,13 @@
 <div class="container">
   <div id="message"></div>
   <form id="signupForm">
-    <h1>Create Account</h1>
-    <p class="subtitle">Admins register as admins but start in admin mode only. They can switch to student mode later.</p>
-    <label>Name</label><input id="name" required>
-    <label>Email</label><input id="email" type="email" required>
-    <label>Password</label><input id="password" type="password" required>
-    <label>Account Type</label>
-    <select id="role"><option value="student">Student</option><option value="admin">Admin</option></select>
-    <button type="submit">Create Account</button>
+  <input id="name" type="text" placeholder="Full Name" required>
+  <input id="email" type="email" placeholder="Email" required>
+  <input id="password" type="password" placeholder="Password" required>
+  <button type="submit">Sign Up</button>
+</form>
+
+<div id="message"></div>
   </form>
 </div>
 <script>
