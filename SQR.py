@@ -926,32 +926,67 @@ def signup():
     }), 201
 
 
-@app.route("/api/signin", methods=["POST"])
-def signin():
-    data = get_json()
-    email = data.get("email", "").strip().lower()
-    password = data.get("password", "").strip()
+@app.route("/api/signup", methods=["POST"])
+def signup():
+    data = request.get_json()
 
-    user = query_db(
-        "SELECT * FROM users WHERE email=%s",
-        (email,),
-        fetchone=True
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    if not name or not email or not password:
+        return jsonify({"error": "Name, email, and password are required"}), 400
+
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+
+    cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+    existing_user = cur.fetchone()
+
+    if existing_user:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Email already exists"}), 409
+
+    hashed_password = generate_password_hash(password)
+
+    cur.execute("""
+        INSERT INTO users (name, email, password, role)
+        VALUES (%s, %s, %s, %s)
+    """, (name, email, hashed_password, "student"))
+
+    conn.commit()
+    user_id = cur.lastrowid
+
+    user = {
+        "id": user_id,
+        "name": name,
+        "email": email,
+        "role": "student"
+    }
+
+    token = jwt.encode(
+        {
+            "id": user_id,
+            "email": email,
+            "role": "student",
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7)
+        },
+        app.config["SECRET_KEY"],
+        algorithm="HS256"
     )
 
-    if not user:
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    if user["banned"]:
-        return jsonify({"error": "Your account is banned"}), 403
-
-    if not check_password_hash(user["password"], password):
-        return jsonify({"error": "Invalid email or password"}), 401
+    cur.close()
+    conn.close()
 
     return jsonify({
-        "message": "Login successful",
-        "token": generate_token(user),
-        "user": clean_user(user)
-    })
+        "message": "Signup successful",
+        "token": token,
+        "user": user
+    }), 201
 
 
 @app.route("/api/me")
