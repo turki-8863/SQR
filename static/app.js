@@ -1,6 +1,6 @@
 const API = location.hostname === "localhost" || location.hostname === "127.0.0.1"
   ? "http://127.0.0.1:5000"
-  : "https://YOUR-RENDER-BACKEND.onrender.com";
+  : "https://sqr-ba83.onrender.com";
 
 function getToken() {
   return localStorage.getItem("sqr_token") || localStorage.getItem("token");
