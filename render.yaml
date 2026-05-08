@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: sqr
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn SQR:app
+    envVars:
+      - key: FLASK_HOST
+        value: 0.0.0.0
+      - key: FLASK_DEBUG
+        value: 0
