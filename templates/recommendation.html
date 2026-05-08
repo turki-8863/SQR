@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Recommendation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<script>navbar();</script>
+<div class="container">
+  <div id="message"></div>
+  <form id="recForm"><h1>Career Recommendation Test</h1><p class="subtitle">The system recommends a specialization based on the test, interests, skills, and goal. Job recommendations are shown separately.</p><label>Interests</label><textarea id="interests" placeholder="security, AI, data, cloud..."></textarea><label>Skills</label><textarea id="skills" placeholder="Python, SQL, Linux..."></textarea><label>Career Goal</label><textarea id="goal" placeholder="I want to become a SOC analyst..."></textarea><button type="submit">Get Recommendation</button></form>
+  <div id="result"></div>
+</div>
+<script>
+requireLogin();
+recForm.addEventListener("submit", async e => {
+  e.preventDefault(); result.innerHTML = loadingHTML("Analyzing your answers...");
+  const data = await apiPost("/api/recommendations", { interests: interests.value, skills: skills.value, goal: goal.value });
+  if(data.error){ result.innerHTML = emptyState("Error", data.error); return; }
+  result.innerHTML = `<div class="result-box"><h2>Recommended Specializations</h2><div class="grid">${(data.recommended_specializations || []).map(s => `<div class="recommend-card"><h3>${escapeHTML(s.name)}</h3><p class="${matchColor(s.match_percentage)} recommend-score">${safePercent(s.match_percentage)}%</p><p>${escapeHTML(s.reason || "")}</p><a href="/specializations" class="btn-main">View Specialization</a></div>`).join("") || emptyState("No specialization match", "Add more interests or skills.")}</div><h2>Job Recommendations</h2><div class="grid">${(data.recommended_jobs || []).map(j => `<div class="recommend-card"><h3>${escapeHTML(j.title)}</h3><p class="${matchColor(j.match_percentage)} recommend-score">${safePercent(j.match_percentage)}%</p><p>${escapeHTML(j.reason || "")}</p></div>`).join("") || emptyState("No job match", "Add more skills or goal details.")}</div><h2>Roadmap</h2><div class="roadmap-box">${(data.roadmap || []).map(x=>`<p>• ${escapeHTML(x)}</p>`).join("")}</div></div>`;
+});
+</script>
+</body>
+</html>

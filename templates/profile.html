@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Profile</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<script>navbar();</script>
+<div class="container"><div id="message"></div><div id="profileBox"></div></div>
+<script>
+requireLogin();
+async function loadProfile(){
+  profileBox.innerHTML = loadingHTML("Loading profile...");
+  const data = await apiGet("/api/profile"); if(data.error){ profileBox.innerHTML = emptyState("Error", data.error); return; }
+  const user = data.user;
+  profileBox.innerHTML = `<div class="profile-header"><div class="profile-avatar">${escapeHTML(user.name ? user.name[0] : "U")}</div><div><h1>${escapeHTML(user.name)}</h1><p>${escapeHTML(user.email)}</p><span class="badge">${escapeHTML(user.role)}</span></div></div>
+  <form id="profileForm"><h2>Update Profile</h2><label>Name</label><input id="name" value="${escapeHTML(user.name || "")}"><label>Skills</label><textarea id="skills">${escapeHTML(user.skills || "")}</textarea><label>Interests</label><textarea id="interests">${escapeHTML(user.interests || "")}</textarea><label>Goal</label><textarea id="goal">${escapeHTML(user.goal || "")}</textarea><button type="submit">Save Profile</button></form>
+  <h2>Enrolled Specializations</h2><div class="grid">${(data.specialization_progress || data.enrolled_specializations || data.progress || []).map(p => `<div class="progress-card"><h3>${escapeHTML(p.name)}</h3><div class="progress-label"><span>Status: ${escapeHTML(p.status || "in progress")}</span><span>${safePercent(p.progress || p.progress_percentage)}%</span></div>${progressBar(p.progress || p.progress_percentage)}</div>`).join("") || emptyState("No specialization progress", "Enroll in a specialization first.")}</div>
+  <h2>Enrolled Courses</h2><div class="grid">${(data.course_progress || data.enrolled_courses || []).map(c => `<div class="progress-card"><h3>${escapeHTML(c.title)}</h3><p>${escapeHTML(c.specialization_name || "")}</p><div class="progress-label"><span>Status: ${escapeHTML(c.status || "in progress")}</span><span>${safePercent(c.progress || c.progress_percentage)}%</span></div>${progressBar(c.progress || c.progress_percentage)}</div>`).join("") || emptyState("No course progress", "Enroll in courses first.")}</div>`;
+  profileForm.addEventListener("submit", async e => { e.preventDefault(); const res = await apiPut("/api/profile", { name: name.value, skills: skills.value, interests: interests.value, goal: goal.value }); if(res.error) showMessage("message", res.error, "error"); else showMessage("message", "Profile updated"); });
+}
+loadProfile();
+</script>
+</body>
+</html>

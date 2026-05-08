@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<script>navbar();</script>
+<div class="container">
+  <div id="message"></div>
+  <h1>Admin Dashboard</h1>
+  <div class="mode-switch"><span class="mode-pill">Admin mode</span><button onclick="switchMode('student')">Switch to Student Mode</button></div>
+  <div class="admin-panel">
+    <div class="sidebar"><button onclick="showSection('spec')">Specializations</button><button onclick="showSection('course')">Courses</button><button onclick="showSection('quiz')">Quizzes</button><button onclick="showSection('job')">Jobs</button><button onclick="showSection('users')">Users</button></div>
+    <div>
+      <section id="spec"><form id="specForm"><h2>Add Specialization</h2><input name="name" placeholder="Name" required><textarea name="description" placeholder="Description"></textarea><textarea name="skills" placeholder="Skills"></textarea><textarea name="roadmap" placeholder="Roadmap"></textarea><textarea name="job_titles" placeholder="Job titles"></textarea><input name="image" type="file"><button>Add Specialization</button></form><form id="certForm"><h2>Add Certificate</h2><select name="spec_id" id="certSpec"></select><input name="name" placeholder="Certificate name" required><textarea name="description" placeholder="Description"></textarea><input name="link" placeholder="Official link"><input name="price" placeholder="Price"><select name="type"><option value="both">Both</option><option value="practical">Practical</option><option value="theoretical">Theoretical</option></select><button>Add Certificate</button></form></section>
+      <section id="course" style="display:none"><form id="courseForm"><h2>Add Course</h2><select name="spec_id" id="courseSpec"></select><input name="title" placeholder="Course title" required><textarea name="description" placeholder="Description"></textarea><input name="link" placeholder="Course link"><select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select><input name="image" type="file"><input name="video" type="file"><button>Add Course</button></form></section>
+      <section id="quiz" style="display:none"><form id="quizForm"><h2>Add Quiz Inside Course</h2><select name="course_id" id="quizCourse"></select><input name="title" placeholder="Quiz title" required><textarea name="description" placeholder="Description"></textarea><button>Add Quiz</button></form><form id="questionForm"><h2>Add Question</h2><select name="quiz_id" id="questionQuiz"></select><textarea name="question" placeholder="Question" required></textarea><input name="option1" placeholder="Option 1"><input name="option2" placeholder="Option 2"><input name="option3" placeholder="Option 3"><input name="option4" placeholder="Option 4"><input name="answer" placeholder="Correct answer text"><button>Add Question</button></form></section>
+      <section id="job" style="display:none"><form id="jobForm"><h2>Add Job</h2><input id="jobTitle" placeholder="Job title" required><textarea id="jobDescription" placeholder="Description"></textarea><textarea id="jobSkills" placeholder="Required skills"></textarea><input id="jobSpecialization" placeholder="Specialization"><input id="jobSalary" placeholder="Average salary"><input id="jobLink" placeholder="Job link"><button>Add Job</button></form></section>
+      <section id="users" style="display:none"><h2>Users</h2><div id="usersTable"></div></section>
+    </div>
+  </div>
+</div>
+<script>
+requireAdmin();
+function showSection(id){ ["spec","course","quiz","job","users"].forEach(x => document.getElementById(x).style.display = x === id ? "block" : "none"); if(id === "users") loadUsers(); }
+async function switchMode(mode){ const data = await apiPost(mode === "student" ? "/api/mode/student" : "/api/mode/admin", {}); if(data.error) showMessage("message", data.error, "error"); else { if(data.token && data.user) setAuth(data.token, data.user); window.location.href = mode === "student" ? "/profile" : "/admin"; } }
+async function loadAdminData(){
+  const specs = await apiGet("/api/specializations"); const courses = await apiGet("/api/courses"); const quizzes = await apiGet("/api/quizzes");
+  const specOptions = Array.isArray(specs) ? specs.map(s=>`<option value="${s.id}">${escapeHTML(s.name)}</option>`).join("") : ""; certSpec.innerHTML = specOptions; courseSpec.innerHTML = specOptions;
+  quizCourse.innerHTML = Array.isArray(courses) ? courses.map(c=>`<option value="${c.id}">${escapeHTML(c.title)}</option>`).join("") : "";
+  questionQuiz.innerHTML = Array.isArray(quizzes) ? quizzes.map(q=>`<option value="${q.id}">${escapeHTML(q.title)}</option>`).join("") : "";
+}
+specForm.addEventListener("submit", async e => { e.preventDefault(); const fd = new FormData(specForm); const data = await apiForm("/api/specializations", fd); if(data.error) showMessage("message", data.error, "error"); else { showMessage("message", "Specialization added"); specForm.reset(); loadAdminData(); }});
+certForm.addEventListener("submit", async e => { e.preventDefault(); const fd = new FormData(certForm); const data = await apiPost("/api/certificates", { spec_id:fd.get("spec_id"), name:fd.get("name"), description:fd.get("description"), link:fd.get("link"), price:fd.get("price"), type:fd.get("type") }); if(data.error) showMessage("message", data.error, "error"); else { showMessage("message", "Certificate added"); certForm.reset(); }});
+courseForm.addEventListener("submit", async e => { e.preventDefault(); const fd = new FormData(courseForm); const data = await apiForm("/api/courses", fd); if(data.error) showMessage("message", data.error, "error"); else { showMessage("message", "Course added"); courseForm.reset(); loadAdminData(); }});
+quizForm.addEventListener("submit", async e => { e.preventDefault(); const fd = new FormData(quizForm); const data = await apiPost("/api/quizzes", { course_id:fd.get("course_id"), title:fd.get("title"), description:fd.get("description") }); if(data.error) showMessage("message", data.error, "error"); else { showMessage("message", "Quiz added"); quizForm.reset(); loadAdminData(); }});
+questionForm.addEventListener("submit", async e => { e.preventDefault(); const fd = new FormData(questionForm); const data = await apiPost("/api/quiz-questions", { quiz_id:fd.get("quiz_id"), question:fd.get("question"), option1:fd.get("option1"), option2:fd.get("option2"), option3:fd.get("option3"), option4:fd.get("option4"), answer:fd.get("answer") }); if(data.error) showMessage("message", data.error, "error"); else { showMessage("message", "Question added"); questionForm.reset(); }});
+jobForm.addEventListener("submit", async e => { e.preventDefault(); const data = await apiPost("/api/jobs", { title:jobTitle.value, description:jobDescription.value, skills:jobSkills.value, specialization:jobSpecialization.value, salary:jobSalary.value, link:jobLink.value }); if(data.error) showMessage("message", data.error, "error"); else { showMessage("message", "Job added"); jobForm.reset(); }});
+async function loadUsers(){ const users = await apiGet("/api/admin/users"); if(!Array.isArray(users)){ usersTable.innerHTML = emptyState("Error", users.error || "Could not load users."); return; } usersTable.innerHTML = `<div class="table-wrap"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Banned</th><th>Action</th></tr>${users.map(u=>`<tr><td>${escapeHTML(u.name)}</td><td>${escapeHTML(u.email)}</td><td>${escapeHTML(u.role)}</td><td>${u.banned ? "Yes" : "No"}</td><td><button onclick="apiPut('/api/admin/users/${u.id}/make-admin',{}).then(loadUsers)">Make Admin</button><button onclick="apiPut('/api/admin/users/${u.id}/make-student',{}).then(loadUsers)">Make Student</button><button class="danger" onclick="apiPut('/api/admin/users/${u.id}/ban',{}).then(loadUsers)">Ban</button><button onclick="apiPut('/api/admin/users/${u.id}/unban',{}).then(loadUsers)">Unban</button></td></tr>`).join("")}</table></div>`; }
+loadAdminData();
+</script>
+</body>
+</html>

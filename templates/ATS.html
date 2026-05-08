@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | ATS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<script>navbar();</script>
+<div class="container">
+  <div id="message"></div>
+  <form id="atsForm"><h1>ATS Resume Generator</h1><div class="form-grid"><input id="name" placeholder="Full name"><input id="email" placeholder="Email"><input id="phone" placeholder="Phone"><input id="linkedin" placeholder="LinkedIn"><input id="portfolio" placeholder="Portfolio"><input id="target_job" placeholder="Target job"></div><textarea id="summary" placeholder="Summary"></textarea><textarea id="skills" placeholder="Technical skills"></textarea><textarea id="soft_skills" placeholder="Soft skills"></textarea><textarea id="languages" placeholder="Languages"></textarea><textarea id="experience" placeholder="Experience"></textarea><textarea id="projects" placeholder="Projects"></textarea><textarea id="education" placeholder="Education"></textarea><textarea id="certifications" placeholder="Certifications"></textarea><button type="submit">Generate Resume</button></form>
+  <form id="checkerForm"><h2>ATS Checker</h2><textarea id="resume_text" placeholder="Paste resume text"></textarea><textarea id="job_description" placeholder="Paste job description"></textarea><button type="submit">Check ATS Score</button></form>
+  <div id="atsResult"></div>
+</div>
+<script>
+requireLogin();
+atsForm.addEventListener("submit", async e => {
+  e.preventDefault(); atsResult.innerHTML = loadingHTML("Generating resume...");
+  const data = await apiPost("/api/ats/generate", { name:name.value,email:email.value,phone:phone.value,linkedin:linkedin.value,portfolio:portfolio.value,target_job:target_job.value,summary:summary.value,skills:skills.value,soft_skills:soft_skills.value,languages:languages.value,experience:experience.value,projects:projects.value,education:education.value,certifications:certifications.value });
+  if(data.error){ atsResult.innerHTML = emptyState("Error", data.error); return; }
+  atsResult.innerHTML = `<div class="result-box"><div class="ats-score">${data.ats_score}%</div><h2>Generated Resume</h2><pre id="resumeText" style="white-space:pre-wrap">${escapeHTML(data.resume)}</pre><div class="card-actions"><button onclick="exportFile('/api/ats/export/pdf','SQR_Resume.pdf')">Export PDF</button><button onclick="exportFile('/api/ats/export/docx','SQR_Resume.docx')">Export DOCX</button></div></div>`;
+});
+checkerForm.addEventListener("submit", async e => {
+  e.preventDefault(); atsResult.innerHTML = loadingHTML("Checking resume...");
+  const data = await apiPost("/api/ats/check", { resume_text: resume_text.value, job_description: job_description.value });
+  if(data.error){ atsResult.innerHTML = emptyState("Error", data.error); return; }
+  atsResult.innerHTML = `<div class="result-box"><div class="ats-score">${data.ats_score}%</div><h2>ATS Result</h2><p class="ats-summary">${escapeHTML(data.summary || "")}</p><h3>Matched Keywords</h3>${keywordTags(data.matched_keywords || [])}<h3>Missing Keywords</h3><div class="keyword-list">${(data.missing_keywords || []).map(k=>`<span class="keyword missing">${escapeHTML(k)}</span>`).join("")}</div><h3>Improvements</h3><ul>${(data.improvements || []).map(i=>`<li>${escapeHTML(i)}</li>`).join("")}</ul></div>`;
+});
+async function exportFile(path, filename){
+  const resume = document.getElementById("resumeText") ? document.getElementById("resumeText").innerText : "";
+  if(!resume) return showMessage("message", "Generate a resume first", "error");
+  const res = await fetch(API + path, { method:"POST", headers:{"Content-Type":"application/json", ...authHeaders()}, body:JSON.stringify({resume}) });
+  const blob = await res.blob(); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+}
+</script>
+</body>
+</html>

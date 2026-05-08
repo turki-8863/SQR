@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Jobs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<script>navbar();</script>
+<section class="hero"><h1>Jobs</h1><p>Job recommendations are separate from specialization recommendations.</p></section>
+<div class="container"><div class="filters"><input id="search" placeholder="Search jobs"><input id="specialization" placeholder="Specialization"><button onclick="loadJobs()">Search</button></div><div id="jobsGrid" class="grid"></div></div>
+<script>
+async function loadJobs(){
+  const q = new URLSearchParams(); if(search.value) q.append("search", search.value); if(specialization.value) q.append("specialization", specialization.value);
+  jobsGrid.innerHTML = loadingHTML("Loading jobs...");
+  const jobs = await apiGet("/api/jobs?" + q.toString());
+  if(!Array.isArray(jobs) || !jobs.length){ jobsGrid.innerHTML = emptyState("No jobs", "Admin has not added jobs yet."); return; }
+  jobsGrid.innerHTML = jobs.map(job => `<div class="card"><h3>${escapeHTML(job.title)}</h3><p>${escapeHTML(job.description || "")}</p><p><b>Skills:</b> ${escapeHTML(job.skills || "")}</p><p><b>Specialization:</b> ${escapeHTML(job.specialization || "")}</p><p><b>Salary:</b> ${escapeHTML(job.salary || "")}</p><div class="match-box"><span class="${matchColor(job.match_percentage)} match-percent">${safePercent(job.match_percentage)}%</span><span class="match-label">${escapeHTML(job.match_label || scoreLabel(job.match_percentage))}</span></div>${job.link ? `<a class="btn-main" target="_blank" href="${escapeHTML(job.link)}">Open Job</a>` : ""}</div>`).join("");
+}
+loadJobs();
+</script>
+</body>
+</html>

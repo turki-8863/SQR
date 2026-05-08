@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Quizzes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<script>navbar();</script>
+<section class="hero"><h1>Course Quizzes</h1><p>Quizzes belong inside courses and affect course and specialization progress.</p></section>
+<div class="container"><div id="message"></div><div id="quizList" class="grid"></div><div id="quizBox"></div></div>
+<script>
+let allQuizzes = [];
+async function loadQuizzes(){
+  const params = new URLSearchParams(location.search); const courseId = params.get("course_id");
+  const path = courseId ? "/api/quizzes?course_id=" + courseId : "/api/quizzes";
+  quizList.innerHTML = loadingHTML("Loading quizzes...");
+  allQuizzes = await apiGet(path);
+  if(!Array.isArray(allQuizzes) || !allQuizzes.length){ quizList.innerHTML = emptyState("No quizzes", "No quizzes found for this course."); return; }
+  quizList.innerHTML = allQuizzes.map(q => `<div class="card quiz-card"><h3>${escapeHTML(q.title)}</h3><p>${escapeHTML(q.description || "")}</p><button onclick="openQuiz(${q.id})">Start Quiz</button></div>`).join("");
+}
+function openQuiz(id){
+  const quiz = allQuizzes.find(q => Number(q.id) === Number(id)); if(!quiz) return;
+  quizBox.innerHTML = `<form id="quizForm"><h2>${escapeHTML(quiz.title)}</h2>${(quiz.questions || []).map(q => `
+    <div class="quiz-question"><h3>${escapeHTML(q.question)}</h3><div class="quiz-options">
+      <label><input type="radio" name="q${q.id}" value="${escapeHTML(q.option1)}"> ${escapeHTML(q.option1)}</label>
+      <label><input type="radio" name="q${q.id}" value="${escapeHTML(q.option2)}"> ${escapeHTML(q.option2)}</label>
+      <label><input type="radio" name="q${q.id}" value="${escapeHTML(q.option3)}"> ${escapeHTML(q.option3)}</label>
+      <label><input type="radio" name="q${q.id}" value="${escapeHTML(q.option4)}"> ${escapeHTML(q.option4)}</label>
+    </div></div>`).join("")}<button type="submit">Submit Quiz</button></form>`;
+  quizForm.addEventListener("submit", async e => {
+    e.preventDefault(); requireLogin();
+    const answers = {}; (quiz.questions || []).forEach(q => { const selected = document.querySelector(`input[name="q${q.id}"]:checked`); answers[q.id] = selected ? selected.value : ""; });
+    const result = await apiPost("/api/quizzes/" + id + "/submit", { answers });
+    if(result.error) showMessage("message", result.error, "error"); else showMessage("message", `Score: ${result.score}%`);
+  });
+  quizBox.scrollIntoView({behavior:"smooth"});
+}
+loadQuizzes();
+</script>
+</body>
+</html>

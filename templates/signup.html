@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Sign Up</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<script>navbar();</script>
+<div class="container">
+  <div id="message"></div>
+  <form id="signupForm">
+    <h1>Create Account</h1>
+    <p class="subtitle">Admins register as admins but start in admin mode only. They can switch to student mode later.</p>
+    <label>Name</label><input id="name" required>
+    <label>Email</label><input id="email" type="email" required>
+    <label>Password</label><input id="password" type="password" required>
+    <label>Account Type</label>
+    <select id="role"><option value="student">Student</option><option value="admin">Admin</option></select>
+    <button type="submit">Create Account</button>
+  </form>
+</div>
+<script>
+signupForm.addEventListener("submit", async e => {
+  e.preventDefault();
+  const data = await apiPost("/api/signup", { name: name.value, email: email.value, password: password.value, role: role.value });
+  if (data.error) return showMessage("message", data.error, "error");
+  setAuth(data.token, data.user);
+  window.location.href = data.user.role === "admin" && data.user.current_mode !== "student" ? "/admin" : "/profile";
+});
+</script>
+</body>
+</html>

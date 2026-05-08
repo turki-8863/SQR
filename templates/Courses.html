@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Courses</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<script>navbar();</script>
+<section class="hero"><h1>Courses</h1><p>Enroll in courses connected to specializations. Course progress is based on completion and quizzes.</p></section>
+<div class="container">
+  <div id="message"></div>
+  <div class="filters"><select id="specFilter"></select><select id="levelFilter"><option value="">All Levels</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select><input id="search" placeholder="Search courses"><button onclick="loadCourses()">Search</button></div>
+  <div id="coursesGrid" class="grid"></div>
+</div>
+<script>
+async function loadSpecs(){
+  const specs = await apiGet("/api/specializations");
+  specFilter.innerHTML = `<option value="">All Specializations</option>` + (Array.isArray(specs) ? specs.map(s=>`<option value="${s.id}">${escapeHTML(s.name)}</option>`).join("") : "");
+  const params = new URLSearchParams(location.search); if(params.get("spec_id")) specFilter.value = params.get("spec_id");
+}
+async function loadCourses(){
+  const query = new URLSearchParams();
+  if(specFilter.value) query.append("spec_id", specFilter.value); if(levelFilter.value) query.append("level", levelFilter.value); if(search.value) query.append("search", search.value);
+  coursesGrid.innerHTML = loadingHTML("Loading courses...");
+  const courses = await apiGet("/api/courses?" + query.toString());
+  if(!Array.isArray(courses) || !courses.length){ coursesGrid.innerHTML = emptyState("No courses", "No courses found."); return; }
+  coursesGrid.innerHTML = courses.map(course => `
+    <div class="card course-card">
+      ${course.image_url ? `<img src="${imageUrl(course.image_url)}" alt="${escapeHTML(course.title)}">` : ""}
+      <h3>${escapeHTML(course.title)}</h3><span class="level-badge ${levelClass(course.level)}">${levelLabel(course.level)}</span><p>${escapeHTML(course.description || "")}</p>
+      ${course.link ? `<a class="btn-light" target="_blank" href="${escapeHTML(course.link)}">Open Course</a>` : ""}
+      ${course.video_url ? `<a class="btn-light" target="_blank" href="${imageUrl(course.video_url)}">Watch Video</a>` : ""}
+      <div class="card-actions"><button onclick="enrollCourse(${course.id})">Enroll Course</button><button onclick="completeCourse(${course.id})" class="success">Mark Completed</button><a class="btn-main" href="/quizzes?course_id=${course.id}">Course Quizzes</a></div>
+    </div>`).join("");
+}
+async function enrollCourse(id){ requireLogin(); const data = await apiPost("/api/courses/" + id + "/enroll", {}); if(data.error) showMessage("message", data.error, "error"); else showMessage("message", data.message || "Course enrolled"); }
+async function completeCourse(id){ requireLogin(); const data = await apiPost("/api/courses/" + id + "/complete", {}); if(data.error) showMessage("message", data.error, "error"); else showMessage("message", data.message || "Course completed"); }
+loadSpecs().then(loadCourses);
+</script>
+</body>
+</html>
