@@ -1018,41 +1018,63 @@ def uploads(filename):
 
 @app.route("/api/signup", methods=["POST"])
 def signup():
-    data = get_json()
+    data = request.get_json(silent=True) or {}
+
     name = data.get("name", "").strip()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "").strip()
-    role = "student"
 
     if not name or not email or not password:
         return jsonify({"error": "Name, email, and password are required"}), 400
 
     if not strong_password(password):
-        return jsonify({"error": "Password must be at least 8 characters and include uppercase, lowercase, and number"}), 400
+        return jsonify({
+            "error": "Password must be at least 8 characters and include uppercase, lowercase, and number"
+        }), 400
 
-    if query_db("SELECT user_id FROM users WHERE email=%s", (email,), fetchone=True):
-        return jsonify({"error": "Email already exists"}), 409
-
-    hashed_password = generate_password_hash(password, method="pbkdf2:sha256", salt_length=16)
-
-    user_id = query_db("""
-        INSERT INTO users (name, email, password, role, is_banned)
-        VALUES (%s, %s, %s, %s, 0)
-    """, (name, email, hashed_password, role), commit=True)
-
-    user = query_db(
-        "SELECT user_id, name, email, role, is_banned, created_at FROM users WHERE user_id=%s",
-        (user_id,),
+    existing = query_db(
+        "SELECT id FROM users WHERE email=%s",
+        (email,),
         fetchone=True
     )
 
-    user["id"] = user["user_id"]
-    user["current_mode"] = user["role"]
+    if existing:
+        return jsonify({"error": "Email already exists"}), 409
+
+    hashed_password = generate_password_hash(
+        password,
+        method="pbkdf2:sha256",
+        salt_length=16
+    )
+
+    query_db(
+        """
+        INSERT INTO users (name, email, password, role, current_mode, banned)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+        (name, email, hashed_password, "student", "student", 0),
+        commit=True
+    )
+
+    user = query_db(
+        "SELECT id, name, email, role, current_mode, banned FROM users WHERE email=%s",
+        (email,),
+        fetchone=True
+    )
+
+    token = jwt.encode({
+        "user_id": user["id"],
+        "id": user["id"],
+        "email": user["email"],
+        "role": user["role"],
+        "current_mode": user["current_mode"],
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7)
+    }, SECRET_KEY, algorithm="HS256")
 
     return jsonify({
-        "message": "Account created successfully",
-        "token": generate_token(user),
-        "user": clean_user(user)
+        "message": "Signup successful",
+        "token": token,
+        "user": user
     }), 201
 
 @app.route("/api/me")
