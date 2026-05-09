@@ -2,6 +2,8 @@ const API = location.hostname === "localhost" || location.hostname === "127.0.0.
   ? "http://127.0.0.1:5000"
   : "https://sqr-ba83.onrender.com";
 
+let lastGeneratedResume = "";
+
 function getToken() {
   return localStorage.getItem("sqr_token") || localStorage.getItem("token");
 }
@@ -39,6 +41,24 @@ function showMessage(text, type = "error") {
   box.className = type === "success" ? "message success" : "message error";
 }
 
+function asArray(data, key) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data[key])) return data[key];
+  return [];
+}
+
+function getId(row) {
+  return row?.id || row?.specialization_id || row?.course_id || row?.quiz_id || row?.job_id;
+}
+
+function fileUrl(filename) {
+  if (!filename) return "";
+  if (String(filename).startsWith("http") || String(filename).startsWith("/uploads/")) {
+    return String(filename).startsWith("http") ? filename : API + filename;
+  }
+  return `${API}/uploads/${filename}`;
+}
+
 async function api(path, options = {}) {
   const headers = {
     ...(options.headers || {}),
@@ -60,10 +80,25 @@ async function api(path, options = {}) {
   } catch {}
 
   if (!res.ok) {
-    throw new Error(data.error || data.message || "Request failed");
+    throw new Error(data.error || data.message || `Request failed (${res.status})`);
   }
 
   return data;
+}
+
+async function apiTry(paths, options = {}) {
+  let lastError;
+  for (const path of paths) {
+    try {
+      return await api(path, options);
+    } catch (err) {
+      lastError = err;
+      if (!String(err.message).includes("Route not found") && !String(err.message).includes("404")) {
+        throw err;
+      }
+    }
+  }
+  throw lastError || new Error("Request failed");
 }
 
 function navbar() {
@@ -89,13 +124,9 @@ function navbar() {
       </nav>
 
       <div class="auth-buttons">
-        ${
-          user
-            ? `<button onclick="logout()" class="btn danger">Logout</button>`
-            : `
-              <a href="signin.html" class="btn ghost">Sign In</a>
-              <a href="signup.html" class="btn primary">Sign Up</a>
-            `
+        ${user
+          ? `<button onclick="logout()" class="btn danger">Logout</button>`
+          : `<a href="signin.html" class="btn ghost">Sign In</a><a href="signup.html" class="btn primary">Sign Up</a>`
         }
       </div>
     </header>
@@ -150,10 +181,7 @@ function setupSignup() {
 
       setAuth(result.token, result.user);
       showMessage("Account created successfully", "success");
-
-      setTimeout(() => {
-        window.location.href = "profile.html";
-      }, 700);
+      setTimeout(() => window.location.href = "profile.html", 700);
     } catch (err) {
       showMessage(err.message);
     }
@@ -173,17 +201,14 @@ function setupSignin() {
     };
 
     try {
-      const result = await api("/api/login", {
+      const result = await apiTry(["/api/login", "/api/signin"], {
         method: "POST",
         body: JSON.stringify(data)
       });
 
       setAuth(result.token, result.user);
       showMessage("Signed in successfully", "success");
-
-      setTimeout(() => {
-        window.location.href = "profile.html";
-      }, 700);
+      setTimeout(() => window.location.href = "profile.html", 700);
     } catch (err) {
       showMessage(err.message);
     }
@@ -198,20 +223,23 @@ async function loadProfile() {
 
   try {
     const data = await api("/api/profile");
+    const user = data.user || data;
 
     box.innerHTML = `
       <div class="card">
-        <h2>${data.user.name}</h2>
-        <p><b>Email:</b> ${data.user.email}</p>
-        <p><b>Role:</b> ${data.user.role}</p>
+        <h2>${user.name || "Student"}</h2>
+        <p><b>Email:</b> ${user.email || ""}</p>
+        <p><b>Role:</b> ${user.role || "student"}</p>
       </div>
     `;
 
     const form = document.getElementById("profileForm");
-    if (form) {
-      document.getElementById("name").value = data.user.name || "";
-      document.getElementById("skills").value = data.user.skills || "";
-      document.getElementById("interests").value = data.user.interests || "";
+    if (form && !form.dataset.ready) {
+      form.dataset.ready = "1";
+      if (document.getElementById("name")) document.getElementById("name").value = user.name || "";
+      if (document.getElementById("skills")) document.getElementById("skills").value = user.skills || "";
+      if (document.getElementById("interests")) document.getElementById("interests").value = user.interests || "";
+      if (document.getElementById("goal")) document.getElementById("goal").value = user.goal || "";
 
       form.addEventListener("submit", async e => {
         e.preventDefault();
@@ -220,9 +248,10 @@ async function loadProfile() {
           await api("/api/profile", {
             method: "PUT",
             body: JSON.stringify({
-              name: document.getElementById("name").value,
-              skills: document.getElementById("skills").value,
-              interests: document.getElementById("interests").value
+              name: document.getElementById("name")?.value || "",
+              skills: document.getElementById("skills")?.value || "",
+              interests: document.getElementById("interests")?.value || "",
+              goal: document.getElementById("goal")?.value || ""
             })
           });
 
@@ -233,28 +262,29 @@ async function loadProfile() {
       });
     }
 
-    loadProgress();
+    loadProgress(data);
   } catch (err) {
     showMessage(err.message);
   }
 }
 
-async function loadProgress() {
+async function loadProgress(profileData = null) {
   const box = document.getElementById("progressBox");
   if (!box) return;
 
   try {
-    const data = await api("/api/progress");
+    const data = profileData || await api("/api/profile");
+    const progress = data.progress || data.specialization_progress || [];
 
-    box.innerHTML = data.progress.map(p => `
+    box.innerHTML = progress.map(p => `
       <div class="card">
-        <h3>${p.specialization}</h3>
+        <h3>${p.name || p.specialization || p.specialization_name || "Specialization"}</h3>
         <div class="progress">
-          <div style="width:${p.percentage}%"></div>
+          <div style="width:${p.progress || p.percentage || 0}%"></div>
         </div>
-        <p>${p.percentage}% completed</p>
+        <p>${p.progress || p.percentage || 0}% completed</p>
       </div>
-    `).join("");
+    `).join("") || `<p>No progress yet.</p>`;
   } catch {
     box.innerHTML = "";
   }
@@ -263,29 +293,35 @@ async function loadProgress() {
 async function loadSpecializations() {
   const box = document.getElementById("specializationsBox");
   const select = document.getElementById("specSelect");
+  const courseSelect = document.getElementById("courseSpecFilter");
+  const quizSelect = document.getElementById("quizSpecFilter");
+  const jobSelect = document.getElementById("jobSpecFilter");
 
-  if (!box && !select) return;
+  if (!box && !select && !courseSelect && !quizSelect && !jobSelect) return;
 
   try {
-    const data = await api("/api/specializations");
+    const raw = await api("/api/specializations");
+    const specs = asArray(raw, "specializations");
 
     if (box) {
-      box.innerHTML = data.specializations.map(s => `
+      box.innerHTML = specs.map(s => `
         <div class="card">
-          ${s.image ? `<img src="${API}/uploads/${s.image}" class="card-img">` : ""}
-          <h3>${s.name}</h3>
+          ${s.image || s.image_url ? `<img src="${fileUrl(s.image_url || s.image)}" class="card-img">` : ""}
+          <h3>${s.name || ""}</h3>
           <p>${s.description || ""}</p>
           ${s.skills ? `<p><b>Skills:</b> ${s.skills}</p>` : ""}
-          <button onclick="chooseSpecialization(${s.id})">Choose Specialization</button>
+          <button onclick="chooseSpecialization(${getId(s)})">Choose Specialization</button>
         </div>
       `).join("");
     }
 
-    if (select) {
-      select.innerHTML = data.specializations.map(s => `
-        <option value="${s.id}">${s.name}</option>
-      `).join("");
-    }
+    const options = `<option value="">All Specializations</option>` + specs.map(s => `
+      <option value="${getId(s)}">${s.name}</option>
+    `).join("");
+
+    [select, courseSelect, quizSelect, jobSelect].forEach(el => {
+      if (el) el.innerHTML = options;
+    });
   } catch (err) {
     showMessage(err.message);
   }
@@ -295,9 +331,9 @@ async function chooseSpecialization(id) {
   requireLogin();
 
   try {
-    await api("/api/user/specialization", {
+    await apiTry([`/api/specializations/${id}/enroll`, "/api/user/specialization", "/api/student/specialization"], {
       method: "POST",
-      body: JSON.stringify({ specialization_id: id })
+      body: JSON.stringify({ specialization_id: id, spec_id: id })
     });
 
     alert("Specialization selected");
@@ -314,25 +350,25 @@ async function loadCourses() {
   try {
     const spec = document.getElementById("courseSpecFilter")?.value || "";
     const level = document.getElementById("courseLevelFilter")?.value || "";
-
-    let path = "/api/courses";
     const params = new URLSearchParams();
 
-    if (spec) params.append("specialization_id", spec);
+    if (spec) {
+      params.append("spec_id", spec);
+      params.append("specialization_id", spec);
+    }
     if (level) params.append("level", level);
 
-    if (params.toString()) path += "?" + params.toString();
+    const raw = await api(`/api/courses${params.toString() ? "?" + params.toString() : ""}`);
+    const courses = asArray(raw, "courses");
 
-    const data = await api(path);
-
-    box.innerHTML = data.courses.map(c => `
+    box.innerHTML = courses.map(c => `
       <div class="card">
-        ${c.image ? `<img src="${API}/uploads/${c.image}" class="card-img">` : ""}
-        <h3>${c.title}</h3>
+        ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
+        <h3>${c.title || ""}</h3>
         <p>${c.description || ""}</p>
-        <p><b>Level:</b> ${c.level || "Beginner"}</p>
-        ${c.link ? `<a href="${c.link}" target="_blank">Open Course</a>` : ""}
-        <button onclick="completeCourse(${c.id})">Mark Completed</button>
+        <p><b>Level:</b> ${c.level_badge?.label || c.level || "Beginner"}</p>
+        ${c.link || c.course_link ? `<a href="${c.link || c.course_link}" target="_blank">Open Course</a>` : ""}
+        <button onclick="completeCourse(${getId(c)})">Mark Completed</button>
       </div>
     `).join("");
   } catch (err) {
@@ -344,11 +380,7 @@ async function completeCourse(id) {
   requireLogin();
 
   try {
-    await api("/api/courses/complete", {
-      method: "POST",
-      body: JSON.stringify({ course_id: id })
-    });
-
+    await api(`/api/courses/${id}/complete`, { method: "POST" });
     alert("Course completed");
     loadCourses();
     loadProgress();
@@ -364,22 +396,21 @@ async function loadQuizzes() {
   try {
     const spec = document.getElementById("quizSpecFilter")?.value || "";
     const course = document.getElementById("quizCourseFilter")?.value || "";
-
-    let path = "/api/quizzes";
     const params = new URLSearchParams();
 
-    if (spec) params.append("specialization_id", spec);
+    if (spec) params.append("spec_id", spec);
     if (course) params.append("course_id", course);
 
-    if (params.toString()) path += "?" + params.toString();
+    const raw = await api(`/api/quizzes${params.toString() ? "?" + params.toString() : ""}`);
+    const quizzes = asArray(raw, "quizzes");
 
-    const data = await api(path);
+    window.loadedQuizzes = quizzes;
 
-    box.innerHTML = data.quizzes.map(q => `
+    box.innerHTML = quizzes.map(q => `
       <div class="card">
-        <h3>${q.title}</h3>
+        <h3>${q.title || "Quiz"}</h3>
         <p>${q.description || ""}</p>
-        <button onclick="startQuiz(${q.id})">Start Quiz</button>
+        <button onclick="startQuiz(${getId(q)})">Start Quiz</button>
       </div>
     `).join("");
   } catch (err) {
@@ -388,25 +419,33 @@ async function loadQuizzes() {
 }
 
 async function startQuiz(id) {
-  const box = document.getElementById("quizBox");
+  const box = document.getElementById("quizBox") || document.getElementById("quizzesBox");
   if (!box) return;
 
   try {
-    const data = await api(`/api/quizzes/${id}`);
+    let quiz = (window.loadedQuizzes || []).find(q => Number(getId(q)) === Number(id));
+
+    if (!quiz) {
+      const raw = await api("/api/quizzes");
+      quiz = asArray(raw, "quizzes").find(q => Number(getId(q)) === Number(id));
+    }
+
+    if (!quiz) throw new Error("Quiz not found");
+
+    const questions = quiz.questions || [];
+    if (!questions.length) throw new Error("This quiz has no questions yet");
 
     box.innerHTML = `
       <div class="card">
-        <h2>${data.quiz.title}</h2>
+        <h2>${quiz.title || "Quiz"}</h2>
         <form id="takeQuizForm">
-          ${data.questions.map((q, i) => `
+          ${questions.map((q, i) => `
             <div class="quiz-question">
-              <h4>${i + 1}. ${q.question}</h4>
-              ${["a", "b", "c", "d"].map(opt => `
-                <label>
-                  <input type="radio" name="q${q.id}" value="${opt}">
-                  ${q["option_" + opt] || ""}
-                </label>
-              `).join("")}
+              <h4>${i + 1}. ${q.question || q.question_text || ""}</h4>
+              ${["a", "b", "c", "d"].map((letter, index) => {
+                const value = q[`option_${letter}`] || q[`option${index + 1}`] || "";
+                return `<label><input type="radio" name="q${getId(q)}" value="${value}"> ${value}</label>`;
+              }).join("")}
             </div>
           `).join("")}
           <button type="submit">Submit Quiz</button>
@@ -416,13 +455,12 @@ async function startQuiz(id) {
 
     document.getElementById("takeQuizForm").addEventListener("submit", async e => {
       e.preventDefault();
+      const answers = {};
 
-      const answers = data.questions.map(q => {
-        const selected = document.querySelector(`input[name="q${q.id}"]:checked`);
-        return {
-          question_id: q.id,
-          answer: selected ? selected.value : ""
-        };
+      questions.forEach(q => {
+        const qid = getId(q);
+        const selected = document.querySelector(`input[name="q${qid}"]:checked`);
+        answers[qid] = selected ? selected.value : "";
       });
 
       try {
@@ -448,18 +486,20 @@ async function loadJobs() {
 
   try {
     const spec = document.getElementById("jobSpecFilter")?.value || "";
-    let path = "/api/jobs";
+    const params = new URLSearchParams();
+    if (spec) params.append("specialization", spec);
 
-    if (spec) path += "?specialization_id=" + encodeURIComponent(spec);
+    const raw = await api(`/api/jobs${params.toString() ? "?" + params.toString() : ""}`);
+    const jobs = asArray(raw, "jobs");
 
-    const data = await api(path);
-
-    box.innerHTML = data.jobs.map(j => `
+    box.innerHTML = jobs.map(j => `
       <div class="card">
-        <h3>${j.title}</h3>
+        <h3>${j.title || ""}</h3>
         <p>${j.description || ""}</p>
-        <p><b>Specialization:</b> ${j.specialization || ""}</p>
-        <p><b>Required Skills:</b> ${j.required_skills || ""}</p>
+        <p><b>Specialization:</b> ${j.specialization || j.specialization_name || ""}</p>
+        <p><b>Required Skills:</b> ${j.required_skills || j.skills || ""}</p>
+        ${j.salary ? `<p><b>Salary:</b> ${j.salary}</p>` : ""}
+        ${j.link ? `<a href="${j.link}" target="_blank">Apply / Details</a>` : ""}
         ${j.match_percentage !== undefined ? `<p><b>Match:</b> ${j.match_percentage}%</p>` : ""}
       </div>
     `).join("");
@@ -469,19 +509,18 @@ async function loadJobs() {
 }
 
 function setupRecommendation() {
-  const form = document.getElementById("recommendationForm");
-  const box = document.getElementById("recommendationResult");
+  const form = document.getElementById("recommendationForm") || document.getElementById("recForm");
+  const box = document.getElementById("recommendationResult") || document.getElementById("resultBox");
 
   if (!form || !box) return;
 
   form.addEventListener("submit", async e => {
     e.preventDefault();
 
-    const data = {
-      interests: document.getElementById("interests")?.value || "",
-      skills: document.getElementById("skills")?.value || "",
-      answers: document.getElementById("answers")?.value || ""
-    };
+    const data = Object.fromEntries(new FormData(form).entries());
+    data.interests = data.interests || document.getElementById("interests")?.value || "";
+    data.skills = data.skills || document.getElementById("skills")?.value || "";
+    data.goal = data.goal || document.getElementById("goal")?.value || "";
 
     try {
       const result = await api("/api/recommendation", {
@@ -489,12 +528,14 @@ function setupRecommendation() {
         body: JSON.stringify(data)
       });
 
+      const best = result.best || result.recommended_specializations?.[0] || result;
+
       box.innerHTML = `
         <div class="card">
           <h2>Recommended Specialization</h2>
-          <h3>${result.specialization}</h3>
-          <p>${result.reason || ""}</p>
-          <p><b>Match:</b> ${result.percentage || 0}%</p>
+          <h3>${best.name || best.specialization || ""}</h3>
+          <p>${best.reason || result.reason || ""}</p>
+          <p><b>Match:</b> ${best.match_percentage || best.score || best.percentage || 0}%</p>
         </div>
       `;
     } catch (err) {
@@ -507,9 +548,11 @@ function setupATS() {
   const checkForm = document.getElementById("atsCheckForm");
   const generateForm = document.getElementById("atsGenerateForm");
 
-  if (checkForm) {
+  if (checkForm && !checkForm.dataset.ready) {
+    checkForm.dataset.ready = "1";
     checkForm.addEventListener("submit", async e => {
       e.preventDefault();
+      requireLogin();
 
       const formData = new FormData(checkForm);
 
@@ -523,12 +566,13 @@ function setupATS() {
         if (box) {
           box.innerHTML = `
             <div class="card">
-              <h2>ATS Score: ${result.score}%</h2>
-              <p>${result.feedback || ""}</p>
+              <h2>ATS Score: ${result.ats_score ?? result.score ?? 0}%</h2>
+              <p>${result.summary || result.feedback || ""}</p>
               <h3>Missing Keywords</h3>
               <p>${(result.missing_keywords || []).join(", ")}</p>
               <h3>Matched Keywords</h3>
-              <p>${(result.matched_keywords || []).join(", ")}</p>
+              <p>${(result.matched_keywords || result.found_keywords || []).join(", ")}</p>
+              ${result.improvements ? `<h3>Improvements</h3><ul>${result.improvements.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
             </div>
           `;
         }
@@ -538,9 +582,11 @@ function setupATS() {
     });
   }
 
-  if (generateForm) {
+  if (generateForm && !generateForm.dataset.ready) {
+    generateForm.dataset.ready = "1";
     generateForm.addEventListener("submit", async e => {
       e.preventDefault();
+      requireLogin();
 
       const data = Object.fromEntries(new FormData(generateForm).entries());
 
@@ -550,28 +596,83 @@ function setupATS() {
           body: JSON.stringify(data)
         });
 
-        const box = document.getElementById("generatedResume");
+        lastGeneratedResume = result.resume || "";
+        const box = document.getElementById("generatedResume") || document.getElementById("resumeOutput");
+
         if (box) {
           box.innerHTML = `
             <div class="card resume-preview">
-              <h2>${result.name || data.name || ""}</h2>
-              <p>${result.email || data.email || ""}</p>
-              <hr>
-              <h3>Summary</h3>
-              <p>${result.summary || ""}</p>
-              <h3>Skills</h3>
-              <p>${result.skills || ""}</p>
-              <h3>Projects</h3>
-              <p>${result.projects || ""}</p>
-              <h3>Education</h3>
-              <p>${result.education || ""}</p>
+              <h2>Generated ATS Resume</h2>
+              ${result.ats_score !== undefined ? `<p><b>ATS Score:</b> ${result.ats_score}%</p>` : ""}
+              ${result.enhanced_summary ? `<h3>Enhanced Summary</h3><p>${result.enhanced_summary}</p>` : ""}
+              ${result.matched_keywords ? `<h3>Matched Keywords</h3><p>${result.matched_keywords.join(", ")}</p>` : ""}
+              <h3>Resume</h3>
+              <pre class="resume-text">${lastGeneratedResume || "No resume returned from backend."}</pre>
+              <div class="actions">
+                <button type="button" onclick="copyGeneratedResume()">Copy Resume</button>
+                <button type="button" onclick="exportResumePdf()">Export PDF</button>
+                <button type="button" onclick="exportResumeDocx()">Export DOCX</button>
+              </div>
             </div>
           `;
         }
+
+        showMessage("ATS resume generated successfully", "success");
       } catch (err) {
         showMessage(err.message);
       }
     });
+  }
+}
+
+async function copyGeneratedResume() {
+  if (!lastGeneratedResume) return alert("Generate a resume first");
+  await navigator.clipboard.writeText(lastGeneratedResume);
+  alert("Resume copied");
+}
+
+async function downloadBlob(path, filename) {
+  if (!lastGeneratedResume) return alert("Generate a resume first");
+
+  const res = await fetch(API + path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders()
+    },
+    body: JSON.stringify({ resume: lastGeneratedResume })
+  });
+
+  if (!res.ok) {
+    let data = {};
+    try { data = await res.json(); } catch {}
+    throw new Error(data.error || "Export failed");
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function exportResumePdf() {
+  try {
+    await downloadBlob("/api/ats/export/pdf", "SQR_ATS_Resume.pdf");
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function exportResumeDocx() {
+  try {
+    await downloadBlob("/api/ats/export/docx", "SQR_ATS_Resume.docx");
+  } catch (err) {
+    alert(err.message);
   }
 }
 
@@ -580,7 +681,6 @@ async function loadAdmin() {
   if (!adminBox) return;
 
   requireAdmin();
-
   setupAdminForms();
   loadAdminUsers();
 }
@@ -592,18 +692,12 @@ function setupAdminForms() {
   const jobForm = document.getElementById("addJobForm");
   const certForm = document.getElementById("addCertForm");
 
-  if (specForm) {
+  if (specForm && !specForm.dataset.ready) {
+    specForm.dataset.ready = "1";
     specForm.addEventListener("submit", async e => {
       e.preventDefault();
-
-      const formData = new FormData(specForm);
-
       try {
-        await api("/api/admin/specializations", {
-          method: "POST",
-          body: formData
-        });
-
+        await api("/api/specializations", { method: "POST", body: new FormData(specForm) });
         showMessage("Specialization added", "success");
         specForm.reset();
         loadSpecializations();
@@ -613,18 +707,12 @@ function setupAdminForms() {
     });
   }
 
-  if (courseForm) {
+  if (courseForm && !courseForm.dataset.ready) {
+    courseForm.dataset.ready = "1";
     courseForm.addEventListener("submit", async e => {
       e.preventDefault();
-
-      const formData = new FormData(courseForm);
-
       try {
-        await api("/api/admin/courses", {
-          method: "POST",
-          body: formData
-        });
-
+        await api("/api/courses", { method: "POST", body: new FormData(courseForm) });
         showMessage("Course added", "success");
         courseForm.reset();
         loadCourses();
@@ -634,18 +722,23 @@ function setupAdminForms() {
     });
   }
 
-  if (quizForm) {
+  if (quizForm && !quizForm.dataset.ready) {
+    quizForm.dataset.ready = "1";
     quizForm.addEventListener("submit", async e => {
       e.preventDefault();
-
       const data = Object.fromEntries(new FormData(quizForm).entries());
-
+      if (!data.questions) {
+        data.questions = [{
+          question_text: data.question_text || data.question || "Question",
+          option_a: data.option_a || data.option1 || "A",
+          option_b: data.option_b || data.option2 || "B",
+          option_c: data.option_c || data.option3 || "C",
+          option_d: data.option_d || data.option4 || "D",
+          correct_answer: data.correct_answer || data.answer || "A"
+        }];
+      }
       try {
-        await api("/api/admin/quizzes", {
-          method: "POST",
-          body: JSON.stringify(data)
-        });
-
+        await api("/api/admin/quizzes", { method: "POST", body: JSON.stringify(data) });
         showMessage("Quiz added", "success");
         quizForm.reset();
         loadQuizzes();
@@ -655,18 +748,13 @@ function setupAdminForms() {
     });
   }
 
-  if (jobForm) {
+  if (jobForm && !jobForm.dataset.ready) {
+    jobForm.dataset.ready = "1";
     jobForm.addEventListener("submit", async e => {
       e.preventDefault();
-
       const data = Object.fromEntries(new FormData(jobForm).entries());
-
       try {
-        await api("/api/admin/jobs", {
-          method: "POST",
-          body: JSON.stringify(data)
-        });
-
+        await api("/api/jobs", { method: "POST", body: JSON.stringify(data) });
         showMessage("Job added", "success");
         jobForm.reset();
         loadJobs();
@@ -676,18 +764,14 @@ function setupAdminForms() {
     });
   }
 
-  if (certForm) {
+  if (certForm && !certForm.dataset.ready) {
+    certForm.dataset.ready = "1";
     certForm.addEventListener("submit", async e => {
       e.preventDefault();
-
       const data = Object.fromEntries(new FormData(certForm).entries());
-
+      data.spec_id = data.spec_id || data.specialization_id;
       try {
-        await api("/api/admin/certificates", {
-          method: "POST",
-          body: JSON.stringify(data)
-        });
-
+        await api("/api/certificates", { method: "POST", body: JSON.stringify(data) });
         showMessage("Certificate added", "success");
         certForm.reset();
       } catch (err) {
@@ -702,17 +786,17 @@ async function loadAdminUsers() {
   if (!box) return;
 
   try {
-    const data = await api("/api/admin/users");
+    const raw = await api("/api/admin/users");
+    const users = asArray(raw, "users");
 
-    box.innerHTML = data.users.map(u => `
+    box.innerHTML = users.map(u => `
       <div class="card">
         <h3>${u.name}</h3>
         <p>${u.email}</p>
         <p><b>Role:</b> ${u.role}</p>
-        ${
-          u.role === "admin"
-            ? `<button onclick="makeStudent(${u.id})">Make Student</button>`
-            : `<button onclick="makeAdmin(${u.id})">Make Admin</button>`
+        ${u.role === "admin"
+          ? `<button onclick="makeStudent(${u.id})">Make Student</button>`
+          : `<button onclick="makeAdmin(${u.id})">Make Admin</button>`
         }
         <button onclick="banUser(${u.id})" class="danger">Ban</button>
       </div>
@@ -724,11 +808,7 @@ async function loadAdminUsers() {
 
 async function makeAdmin(id) {
   try {
-    await api(`/api/admin/users/${id}/role`, {
-      method: "PUT",
-      body: JSON.stringify({ role: "admin" })
-    });
-
+    await api(`/api/admin/users/${id}/make-admin`, { method: "PUT" });
     loadAdminUsers();
   } catch (err) {
     alert(err.message);
@@ -737,11 +817,7 @@ async function makeAdmin(id) {
 
 async function makeStudent(id) {
   try {
-    await api(`/api/admin/users/${id}/role`, {
-      method: "PUT",
-      body: JSON.stringify({ role: "student" })
-    });
-
+    await api(`/api/admin/users/${id}/make-student`, { method: "PUT" });
     loadAdminUsers();
   } catch (err) {
     alert(err.message);
@@ -752,10 +828,7 @@ async function banUser(id) {
   if (!confirm("Ban this user?")) return;
 
   try {
-    await api(`/api/admin/users/${id}/ban`, {
-      method: "PUT"
-    });
-
+    await api(`/api/admin/users/${id}/ban`, { method: "PUT" });
     loadAdminUsers();
   } catch (err) {
     alert(err.message);
@@ -770,3 +843,6 @@ window.startQuiz = startQuiz;
 window.makeAdmin = makeAdmin;
 window.makeStudent = makeStudent;
 window.banUser = banUser;
+window.copyGeneratedResume = copyGeneratedResume;
+window.exportResumePdf = exportResumePdf;
+window.exportResumeDocx = exportResumeDocx;
