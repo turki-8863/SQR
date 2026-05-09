@@ -263,20 +263,53 @@ def init_db():
         db.close()
 
 
+def db_primary(table_name):
+    mapping = {
+        "users": ["user_id", "id"],
+        "specializations": ["specialization_id", "id"],
+        "courses": ["course_id", "id"],
+        "quizzes": ["quiz_id", "id"],
+        "quiz_questions": ["question_id", "id"],
+        "jobs": ["job_id", "id"],
+        "assessments": ["assessment_id", "id"],
+        "recommendations": ["recommendation_id", "id"],
+        "ats_results": ["ats_id", "id"],
+    }
+    for col in mapping.get(table_name, ["id"]):
+        try:
+            if column_exists(table_name, col):
+                return col
+        except Exception:
+            pass
+    return mapping.get(table_name, ["id"])[0]
+
+
+def user_id_value(user):
+    return user.get("user_id") or user.get("id")
+
+
 def clean_user(user):
     if not user:
         return None
     user = dict(user)
     user.pop("password", None)
+    if "user_id" in user and "id" not in user:
+        user["id"] = user["user_id"]
+    if "current_mode" not in user:
+        user["current_mode"] = user.get("role", "student")
+    if "is_banned" in user and "banned" not in user:
+        user["banned"] = user["is_banned"]
     return user
 
 
 def generate_token(user):
+    uid = user_id_value(user)
     payload = {
-        "id": user["id"],
-        "name": user["name"],
-        "email": user["email"],
-        "role": user["role"],
+        "id": uid,
+        "user_id": uid,
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "role": user.get("role", "student"),
         "current_mode": user.get("current_mode", user.get("role", "student")),
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=int(os.getenv("JWT_HOURS", 24))),
     }
@@ -289,13 +322,17 @@ def get_current_user():
         return None
     try:
         data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
-        user = query_db("SELECT * FROM users WHERE id=%s", (data["id"],), fetchone=True)
-        if not user or user.get("banned"):
+        uid = data.get("user_id") or data.get("id")
+        upk = db_primary("users")
+        user = query_db(f"SELECT * FROM users WHERE `{upk}`=%s", (uid,), fetchone=True)
+        if not user:
+            return None
+        banned = user.get("is_banned", user.get("banned", 0))
+        if banned:
             return None
         return user
     except Exception:
         return None
-
 
 def login_required(func):
     @wraps(func)
@@ -314,7 +351,7 @@ def admin_required(func):
         user = get_current_user()
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        if user.get("role") != "admin" or user.get("current_mode", "admin") != "admin":
+        if user.get("role") != "admin":
             return jsonify({"error": "Admin mode only"}), 403
         request.current_user = user
         return func(*args, **kwargs)
@@ -1019,78 +1056,27 @@ def uploads(filename):
 @app.route("/api/signup", methods=["POST"])
 def signup():
     data = request.get_json(silent=True) or {}
-
     name = data.get("name", "").strip()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "").strip()
 
     if not name or not email or not password:
-        return jsonify({
-            "error": "Name, email, and password are required"
-        }), 400
+        return jsonify({"error": "Name, email, and password are required"}), 400
 
     if not strong_password(password):
-        return jsonify({
-            "error": "Password must be at least 8 characters and include uppercase, lowercase, and number"
-        }), 400
+        return jsonify({"error": "Password must be at least 8 characters and include uppercase, lowercase, and number"}), 400
 
-    existing = query_db(
-        "SELECT id FROM users WHERE email=%s",
-        (email,),
-        fetchone=True
-    )
-
+    upk = db_primary("users")
+    existing = query_db("SELECT * FROM users WHERE email=%s", (email,), fetchone=True)
     if existing:
-        return jsonify({
-            "error": "Email already exists"
-        }), 409
+        return jsonify({"error": "Email already exists"}), 409
 
-    hashed_password = generate_password_hash(
-        password,
-        method="pbkdf2:sha256",
-        salt_length=16
-    )
-
-    query_db(
-        """
-        INSERT INTO users
-        (name, email, password, role, current_mode, is_banned)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """,
-        (
-            name,
-            email,
-            hashed_password,
-            "student",
-            "student",
-            0
-        ),
-        commit=True
-    )
-
-    user = query_db(
-        """
-        SELECT id, name, email, role, current_mode, is_banned
-        FROM users
-        WHERE email=%s
-        """,
-        (email,),
-        fetchone=True
-    )
-
-    token = jwt.encode({
-        "id": user["id"],
-        "email": user["email"],
-        "role": user["role"],
-        "current_mode": user["current_mode"],
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7)
-    }, SECRET_KEY, algorithm="HS256")
-
-    return jsonify({
-        "message": "Signup successful",
-        "token": token,
-        "user": user
-    }), 201
+    hashed_password = generate_password_hash(password, method="pbkdf2:sha256", salt_length=16)
+    values = {"name": name, "email": email, "password": hashed_password, "role": "student", "current_mode": "student", "is_banned": 0, "banned": 0}
+    user_id = insert_dynamic("users", values)
+    user = query_db(f"SELECT * FROM users WHERE `{upk}`=%s", (user_id,), fetchone=True)
+    token = generate_token(user)
+    return jsonify({"message": "Signup successful", "token": token, "user": clean_user(user)}), 201
 
 @app.route("/api/me")
 @login_required
@@ -1615,9 +1601,15 @@ def delete_job(job_id):
 @login_required
 def ats_check():
     resume_text = extract_resume_text_from_request()
-    job_description = request.form.get("job_description", "") if request.content_type and "multipart/form-data" in request.content_type else get_json().get("job_description", "")
+    if request.content_type and "multipart/form-data" in request.content_type:
+        job_description = request.form.get("job_description", request.form.get("target_job", ""))
+    else:
+        data = get_json()
+        job_description = data.get("job_description", data.get("target_job", ""))
+
     if not resume_text:
         return jsonify({"error": "Resume text or file is required"}), 400
+
     fallback = local_ats_score(resume_text, job_description)
     prompt = f"""
 You are a strict ATS engine and technical recruiter. Score the resume against the job description.
@@ -1634,12 +1626,23 @@ Return valid JSON only using this schema:
     "contact": 0, "summary": 0, "skills": 0, "experience": 0, "education": 0, "projects": 0, "keywords": 0, "job_match": 0, "formatting": 0
   }}
 }}
-Scoring rules: keyword relevance 30%, job-description match 30%, resume sections 20%, measurable achievements 10%, formatting/ATS readability 10%. Be specific and practical.
+Scoring rules: keyword relevance 30%, job-description match 30%, resume sections 20%, measurable achievements 10%, formatting/ATS readability 10%.
 Resume:\n{resume_text[:9000]}
 Job description:\n{job_description[:5000]}
 """
     result = ai_json(prompt, fallback)
-    query_db("INSERT INTO ats_results (user_id,ats_score,resume_text,job_description,result_json) VALUES (%s,%s,%s,%s,%s)", (request.current_user["id"], result.get("ats_score", fallback["ats_score"]), resume_text, job_description, json.dumps(result, ensure_ascii=False)), commit=True)
+
+    insert_dynamic("ats_results", {
+        "user_id": user_id_value(request.current_user),
+        "resume_text": resume_text,
+        "target_job": job_description,
+        "job_description": job_description,
+        "ats_score": result.get("ats_score", fallback.get("ats_score", 0)),
+        "missing_keywords": json.dumps(result.get("missing_keywords", []), ensure_ascii=False),
+        "matched_keywords": json.dumps(result.get("matched_keywords", []), ensure_ascii=False),
+        "suggestions": json.dumps(result.get("improvements", []), ensure_ascii=False),
+        "result_json": json.dumps(result, ensure_ascii=False)
+    })
     return jsonify(result)
 
 
@@ -2048,56 +2051,214 @@ def export_resume_docx():
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
+CS_SPECIALIZATION_BANK = [
+    "Artificial Intelligence", "Machine Learning", "Data Science", "Data Engineering",
+    "Cybersecurity", "Digital Forensics", "Software Engineering", "Web Development",
+    "Mobile App Development", "Cloud Computing", "DevOps", "Database Administration",
+    "Computer Networks", "Game Development", "UI/UX Engineering", "Blockchain Development",
+    "Internet of Things", "Robotics", "Computer Vision", "Natural Language Processing"
+]
+
+
+@app.route("/api/recommendation/quiz", methods=["GET"])
+@login_required
+def recommendation_quiz():
+    return jsonify({
+        "title": "AI Computer Science Specialization Quiz",
+        "description": "Answer these questions and the AI will recommend the best CS specialization for you.",
+        "questions": [
+            {"id": 1, "question": "What type of work do you enjoy most?", "options": ["Building websites, apps, and software systems", "Protecting systems and investigating cyber attacks", "Working with data, databases, and analytics", "Training AI models and building intelligent systems"]},
+            {"id": 2, "question": "Which tools or topics sound most interesting to you?", "options": ["Python, machine learning, automation, math", "Linux, networks, ethical hacking, forensics", "SQL, databases, cloud pipelines, ETL", "JavaScript, APIs, frontend, backend"]},
+            {"id": 3, "question": "What kind of problem do you prefer solving?", "options": ["Predicting results and making systems smarter", "Finding weaknesses and securing systems", "Organizing and processing large amounts of data", "Creating useful applications for users"]},
+            {"id": 4, "question": "Which project would you choose?", "options": ["AI chatbot or recommendation system", "Security audit or digital forensics case", "Data warehouse or dashboard", "Full-stack web application"]},
+            {"id": 5, "question": "What career goal fits you best?", "options": ["AI Engineer or Machine Learning Engineer", "Cybersecurity Analyst or Digital Forensics Investigator", "Data Engineer or Data Analyst", "Software Engineer or Full-Stack Developer"]}
+        ]
+    })
+
+
+def local_ai_specialization_fallback(answer_text):
+    text = answer_text.lower()
+    scores = {
+        "Artificial Intelligence": ["ai", "machine learning", "model", "chatbot", "prediction", "automation", "python", "math", "intelligent"],
+        "Cybersecurity": ["security", "cyber", "hacking", "linux", "network", "forensics", "attack", "protect", "vulnerabilities"],
+        "Data Engineering": ["data", "sql", "database", "pipeline", "etl", "warehouse", "cloud", "dashboard", "analytics"],
+        "Software Engineering": ["software", "web", "app", "javascript", "api", "frontend", "backend", "full-stack", "systems"],
+        "Cloud Computing": ["cloud", "aws", "devops", "docker", "deployment", "servers", "scale"],
+        "Computer Networks": ["network", "routing", "switching", "protocol", "infrastructure"]
+    }
+    results = []
+    for name, keywords in scores.items():
+        matched = [k for k in keywords if k in text]
+        score = min(100, 45 + len(matched) * 10) if matched else 20
+        results.append({
+            "name": name,
+            "match_score": score,
+            "match_percentage": score,
+            "reason": "This specialization matches your quiz answers because you showed interest in " + ", ".join(matched[:5]) if matched else "This is a general computer science match.",
+            "skills_to_learn": matched[:6],
+            "career_paths": [],
+            "in_system": False,
+            "specialization_id": None
+        })
+    results.sort(key=lambda x: x["match_score"], reverse=True)
+    return results[:3]
+
+
+def get_system_specializations_for_ai():
+    spk = db_primary("specializations")
+    rows = query_db(f"SELECT * FROM specializations ORDER BY `{spk}` DESC", fetchall=True)
+    fixed = []
+    for row in rows or []:
+        row = normalize_specialization(row)
+        fixed.append({
+            "id": row.get("id"),
+            "specialization_id": row.get("specialization_id") or row.get("id"),
+            "name": row.get("name"),
+            "description": row.get("description"),
+            "roadmap": row.get("roadmap"),
+            "job_titles": row.get("job_titles"),
+            "career_paths": row.get("career_paths"),
+            "skills": row.get("skills", "")
+        })
+    return fixed
+
+
+@app.route("/api/recommendation/submit", methods=["POST"])
 @app.route("/api/recommendations", methods=["POST"])
 @login_required
-def recommendations():
-    if request.content_type and "multipart/form-data" in request.content_type:
-        interests = request.form.get("interests", request.current_user.get("interests") or "")
-        skills = request.form.get("skills", request.current_user.get("skills") or "")
-        goal = request.form.get("goal", request.current_user.get("goal") or "")
-    else:
-        data = get_json()
-        interests = data.get("interests", request.current_user.get("interests") or "")
-        skills = data.get("skills", request.current_user.get("skills") or "")
-        goal = data.get("goal", request.current_user.get("goal") or "")
-    resume_text = extract_resume_text_from_request()
-    jobs = query_db("SELECT id,title,skills,specialization,description FROM jobs ORDER BY id DESC LIMIT 30", fetchall=True)
-    specs = query_db("SELECT id,name,description,skills FROM specializations ORDER BY id DESC LIMIT 20", fetchall=True)
-    fallback = local_recommendations(interests, skills, goal, resume_text, jobs, specs)
+def submit_recommendation_quiz():
+    data = get_json()
+    answers = data.get("answers", [])
+
+    if not answers:
+        legacy_parts = [data.get("interests", ""), data.get("skills", ""), data.get("goal", "")]
+        legacy_text = " ".join(str(x) for x in legacy_parts if x)
+        if legacy_text.strip():
+            answers = [{"question": "Student profile", "answer": legacy_text}]
+        else:
+            return jsonify({"error": "Answers are required"}), 400
+
+    answer_text_parts = []
+    for item in answers:
+        if isinstance(item, dict):
+            answer_text_parts.append(str(item.get("question", "")))
+            answer_text_parts.append(str(item.get("answer", item.get("selected", ""))))
+        else:
+            answer_text_parts.append(str(item))
+    answer_text = " ".join(answer_text_parts).strip()
+
+    db_specs = get_system_specializations_for_ai()
+    fallback_specs = local_ai_specialization_fallback(answer_text)
+    fallback = {
+        "recommended_specializations": fallback_specs,
+        "best_match": fallback_specs[0]["name"] if fallback_specs else "Software Engineering",
+        "summary": "Recommendation generated from quiz answers using local fallback logic.",
+        "roadmap": [
+            "Start with beginner courses in the recommended specialization.",
+            "Build one small project related to the field.",
+            "Take quizzes to measure your progress.",
+            "Use the ATS checker to prepare your resume for related jobs."
+        ]
+    }
+
     prompt = f"""
-Act like a real AI career recommender for CS students. Use the student's interests, skills, goal, and resume. Recommend only from the provided specializations and jobs.
-Return valid JSON only with this schema:
+You are an expert computer science academic advisor.
+
+The user answered a career quiz. Recommend the best computer science specialization.
+
+Important rules:
+- Recommend based on quiz answers, not just existing database rows.
+- You may recommend a specialization even if it is not already in the system.
+- Focus only on computer science fields.
+- Give match percentage.
+- Give clear reason.
+- Give skills to learn.
+- Give possible career paths.
+- If the specialization exists in the system list, set in_system true and use its specialization_id.
+- If it does not exist in the system list, set in_system false and specialization_id null.
+
+Return JSON only in this format:
 {{
-  "recommended_specializations": [{{"id": 1, "name": "", "match_percentage": 0, "score": 0, "matched_skills": [], "missing_skills": [], "reason": ""}}],
-  "recommended_jobs": [{{"id": 1, "title": "", "match_percentage": 0, "score": 0, "matched_skills": [], "missing_skills": [], "reason": "", "linkedin_style_label": "Strong match"}}],
-  "detected_skills": [],
-  "reason": "",
+  "recommended_specializations": [
+    {{
+      "name": "",
+      "match_score": 0,
+      "match_percentage": 0,
+      "reason": "",
+      "skills_to_learn": [],
+      "career_paths": [],
+      "in_system": false,
+      "specialization_id": null
+    }}
+  ],
+  "best_match": "",
+  "summary": "",
   "roadmap": []
 }}
-Scoring rules: skill overlap 45%, goal/specialization relevance 25%, resume evidence 20%, growth potential 10%. Use LinkedIn-style labels: Strong match, Good match, Partial match.
-Interests: {interests}
-Skills: {skills}
-Goal: {goal}
-Resume: {resume_text[:7000]}
-Specializations: {json.dumps(specs, ensure_ascii=False)}
-Jobs: {json.dumps(jobs, ensure_ascii=False)}
+
+User quiz answers:
+{answer_text}
+
+Available system specializations:
+{json.dumps(db_specs, ensure_ascii=False)}
+
+Allowed CS specialization examples:
+{json.dumps(CS_SPECIALIZATION_BANK, ensure_ascii=False)}
 """
     result = ai_json(prompt, fallback)
-    assessment_id = query_db("INSERT INTO assessments (user_id,interests,skills,goal,total_score) VALUES (%s,%s,%s,%s,%s)", (request.current_user["id"], interests, skills, goal, 0), commit=True)
-    for spec in result.get("recommended_specializations", [])[:5]:
-        spec_id = spec.get("id")
-        if spec_id:
-            query_db("""
-                INSERT INTO specialization_recommendations (user_id,assessment_id,spec_id,match_percentage,matched_skills,missing_skills,reason)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
-            """, (request.current_user["id"], assessment_id, spec_id, spec.get("match_percentage", spec.get("score", 0)), json.dumps(spec.get("matched_skills", []), ensure_ascii=False), json.dumps(spec.get("missing_skills", []), ensure_ascii=False), spec.get("reason", "")), commit=True)
-    for job in result.get("recommended_jobs", [])[:8]:
-        job_id = job.get("id")
-        if job_id:
-            query_db("""
-                INSERT INTO job_recommendations (user_id,job_id,match_percentage,matched_skills,missing_skills,reason)
-                VALUES (%s,%s,%s,%s,%s,%s)
-            """, (request.current_user["id"], job_id, job.get("match_percentage", job.get("score", 0)), json.dumps(job.get("matched_skills", []), ensure_ascii=False), json.dumps(job.get("missing_skills", []), ensure_ascii=False), job.get("reason", "")), commit=True)
+
+    apk = db_primary("assessments")
+    assessment_id = insert_dynamic("assessments", {
+        "user_id": user_id_value(request.current_user),
+        "title": "AI Computer Science Specialization Quiz",
+        "description": answer_text,
+        "interests": answer_text,
+        "skills": "",
+        "goal": "",
+        "total_score": 0
+    })
+
+    for item in answers:
+        question = item.get("question", "Recommendation Question") if isinstance(item, dict) else "Recommendation Question"
+        answer = item.get("answer", item.get("selected", item)) if isinstance(item, dict) else item
+        insert_dynamic("assessment_answers", {
+            "assessment_id": assessment_id,
+            "question_text": str(question),
+            "question": str(question),
+            "selected_option": str(answer),
+            "selected_answer": str(answer),
+            "score": 1
+        })
+
+    for rec in result.get("recommended_specializations", []):
+        rec_name = str(rec.get("name", "")).lower().strip()
+        matched_db_spec = None
+        for spec in db_specs:
+            if str(spec.get("name", "")).lower().strip() == rec_name:
+                matched_db_spec = spec
+                break
+        if matched_db_spec:
+            sid = matched_db_spec.get("specialization_id") or matched_db_spec.get("id")
+            rec["in_system"] = True
+            rec["specialization_id"] = sid
+            rec["id"] = sid
+            try:
+                insert_dynamic("recommendations", {
+                    "user_id": user_id_value(request.current_user),
+                    "specialization_id": sid,
+                    "assessment_id": assessment_id,
+                    "match_score": rec.get("match_score", rec.get("match_percentage", 0)),
+                    "explanation": rec.get("reason", "")
+                })
+            except Exception:
+                pass
+        else:
+            rec["in_system"] = False
+            rec["specialization_id"] = None
+            rec["id"] = None
+        if "match_percentage" not in rec:
+            rec["match_percentage"] = rec.get("match_score", 0)
+
     result["assessment_id"] = assessment_id
     return jsonify(result)
 
@@ -2105,36 +2266,26 @@ Jobs: {json.dumps(jobs, ensure_ascii=False)}
 @app.route("/api/recommendations/analyze", methods=["POST"])
 @login_required
 def analyze_recommendations():
-    return recommendations()
+    return submit_recommendation_quiz()
 
 
 @app.route("/api/specialization-recommendations")
 @login_required
 def get_specialization_recommendations():
     rows = query_db("""
-        SELECT sr.*, s.name, s.description, s.image, s.roadmap, s.job_titles
-        FROM specialization_recommendations sr
-        JOIN specializations s ON s.id=sr.spec_id
-        WHERE sr.user_id=%s
-        ORDER BY sr.created_at DESC
-    """, (request.current_user["id"],), fetchall=True)
-    for row in rows:
-        row["image_url"] = upload_url(row.get("image"))
-    return jsonify(rows)
+        SELECT r.*, s.name, s.description, s.image_url, s.roadmap, s.job_titles, s.career_paths
+        FROM recommendations r
+        JOIN specializations s ON s.specialization_id=r.specialization_id
+        WHERE r.user_id=%s
+        ORDER BY r.generated_at DESC
+    """, (user_id_value(request.current_user),), fetchall=True)
+    return jsonify(rows or [])
 
 
 @app.route("/api/job-recommendations")
 @login_required
 def get_job_recommendations():
-    rows = query_db("""
-        SELECT jr.*, j.title, j.description, j.skills, j.specialization, j.salary, j.link
-        FROM job_recommendations jr
-        JOIN jobs j ON j.id=jr.job_id
-        WHERE jr.user_id=%s
-        ORDER BY jr.created_at DESC
-    """, (request.current_user["id"],), fetchall=True)
-    return jsonify(rows)
-
+    return jsonify([])
 
 
 @app.route("/api/admin/specializations", methods=["POST"])
@@ -2184,8 +2335,7 @@ def admin_stats():
 
 
 try:
-    init_db()
-    ensure_runtime_schema()
+    print("Using existing SQR database schema")
 except Exception as e:
     print("Schema startup check skipped:", e)
 
@@ -2206,6 +2356,4 @@ def server_error(error):
 
 
 if __name__ == "__main__":
-    init_db()
-    ensure_runtime_schema()
     app.run(host=os.getenv("FLASK_HOST", "127.0.0.1"), port=int(os.getenv("FLASK_PORT", 5000)), debug=os.getenv("FLASK_DEBUG", "0") == "1")
