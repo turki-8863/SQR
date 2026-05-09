@@ -70,11 +70,11 @@ def strong_password(password):
         return False
     return True
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "port": int(os.getenv("DB_PORT")),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME")
+    "host": os.getenv("DB_HOST", "").strip(),
+    "port": int(os.getenv("DB_PORT", "3306").strip()),
+    "user": os.getenv("DB_USER", "").strip(),
+    "password": os.getenv("DB_PASSWORD", "").strip(),
+    "database": os.getenv("DB_NAME", "").strip(),
 }
 
 pool = None
