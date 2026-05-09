@@ -75,6 +75,8 @@ DB_CONFIG = {
     "user": os.getenv("DB_USER", "").strip(),
     "password": os.getenv("DB_PASSWORD", "").strip(),
     "database": os.getenv("DB_NAME", "").strip(),
+    "connection_timeout": 10,
+    "autocommit": True,
 }
 
 pool = None
