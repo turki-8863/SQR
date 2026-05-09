@@ -1025,7 +1025,9 @@ def signup():
     password = data.get("password", "").strip()
 
     if not name or not email or not password:
-        return jsonify({"error": "Name, email, and password are required"}), 400
+        return jsonify({
+            "error": "Name, email, and password are required"
+        }), 400
 
     if not strong_password(password):
         return jsonify({
@@ -1039,7 +1041,9 @@ def signup():
     )
 
     if existing:
-        return jsonify({"error": "Email already exists"}), 409
+        return jsonify({
+            "error": "Email already exists"
+        }), 409
 
     hashed_password = generate_password_hash(
         password,
@@ -1049,21 +1053,32 @@ def signup():
 
     query_db(
         """
-        INSERT INTO users (name, email, password, role, current_mode, banned)
+        INSERT INTO users
+        (name, email, password, role, current_mode, is_banned)
         VALUES (%s, %s, %s, %s, %s, %s)
         """,
-        (name, email, hashed_password, "student", "student", 0),
+        (
+            name,
+            email,
+            hashed_password,
+            "student",
+            "student",
+            0
+        ),
         commit=True
     )
 
     user = query_db(
-        "SELECT id, name, email, role, current_mode, banned FROM users WHERE email=%s",
+        """
+        SELECT id, name, email, role, current_mode, is_banned
+        FROM users
+        WHERE email=%s
+        """,
         (email,),
         fetchone=True
     )
 
     token = jwt.encode({
-        "user_id": user["id"],
         "id": user["id"],
         "email": user["email"],
         "role": user["role"],
