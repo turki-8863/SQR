@@ -41,7 +41,7 @@ app.config["SECRET_KEY"] = os.getenv("SQR_SECRET_KEY", "CHANGE_THIS_SECRET_KEY_B
 app.config["UPLOAD_FOLDER"] = os.getenv("UPLOAD_FOLDER", "uploads")
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH", 50 * 1024 * 1024))
 AES_SECRET = os.getenv("AES_SECRET_KEY", "CHANGE_THIS_AES_SECRET_KEY_32_CHARS")
-
+SECRET_KEY = os.getenv("SECRET_KEY", "sqr_secret_key")
 def get_aes_key():
     key = hashlib.sha256(AES_SECRET.encode()).digest()
     return base64.urlsafe_b64encode(key)
