@@ -125,26 +125,25 @@ function normalizeFormData(form) {
 function navbar() {
   const user = getUser();
 
-  if (user && user.role === "admin") {
-    document.body.insertAdjacentHTML("afterbegin", `
-      <header class="navbar">
-        <a href="admin.html" class="logo">
-          <span>SQR</span>
-          <small>Admin Panel</small>
-        </a>
+if (user && user.role === "admin") {
+  document.body.insertAdjacentHTML("afterbegin", `
+    <header class="navbar">
+      <a href="admin.html" class="logo">
+        <span>SQR</span>
+        <small>Admin Panel</small>
+      </a>
 
-        <nav class="nav-links">
-          <a href="admin.html">Admin</a>
-          <a href="profile.html">Profile</a>
-        </nav>
+      <nav class="nav-links">
+        <a href="admin.html">Admin</a>
+      </nav>
 
-        <div class="auth-buttons">
-          <button onclick="logout()" class="btn danger">Logout</button>
-        </div>
-      </header>
-    `);
-    return;
-  }
+      <div class="auth-buttons">
+        <button onclick="logout()" class="btn danger">Logout</button>
+      </div>
+    </header>
+  `);
+  return;
+}
 
   document.body.insertAdjacentHTML("afterbegin", `
     <header class="navbar">
@@ -188,12 +187,12 @@ function requireAdmin() {
 
 function blockAdminFromStudentPages() {
   const user = getUser();
+
   if (!user || user.role !== "admin") return;
 
-  const allowedPages = ["admin.html", "profile.html"];
   const currentPage = location.pathname.split("/").pop() || "gp.html";
 
-  if (!allowedPages.includes(currentPage)) {
+  if (currentPage !== "admin.html") {
     window.location.href = "admin.html";
   }
 }
