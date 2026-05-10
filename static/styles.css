@@ -966,3 +966,45 @@ tr:hover{
   color: #22c55e;
   font-weight: 700;
 }
+.required-star{
+  color:#ff3b3b;
+  font-weight:900;
+  margin-left:4px;
+  display:inline-block;
+}
+
+label{
+  font-weight:700;
+  display:block;
+  margin-bottom:8px;
+}
+
+textarea,
+input,
+select{
+  width:100%;
+  margin-top:6px;
+}
+
+.job-card{
+  margin-top:20px;
+  padding:20px;
+  border-radius:18px;
+  background:rgba(255,255,255,0.03);
+}
+
+.recommendation-item{
+  margin-bottom:20px;
+}
+
+.small-hero{
+  padding:40px 20px;
+}
+
+.flex-between{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:20px;
+  flex-wrap:wrap;
+}
