@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <title>SQR | Jobs</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
 </head>
 <body>
 
@@ -13,214 +13,107 @@
 <script>navbar();</script>
 
 <div class="container">
-
   <div id="message"></div>
 
   <section class="hero small-hero">
-    <h1>Career Jobs & Recommendations</h1>
-    <p>
-      Discover jobs based on your specialization, skills, interests, and career goals.
-    </p>
+    <h1>Job Recommendation</h1>
+    <p>Get your top 3 job matches, then browse more jobs below.</p>
   </section>
 
-  <div class="card">
-    <h2>Job Recommendation</h2>
+  <form id="jobRecForm" class="card">
+    <h2>Find Your Best Job Matches</h2>
 
-    <form id="jobRecommendationForm">
+    <label class="required" for="jobSkills">Skills</label>
+    <textarea id="jobSkills" required placeholder="Python, SQL, Linux, React..."></textarea>
 
-      <label>
-        Interests
-        <span class="required-star">*</span>
-      </label>
-      <textarea
-        id="interests"
-        required
-        placeholder="Cybersecurity, AI, Data Engineering..."
-      ></textarea>
+    <label class="required" for="jobInterests">Interests</label>
+    <textarea id="jobInterests" required placeholder="Cybersecurity, AI, Data Engineering..."></textarea>
 
-      <label>
-        Skills
-        <span class="required-star">*</span>
-      </label>
-      <textarea
-        id="skills"
-        required
-        placeholder="Python, SQL, Linux, Networking..."
-      ></textarea>
+    <label class="required" for="jobGoal">Career Goal</label>
+    <textarea id="jobGoal" required placeholder="I want to become a SOC analyst..."></textarea>
 
-      <label>
-        Career Goal
-        <span class="required-star">*</span>
-      </label>
-      <textarea
-        id="goal"
-        required
-        placeholder="I want to become a SOC analyst..."
-      ></textarea>
+    <button type="submit">Get Top 3 Jobs</button>
+  </form>
 
-      <button type="submit" class="btn primary">
-        Get Job Recommendation
-      </button>
-
-    </form>
-  </div>
-
-  <div id="jobRecommendationResult"></div>
+  <div id="topJobsBox"></div>
 
   <div class="card">
-    <div class="flex-between">
-      <h2>Available Jobs</h2>
-
-      <select id="jobSpecFilter">
-        <option value="">All Specializations</option>
-      </select>
-    </div>
+    <h2>Other Jobs</h2>
+    <select id="jobSpecFilter">
+      <option value="">All Specializations</option>
+    </select>
   </div>
 
   <div id="jobsBox" class="grid"></div>
-
 </div>
 
 <script>
-
 document.addEventListener("DOMContentLoaded", () => {
-
-  if (typeof loadJobs === "function") {
-    loadJobs();
-  }
-
-  if (typeof loadSpecializations === "function") {
-    loadSpecializations();
-  }
+  if (typeof loadSpecializations === "function") loadSpecializations();
+  loadAllJobs();
 
   const filter = document.getElementById("jobSpecFilter");
+  if (filter) filter.addEventListener("change", loadAllJobs);
+});
 
-  if (filter) {
-    filter.addEventListener("change", () => {
-      loadJobs();
-    });
-  }
+document.getElementById("jobRecForm").addEventListener("submit", async e => {
+  e.preventDefault();
 
-  const form = document.getElementById("jobRecommendationForm");
+  const profileText = [
+    document.getElementById("jobSkills").value,
+    document.getElementById("jobInterests").value,
+    document.getElementById("jobGoal").value
+  ].join(" ");
 
-  form.addEventListener("submit", async (e) => {
+  try {
+    const jobs = await api("/api/jobs?profile_text=" + encodeURIComponent(profileText));
+    const sorted = jobs.sort((a, b) => (b.match_percentage || 0) - (a.match_percentage || 0));
+    const top3 = sorted.slice(0, 3);
+    const others = sorted.slice(3);
 
-    e.preventDefault();
-
-    const resultBox = document.getElementById("jobRecommendationResult");
-
-    resultBox.innerHTML = `
+    document.getElementById("topJobsBox").innerHTML = `
       <div class="card">
-        <p>Generating recommendations...</p>
+        <h2>Top 3 Recommended Jobs</h2>
+        <div class="grid">
+          ${top3.map(jobCard).join("") || "<p>No recommended jobs found.</p>"}
+        </div>
       </div>
     `;
 
-    try {
-
-      const data = await api("/api/recommendation", {
-        method: "POST",
-        body: JSON.stringify({
-          interests: document.getElementById("interests").value,
-          skills: document.getElementById("skills").value,
-          goal: document.getElementById("goal").value
-        })
-      });
-
-      const jobs = data.recommended_jobs || data.jobs || [];
-
-      const specs = data.recommended_specializations || [];
-
-      resultBox.innerHTML = `
-        <div class="card">
-
-          <h2>Recommended Specializations</h2>
-
-          ${
-            specs.length
-            ? specs.map(spec => `
-              <div class="recommendation-item">
-                <h3>${spec.name || spec.specialization}</h3>
-
-                <p>
-                  Match:
-                  <b>${spec.match_percentage || spec.score || 0}%</b>
-                </p>
-
-                <p>${spec.reason || ""}</p>
-              </div>
-            `).join("")
-            : `<p>No specialization recommendations found.</p>`
-          }
-
-          <hr>
-
-          <h2>Recommended Jobs</h2>
-
-          ${
-            jobs.length
-            ? jobs.map(job => `
-              <div class="job-card">
-
-                <h3>${job.title || "Job Role"}</h3>
-
-                <p>
-                  <b>Specialization:</b>
-                  ${job.specialization || ""}
-                </p>
-
-                <p>
-                  <b>Match:</b>
-                  ${job.match_percentage || 0}%
-                </p>
-
-                <p>${job.description || ""}</p>
-
-                <p>
-                  <b>Skills:</b>
-                  ${job.skills || job.required_skills || ""}
-                </p>
-
-                ${
-                  job.salary
-                  ? `<p><b>Salary:</b> ${job.salary}</p>`
-                  : ""
-                }
-
-                ${
-                  job.link
-                  ? `
-                    <a
-                      href="${job.link}"
-                      target="_blank"
-                      class="btn primary"
-                    >
-                      Apply Now
-                    </a>
-                  `
-                  : ""
-                }
-
-              </div>
-            `).join("")
-            : `<p>No job recommendations found.</p>`
-          }
-
-        </div>
-      `;
-
-    } catch (err) {
-
-      resultBox.innerHTML = `
-        <div class="card error-text">
-          ${err.message}
-        </div>
-      `;
-    }
-
-  });
-
+    document.getElementById("jobsBox").innerHTML =
+      others.map(jobCard).join("") || "<p>No other jobs found.</p>";
+  } catch (err) {
+    showMessage(err.message);
+  }
 });
 
+async function loadAllJobs() {
+  try {
+    const spec = document.getElementById("jobSpecFilter")?.value || "";
+    const url = spec ? `/api/jobs?specialization=${encodeURIComponent(spec)}` : "/api/jobs";
+    const jobs = await api(url);
+
+    document.getElementById("jobsBox").innerHTML =
+      jobs.map(jobCard).join("") || "<p>No jobs found.</p>";
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+
+function jobCard(j) {
+  return `
+    <div class="card job-card">
+      <h3>${j.title || "Job"}</h3>
+      <p><b>Match:</b> ${j.match_percentage || 0}%</p>
+      <p><b>Label:</b> ${j.match_label || ""}</p>
+      <p>${j.description || ""}</p>
+      <p><b>Skills:</b> ${j.skills || j.required_skills || ""}</p>
+      <p><b>Specialization:</b> ${j.specialization || j.specialization_name || ""}</p>
+      ${j.salary ? `<p><b>Salary:</b> ${j.salary}</p>` : ""}
+      ${j.link ? `<a href="${j.link}" target="_blank" class="btn primary">Apply / Details</a>` : ""}
+    </div>
+  `;
+}
 </script>
 
 </body>
