@@ -34,7 +34,8 @@ try:
 except Exception:
     PyPDF2 = None
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"), static_folder=os.path.join(BASE_DIR, "static"))
 CORS(app, resources={r"/api/*": {"origins": os.getenv("CORS_ORIGINS", "*").split(",")}})
 
 app.config["SECRET_KEY"] = os.getenv("SQR_SECRET_KEY", "CHANGE_THIS_SECRET_KEY_BEFORE_DEPLOYMENT")
@@ -908,6 +909,112 @@ def ensure_runtime_schema():
         print("Runtime schema update skipped:", e)
 
 
+
+def ensure_compatibility_schema():
+    try:
+        if table_exists("users"):
+            add_column_if_missing("users", "id", "id INT NULL")
+            add_column_if_missing("users", "banned", "banned TINYINT DEFAULT 0")
+            add_column_if_missing("users", "current_mode", "current_mode ENUM('student','admin') DEFAULT 'student'")
+            add_column_if_missing("users", "skills", "skills TEXT")
+            add_column_if_missing("users", "interests", "interests TEXT")
+            add_column_if_missing("users", "goal", "goal TEXT")
+            if column_exists("users", "user_id"):
+                exec_db("UPDATE users SET id=user_id WHERE id IS NULL")
+            if column_exists("users", "is_banned"):
+                exec_db("UPDATE users SET banned=is_banned WHERE banned IS NULL OR banned<>is_banned")
+        if table_exists("specializations"):
+            add_column_if_missing("specializations", "id", "id INT NULL")
+            add_column_if_missing("specializations", "skills", "skills TEXT")
+            add_column_if_missing("specializations", "image", "image VARCHAR(255)")
+            add_column_if_missing("specializations", "roadmap", "roadmap TEXT")
+            add_column_if_missing("specializations", "job_titles", "job_titles TEXT")
+            add_column_if_missing("specializations", "career_paths", "career_paths TEXT")
+            if column_exists("specializations", "specialization_id"):
+                exec_db("UPDATE specializations SET id=specialization_id WHERE id IS NULL")
+            if column_exists("specializations", "image_url"):
+                exec_db("UPDATE specializations SET image=image_url WHERE (image IS NULL OR image='') AND image_url IS NOT NULL")
+        if table_exists("courses"):
+            add_column_if_missing("courses", "id", "id INT NULL")
+            add_column_if_missing("courses", "spec_id", "spec_id INT NULL")
+            add_column_if_missing("courses", "link", "link VARCHAR(255)")
+            add_column_if_missing("courses", "image", "image VARCHAR(255)")
+            add_column_if_missing("courses", "video", "video VARCHAR(255)")
+            add_column_if_missing("courses", "level", "level VARCHAR(50) DEFAULT 'beginner'")
+            if column_exists("courses", "course_id"):
+                exec_db("UPDATE courses SET id=course_id WHERE id IS NULL")
+            if column_exists("courses", "specialization_id"):
+                exec_db("UPDATE courses SET spec_id=specialization_id WHERE spec_id IS NULL")
+            if column_exists("courses", "course_link"):
+                exec_db("UPDATE courses SET link=course_link WHERE (link IS NULL OR link='') AND course_link IS NOT NULL")
+            if column_exists("courses", "image_url"):
+                exec_db("UPDATE courses SET image=image_url WHERE (image IS NULL OR image='') AND image_url IS NOT NULL")
+            if column_exists("courses", "video_url"):
+                exec_db("UPDATE courses SET video=video_url WHERE (video IS NULL OR video='') AND video_url IS NOT NULL")
+        if table_exists("quizzes"):
+            add_column_if_missing("quizzes", "id", "id INT NULL")
+            add_column_if_missing("quizzes", "spec_id", "spec_id INT NULL")
+            add_column_if_missing("quizzes", "course_id", "course_id INT NULL")
+            if column_exists("quizzes", "quiz_id"):
+                exec_db("UPDATE quizzes SET id=quiz_id WHERE id IS NULL")
+            if column_exists("quizzes", "specialization_id"):
+                exec_db("UPDATE quizzes SET spec_id=specialization_id WHERE spec_id IS NULL")
+        if table_exists("quiz_questions"):
+            add_column_if_missing("quiz_questions", "id", "id INT NULL")
+            add_column_if_missing("quiz_questions", "question", "question TEXT")
+            add_column_if_missing("quiz_questions", "option1", "option1 VARCHAR(255)")
+            add_column_if_missing("quiz_questions", "option2", "option2 VARCHAR(255)")
+            add_column_if_missing("quiz_questions", "option3", "option3 VARCHAR(255)")
+            add_column_if_missing("quiz_questions", "option4", "option4 VARCHAR(255)")
+            add_column_if_missing("quiz_questions", "answer", "answer VARCHAR(255)")
+            if column_exists("quiz_questions", "question_id"):
+                exec_db("UPDATE quiz_questions SET id=question_id WHERE id IS NULL")
+            if column_exists("quiz_questions", "question_text"):
+                exec_db("UPDATE quiz_questions SET question=question_text WHERE (question IS NULL OR question='') AND question_text IS NOT NULL")
+            if column_exists("quiz_questions", "option_a"):
+                exec_db("UPDATE quiz_questions SET option1=option_a WHERE (option1 IS NULL OR option1='') AND option_a IS NOT NULL")
+            if column_exists("quiz_questions", "option_b"):
+                exec_db("UPDATE quiz_questions SET option2=option_b WHERE (option2 IS NULL OR option2='') AND option_b IS NOT NULL")
+            if column_exists("quiz_questions", "option_c"):
+                exec_db("UPDATE quiz_questions SET option3=option_c WHERE (option3 IS NULL OR option3='') AND option_c IS NOT NULL")
+            if column_exists("quiz_questions", "option_d"):
+                exec_db("UPDATE quiz_questions SET option4=option_d WHERE (option4 IS NULL OR option4='') AND option_d IS NOT NULL")
+            if column_exists("quiz_questions", "correct_answer"):
+                exec_db("UPDATE quiz_questions SET answer=correct_answer WHERE (answer IS NULL OR answer='') AND correct_answer IS NOT NULL")
+        if table_exists("course_enrollments"):
+            add_column_if_missing("course_enrollments", "progress", "progress INT DEFAULT 0")
+            if column_exists("course_enrollments", "progress_percentage"):
+                exec_db("UPDATE course_enrollments SET progress=progress_percentage WHERE progress IS NULL OR progress=0")
+        if table_exists("specialization_enrollments"):
+            add_column_if_missing("specialization_enrollments", "spec_id", "spec_id INT NULL")
+            add_column_if_missing("specialization_enrollments", "progress", "progress INT DEFAULT 0")
+            if column_exists("specialization_enrollments", "specialization_id"):
+                exec_db("UPDATE specialization_enrollments SET spec_id=specialization_id WHERE spec_id IS NULL")
+            if column_exists("specialization_enrollments", "progress_percentage"):
+                exec_db("UPDATE specialization_enrollments SET progress=progress_percentage WHERE progress IS NULL OR progress=0")
+        if table_exists("quiz_attempts"):
+            add_column_if_missing("quiz_attempts", "course_id", "course_id INT NULL")
+            add_column_if_missing("quiz_attempts", "answers_json", "answers_json LONGTEXT NULL")
+            add_column_if_missing("quiz_attempts", "passed", "passed TINYINT DEFAULT 0")
+        if table_exists("jobs"):
+            add_column_if_missing("jobs", "id", "id INT NULL")
+            add_column_if_missing("jobs", "skills", "skills TEXT NULL")
+            add_column_if_missing("jobs", "specialization", "specialization VARCHAR(150) NULL")
+            add_column_if_missing("jobs", "salary", "salary VARCHAR(100) NULL")
+            add_column_if_missing("jobs", "link", "link VARCHAR(255) NULL")
+            if column_exists("jobs", "job_id"):
+                exec_db("UPDATE jobs SET id=job_id WHERE id IS NULL")
+            if column_exists("jobs", "required_skills"):
+                exec_db("UPDATE jobs SET skills=required_skills WHERE (skills IS NULL OR skills='') AND required_skills IS NOT NULL")
+            if column_exists("jobs", "specialization_id"):
+                exec_db("UPDATE jobs SET specialization=specialization_id WHERE (specialization IS NULL OR specialization='') AND specialization_id IS NOT NULL")
+            if column_exists("jobs", "average_salary"):
+                exec_db("UPDATE jobs SET salary=average_salary WHERE (salary IS NULL OR salary='') AND average_salary IS NOT NULL")
+            if column_exists("jobs", "job_link"):
+                exec_db("UPDATE jobs SET link=job_link WHERE (link IS NULL OR link='') AND job_link IS NOT NULL")
+    except Exception as e:
+        print("Compatibility schema update skipped:", e)
+
 def recalculate_course_progress(user_id, course_id):
     course = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
     if not course:
@@ -961,21 +1068,52 @@ def recalculate_specialization_progress(user_id, spec_id):
     return progress
 
 
+def render_page(template_name):
+    template_path = os.path.join(BASE_DIR, "templates", template_name)
+    root_path = os.path.join(BASE_DIR, template_name)
+    if os.path.exists(template_path):
+        return render_template(template_name)
+    if os.path.exists(root_path):
+        return send_from_directory(BASE_DIR, template_name)
+    return jsonify({
+        "message": "SQR Backend is running, but the HTML template was not found",
+        "missing_template": template_name,
+        "expected_location": os.path.join("templates", template_name),
+        "root_path": BASE_DIR,
+        "templates_files": os.listdir(os.path.join(BASE_DIR, "templates")) if os.path.exists(os.path.join(BASE_DIR, "templates")) else []
+    }), 500
+
+
 @app.route("/")
 def home():
-    return render_template("gp.html")
+    return render_page("gp.html")
 
 
 def page_or_json(template_name):
-    try:
-        return render_template(template_name)
-    except Exception:
-        return jsonify({"message": "SQR Backend is running", "page": template_name})
+    return render_page(template_name)
+
+
+@app.route("/debug-files")
+def debug_files():
+    templates_path = os.path.join(BASE_DIR, "templates")
+    static_path = os.path.join(BASE_DIR, "static")
+    return jsonify({
+        "cwd": os.getcwd(),
+        "base_dir": BASE_DIR,
+        "root_path": app.root_path,
+        "template_folder": app.template_folder,
+        "static_folder": app.static_folder,
+        "root_files": os.listdir(BASE_DIR),
+        "templates_exists": os.path.exists(templates_path),
+        "templates_files": os.listdir(templates_path) if os.path.exists(templates_path) else [],
+        "static_exists": os.path.exists(static_path),
+        "static_files": os.listdir(static_path) if os.path.exists(static_path) else []
+    })
 
 
 @app.route("/home")
 def page_home():
-    return render_template("gp.html")
+    return render_page("gp.html")
 
 
 @app.route("/specializations")
@@ -1147,7 +1285,10 @@ def switch_student_mode():
 @app.route("/api/admin/users")
 @admin_required
 def admin_users():
-    return jsonify(query_db("SELECT id,name,email,role,banned,created_at FROM users ORDER BY id DESC", fetchall=True))
+    upk = db_primary("users")
+    order_col = upk
+    users = query_db(f"SELECT * FROM users ORDER BY `{order_col}` DESC", fetchall=True)
+    return jsonify([clean_user(u) for u in users])
 
 
 @app.route("/api/admin/users/<int:user_id>/make-admin", methods=["PUT"])
@@ -1168,14 +1309,26 @@ def make_student(user_id):
 @app.route("/api/admin/users/<int:user_id>/ban", methods=["PUT"])
 @admin_required
 def ban_user(user_id):
-    exec_db("UPDATE users SET banned=1 WHERE id=%s", (user_id,))
+    upk = db_primary("users")
+    updates = []
+    if column_exists("users", "banned"):
+        updates.append("banned=1")
+    if column_exists("users", "is_banned"):
+        updates.append("is_banned=1")
+    exec_db(f"UPDATE users SET {','.join(updates)} WHERE `{upk}`=%s", (user_id,))
     return jsonify({"message": "User banned"})
 
 
 @app.route("/api/admin/users/<int:user_id>/unban", methods=["PUT"])
 @admin_required
 def unban_user(user_id):
-    exec_db("UPDATE users SET banned=0 WHERE id=%s", (user_id,))
+    upk = db_primary("users")
+    updates = []
+    if column_exists("users", "banned"):
+        updates.append("banned=0")
+    if column_exists("users", "is_banned"):
+        updates.append("is_banned=0")
+    exec_db(f"UPDATE users SET {','.join(updates)} WHERE `{upk}`=%s", (user_id,))
     return jsonify({"message": "User unbanned"})
 
 
@@ -2394,9 +2547,18 @@ def admin_stats():
 
 
 try:
-    print("Using existing SQR database schema")
+    ensure_compatibility_schema()
+    ensure_runtime_schema()
+    print("SQR database schema compatibility checked")
 except Exception as e:
     print("Schema startup check skipped:", e)
+
+
+@app.errorhandler(Exception)
+def show_real_error(error):
+    import traceback
+    traceback.print_exc()
+    return jsonify({"error": "Server error", "details": str(error), "trace": traceback.format_exc()}), 500
 
 
 @app.errorhandler(404)
@@ -2411,7 +2573,9 @@ def too_large(error):
 
 @app.errorhandler(500)
 def server_error(error):
-    return jsonify({"error": "Server error", "details": str(error)}), 500
+    import traceback
+    traceback.print_exc()
+    return jsonify({"error": "Server error", "details": str(error), "trace": traceback.format_exc()}), 500
 
 
 if __name__ == "__main__":
