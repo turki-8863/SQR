@@ -125,25 +125,25 @@ function normalizeFormData(form) {
 function navbar() {
   const user = getUser();
 
-if (user && user.role === "admin") {
-  document.body.insertAdjacentHTML("afterbegin", `
-    <header class="navbar">
-      <a href="admin.html" class="logo">
-        <span>SQR</span>
-        <small>Admin Panel</small>
-      </a>
+  if (user && user.role === "admin") {
+    document.body.insertAdjacentHTML("afterbegin", `
+      <header class="navbar">
+        <a href="admin.html" class="logo">
+          <span>SQR</span>
+          <small>Admin Panel</small>
+        </a>
 
-      <nav class="nav-links">
-        <a href="admin.html">Admin</a>
-      </nav>
+        <nav class="nav-links">
+          <a href="admin.html">Admin</a>
+        </nav>
 
-      <div class="auth-buttons">
-        <button onclick="logout()" class="btn danger">Logout</button>
-      </div>
-    </header>
-  `);
-  return;
-}
+        <div class="auth-buttons">
+          <button onclick="logout()" class="btn danger">Logout</button>
+        </div>
+      </header>
+    `);
+    return;
+  }
 
   document.body.insertAdjacentHTML("afterbegin", `
     <header class="navbar">
@@ -347,11 +347,22 @@ async function loadProgress(profileData = null) {
 
 async function loadSpecializations() {
   const box = document.getElementById("specializationsBox");
+
   const select = document.getElementById("specSelect");
   const courseSelect = document.getElementById("courseSpecFilter");
   const jobSelect = document.getElementById("jobSpecFilter");
 
-  if (!box && !select && !courseSelect && !jobSelect) return;
+  const courseAdminSelect =
+    document.getElementById("courseSpecialization") ||
+    document.getElementById("courseSpec") ||
+    document.getElementById("courseSpecSelect");
+
+  const jobAdminSelect =
+    document.getElementById("jobSpecialization") ||
+    document.getElementById("jobSpec") ||
+    document.getElementById("jobSpecSelect");
+
+  if (!box && !select && !courseSelect && !jobSelect && !courseAdminSelect && !jobAdminSelect) return;
 
   try {
     const raw = await api("/api/specializations");
@@ -371,7 +382,7 @@ async function loadSpecializations() {
       <option value="${getId(s)}">${s.name}</option>
     `).join("");
 
-    [select, courseSelect, jobSelect].forEach(el => {
+    [select, courseSelect, jobSelect, courseAdminSelect, jobAdminSelect].forEach(el => {
       if (el) el.innerHTML = options;
     });
   } catch (err) {
@@ -448,7 +459,7 @@ async function loadCourses() {
         ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
         <h3>${c.title || ""}</h3>
         <p>${c.description || ""}</p>
-        <span class="badge">${c.level || "Beginner"}</span>
+        <span class="badge">${c.level || c.difficulty || "Beginner"}</span>
       </div>
     `).join("") || `<p>No courses yet.</p>`;
   } catch (err) {
@@ -486,7 +497,7 @@ async function loadCourseDetails() {
         ${course.image || course.image_url ? `<img src="${fileUrl(course.image_url || course.image)}" class="card-img">` : ""}
         <h1>${course.title || ""}</h1>
         <p>${course.description || ""}</p>
-        <p><b>Level:</b> ${course.level_badge?.label || course.level || "Beginner"}</p>
+        <p><b>Level:</b> ${course.level_badge?.label || course.level || course.difficulty || "Beginner"}</p>
         ${course.link || course.course_link ? `<a href="${course.link || course.course_link}" target="_blank" class="btn primary">Open Course</a>` : ""}
         <button onclick="completeCourse(${getId(course)})">Mark Completed</button>
       </div>
@@ -927,6 +938,27 @@ async function loadAdmin() {
   setupAdminForms();
   loadAdminUsers();
   loadSpecializations();
+  loadAdminStats();
+}
+
+async function loadAdminStats() {
+  const box = document.getElementById("adminStatsBox");
+  if (!box) return;
+
+  try {
+    const data = await apiTry(["/api/admin/stats", "/api/stats"]);
+
+    box.innerHTML = `
+      <div class="grid">
+        <div class="card"><h3>Users</h3><p>${data.users || data.total_users || 0}</p></div>
+        <div class="card"><h3>Specializations</h3><p>${data.specializations || data.total_specializations || 0}</p></div>
+        <div class="card"><h3>Courses</h3><p>${data.courses || data.total_courses || 0}</p></div>
+        <div class="card"><h3>Jobs</h3><p>${data.jobs || data.total_jobs || 0}</p></div>
+      </div>
+    `;
+  } catch {
+    box.innerHTML = "";
+  }
 }
 
 function setupAdminForms() {
@@ -951,6 +983,7 @@ function setupAdminForms() {
         showMessage("Specialization added", "success");
         specForm.reset();
         loadSpecializations();
+        loadAdminStats();
       } catch (err) {
         showMessage(err.message);
       }
@@ -963,31 +996,72 @@ function setupAdminForms() {
     courseForm.addEventListener("submit", async e => {
       e.preventDefault();
 
-      const formData = new FormData(courseForm);
+      const data = normalizeFormData(courseForm);
 
       const specValue =
-        formData.get("specialization_id")
-        || formData.get("spec_id")
-        || formData.get("specialization")
-        || document.getElementById("courseSpec")?.value
-        || document.getElementById("courseSpecSelect")?.value
-        || document.getElementById("specSelect")?.value
-        || "";
+        data.specialization_id ||
+        data.spec_id ||
+        data.specialization ||
+        document.getElementById("courseSpecialization")?.value ||
+        document.getElementById("courseSpec")?.value ||
+        document.getElementById("courseSpecSelect")?.value ||
+        document.getElementById("specSelect")?.value ||
+        "";
 
-      if (specValue) {
-        formData.set("specialization_id", specValue);
-        formData.set("spec_id", specValue);
+      if (!specValue) {
+        showMessage("Please choose a specialization for this course");
+        return;
+      }
+
+      data.specialization_id = specValue;
+      data.spec_id = specValue;
+
+      data.title =
+        data.title ||
+        data.course_title ||
+        document.getElementById("courseTitle")?.value ||
+        "";
+
+      data.description =
+        data.description ||
+        document.getElementById("courseDescription")?.value ||
+        "";
+
+      data.level =
+        data.level ||
+        data.difficulty ||
+        document.getElementById("courseDifficulty")?.value ||
+        "Beginner";
+
+      data.difficulty = data.level;
+
+      data.image_url =
+        data.image_url ||
+        data.image ||
+        document.getElementById("courseImage")?.value ||
+        "";
+
+      data.link =
+        data.link ||
+        data.course_link ||
+        document.getElementById("courseLink")?.value ||
+        "";
+
+      if (!data.title.trim()) {
+        showMessage("Course title is required");
+        return;
       }
 
       try {
         await apiTry(["/api/courses", "/api/admin/courses"], {
           method: "POST",
-          body: formData
+          body: JSON.stringify(data)
         });
 
         showMessage("Course added", "success");
         courseForm.reset();
         loadCourses();
+        loadAdminStats();
       } catch (err) {
         showMessage(err.message);
       }
@@ -1034,17 +1108,55 @@ function setupAdminForms() {
       const data = normalizeFormData(jobForm);
 
       const specValue =
-        data.specialization_id
-        || data.spec_id
-        || document.getElementById("jobSpec")?.value
-        || document.getElementById("jobSpecSelect")?.value
-        || document.getElementById("jobSpecFilter")?.value
-        || "";
+        data.specialization_id ||
+        data.spec_id ||
+        data.specialization ||
+        document.getElementById("jobSpecialization")?.value ||
+        document.getElementById("jobSpec")?.value ||
+        document.getElementById("jobSpecSelect")?.value ||
+        "";
 
-      if (specValue) {
-        data.specialization_id = specValue;
-        data.spec_id = specValue;
-        data.specialization = specValue;
+      if (!specValue) {
+        showMessage("Please choose a specialization for this job");
+        return;
+      }
+
+      data.specialization_id = specValue;
+      data.spec_id = specValue;
+      data.specialization = specValue;
+
+      data.title =
+        data.title ||
+        data.job_title ||
+        document.getElementById("jobTitle")?.value ||
+        "";
+
+      data.description =
+        data.description ||
+        document.getElementById("jobDescription")?.value ||
+        "";
+
+      data.required_skills =
+        data.required_skills ||
+        data.skills ||
+        document.getElementById("jobSkills")?.value ||
+        "";
+
+      data.skills = data.required_skills;
+
+      data.salary =
+        data.salary ||
+        document.getElementById("jobSalary")?.value ||
+        "";
+
+      data.link =
+        data.link ||
+        document.getElementById("jobLink")?.value ||
+        "";
+
+      if (!data.title.trim()) {
+        showMessage("Job title is required");
+        return;
       }
 
       try {
@@ -1056,6 +1168,7 @@ function setupAdminForms() {
         showMessage("Job added", "success");
         jobForm.reset();
         loadJobs();
+        loadAdminStats();
       } catch (err) {
         showMessage(err.message);
       }
@@ -1121,6 +1234,7 @@ async function makeAdmin(id) {
   try {
     await api(`/api/admin/users/${id}/make-admin`, { method: "PUT" });
     loadAdminUsers();
+    loadAdminStats();
   } catch (err) {
     alert(err.message);
   }
@@ -1130,6 +1244,7 @@ async function makeStudent(id) {
   try {
     await api(`/api/admin/users/${id}/make-student`, { method: "PUT" });
     loadAdminUsers();
+    loadAdminStats();
   } catch (err) {
     alert(err.message);
   }
@@ -1170,4 +1285,3 @@ window.copyGeneratedResume = copyGeneratedResume;
 window.exportResumePdf = exportResumePdf;
 window.exportResumeDocx = exportResumeDocx;
 window.setupAtsChecker = setupAtsChecker;
-window.blockAdminFromStudentPages = blockAdminFromStudentPages;
