@@ -970,16 +970,13 @@ function setupAdminForms() {
 
   if (specForm && !specForm.dataset.ready) {
     specForm.dataset.ready = "1";
-
     specForm.addEventListener("submit", async e => {
       e.preventDefault();
-
       try {
         await api("/api/specializations", {
           method: "POST",
           body: new FormData(specForm)
         });
-
         showMessage("Specialization added", "success");
         specForm.reset();
         loadSpecializations();
@@ -992,20 +989,25 @@ function setupAdminForms() {
 
   if (courseForm && !courseForm.dataset.ready) {
     courseForm.dataset.ready = "1";
-
     courseForm.addEventListener("submit", async e => {
       e.preventDefault();
 
-      const data = normalizeFormData(courseForm);
+      const formData = new FormData(courseForm);
 
       const specValue =
-        data.specialization_id ||
-        data.spec_id ||
-        data.specialization ||
+        formData.get("spec_id") ||
+        formData.get("specialization_id") ||
+        formData.get("specialization") ||
         document.getElementById("courseSpecialization")?.value ||
         document.getElementById("courseSpec")?.value ||
         document.getElementById("courseSpecSelect")?.value ||
         document.getElementById("specSelect")?.value ||
+        "";
+
+      const titleValue =
+        formData.get("title") ||
+        formData.get("course_title") ||
+        document.getElementById("courseTitle")?.value ||
         "";
 
       if (!specValue) {
@@ -1013,49 +1015,19 @@ function setupAdminForms() {
         return;
       }
 
-      data.specialization_id = specValue;
-      data.spec_id = specValue;
-
-      data.title =
-        data.title ||
-        data.course_title ||
-        document.getElementById("courseTitle")?.value ||
-        "";
-
-      data.description =
-        data.description ||
-        document.getElementById("courseDescription")?.value ||
-        "";
-
-      data.level =
-        data.level ||
-        data.difficulty ||
-        document.getElementById("courseDifficulty")?.value ||
-        "Beginner";
-
-      data.difficulty = data.level;
-
-      data.image_url =
-        data.image_url ||
-        data.image ||
-        document.getElementById("courseImage")?.value ||
-        "";
-
-      data.link =
-        data.link ||
-        data.course_link ||
-        document.getElementById("courseLink")?.value ||
-        "";
-
-      if (!data.title.trim()) {
+      if (!titleValue.trim()) {
         showMessage("Course title is required");
         return;
       }
 
+      formData.set("spec_id", specValue);
+      formData.set("specialization_id", specValue);
+      formData.set("title", titleValue.trim());
+
       try {
         await apiTry(["/api/courses", "/api/admin/courses"], {
           method: "POST",
-          body: JSON.stringify(data)
+          body: formData
         });
 
         showMessage("Course added", "success");
@@ -1070,7 +1042,6 @@ function setupAdminForms() {
 
   if (quizForm && !quizForm.dataset.ready) {
     quizForm.dataset.ready = "1";
-
     quizForm.addEventListener("submit", async e => {
       e.preventDefault();
 
@@ -1101,19 +1072,30 @@ function setupAdminForms() {
 
   if (jobForm && !jobForm.dataset.ready) {
     jobForm.dataset.ready = "1";
-
     jobForm.addEventListener("submit", async e => {
       e.preventDefault();
 
-      const data = normalizeFormData(jobForm);
+      const formData = new FormData(jobForm);
 
       const specValue =
-        data.specialization_id ||
-        data.spec_id ||
-        data.specialization ||
+        formData.get("spec_id") ||
+        formData.get("specialization_id") ||
+        formData.get("specialization") ||
         document.getElementById("jobSpecialization")?.value ||
         document.getElementById("jobSpec")?.value ||
         document.getElementById("jobSpecSelect")?.value ||
+        "";
+
+      const titleValue =
+        formData.get("title") ||
+        formData.get("job_title") ||
+        document.getElementById("jobTitle")?.value ||
+        "";
+
+      const skillsValue =
+        formData.get("required_skills") ||
+        formData.get("skills") ||
+        document.getElementById("jobSkills")?.value ||
         "";
 
       if (!specValue) {
@@ -1121,48 +1103,22 @@ function setupAdminForms() {
         return;
       }
 
-      data.specialization_id = specValue;
-      data.spec_id = specValue;
-      data.specialization = specValue;
-
-      data.title =
-        data.title ||
-        data.job_title ||
-        document.getElementById("jobTitle")?.value ||
-        "";
-
-      data.description =
-        data.description ||
-        document.getElementById("jobDescription")?.value ||
-        "";
-
-      data.required_skills =
-        data.required_skills ||
-        data.skills ||
-        document.getElementById("jobSkills")?.value ||
-        "";
-
-      data.skills = data.required_skills;
-
-      data.salary =
-        data.salary ||
-        document.getElementById("jobSalary")?.value ||
-        "";
-
-      data.link =
-        data.link ||
-        document.getElementById("jobLink")?.value ||
-        "";
-
-      if (!data.title.trim()) {
+      if (!titleValue.trim()) {
         showMessage("Job title is required");
         return;
       }
 
+      formData.set("spec_id", specValue);
+      formData.set("specialization_id", specValue);
+      formData.set("specialization", specValue);
+      formData.set("title", titleValue.trim());
+      formData.set("required_skills", skillsValue);
+      formData.set("skills", skillsValue);
+
       try {
         await apiTry(["/api/jobs", "/api/admin/jobs"], {
           method: "POST",
-          body: JSON.stringify(data)
+          body: formData
         });
 
         showMessage("Job added", "success");
@@ -1177,7 +1133,6 @@ function setupAdminForms() {
 
   if (certForm && !certForm.dataset.ready) {
     certForm.dataset.ready = "1";
-
     certForm.addEventListener("submit", async e => {
       e.preventDefault();
 
@@ -1198,7 +1153,6 @@ function setupAdminForms() {
     });
   }
 }
-
 async function loadAdminUsers() {
   const box = document.getElementById("usersBox");
   if (!box) return;
