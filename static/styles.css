@@ -872,5 +872,97 @@ tr:hover{
     text-align:center;
   }
 }
-/* SQR Render + enrollment/progress enhancements */
 .spec-card,.course-card,.quiz-card{cursor:pointer}.detail-box{background:white;border:1px solid var(--border);border-radius:26px;padding:28px;margin-top:24px;box-shadow:var(--shadow)}.detail-header{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start;margin-bottom:18px}.detail-image{width:100%;max-height:280px;object-fit:cover;border-radius:22px;margin:12px 0 18px;border:1px solid var(--border)}.detail-section{margin-top:20px;padding-top:18px;border-top:1px solid var(--border)}.roadmap-box{background:#eef4ff;border:1px solid #dbeafe;border-radius:18px;padding:18px;color:#1e3a8a;font-weight:700;line-height:1.7}.job-title-list{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.job-title-list span{background:#f3e8ff;color:#6d28d9;border-radius:999px;padding:8px 12px;font-size:13px;font-weight:900}.progress-label{display:flex;justify-content:space-between;gap:12px;color:#374151;font-weight:800;font-size:13px;margin-top:8px}.progress-card{background:white;border:1px solid var(--border);border-radius:22px;padding:22px;box-shadow:var(--shadow)}.mode-switch{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:white;border:1px solid var(--border);border-radius:18px;padding:12px;box-shadow:var(--shadow);margin:18px 0}.mode-pill{padding:8px 12px;border-radius:999px;font-size:12px;font-weight:900;background:#eef4ff;color:var(--primary)}.course-meta,.spec-meta{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.action-row,.card-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px}.quiz-question{background:white;border:1px solid var(--border);border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 8px 18px rgba(17,24,39,.05)}.quiz-options{display:grid;gap:10px;margin-top:12px}.quiz-options label{display:flex;align-items:center;gap:10px;background:#f8fbff;border:1px solid var(--border);border-radius:14px;padding:12px;cursor:pointer;margin:0}.quiz-options input{width:auto;margin:0}button.success,.btn.success{background:linear-gradient(135deg,#16a34a,#22c55e);color:white}@media(max-width:900px){.detail-header{grid-template-columns:1fr}}@media(max-width:700px){.card,.feature-card,form,.detail-box{padding:20px}}
+.required-star {
+  color: #ef4444;
+  font-weight: 900;
+  margin-left: 4px;
+}
+
+.form-help,
+.password-rules {
+  font-size: 0.88rem;
+  color: #64748b;
+  margin: 6px 0 14px;
+  line-height: 1.6;
+}
+
+.password-rules ul {
+  margin: 6px 0 0 18px;
+  padding: 0;
+}
+
+.password-rules li {
+  margin: 3px 0;
+}
+
+.status-banned {
+  color: #ef4444;
+  font-weight: 800;
+}
+
+.status-active {
+  color: #22c55e;
+  font-weight: 800;
+}
+
+.card-mini {
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-mini:hover {
+  transform: translateY(-6px);
+}
+
+.card-mini img,
+.card-img {
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+.detail-hero {
+  padding: 28px;
+  border-radius: 24px;
+  margin-bottom: 24px;
+}
+
+.detail-hero img {
+  width: 100%;
+  max-height: 330px;
+  object-fit: cover;
+  border-radius: 22px;
+  margin-bottom: 18px;
+}
+
+.quiz-inside-course {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.badge-required {
+  color: #ef4444;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.admin-status-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.error-text {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.success-text {
+  color: #22c55e;
+  font-weight: 700;
+}
