@@ -988,6 +988,16 @@ def page_courses():
     return page_or_json("Courses.html")
 
 
+@app.route("/specialization-details")
+def page_specialization_details():
+    return page_or_json("specialization-details.html")
+
+
+@app.route("/course-details")
+def page_course_details():
+    return page_or_json("course-details.html")
+
+
 @app.route("/quizzes")
 def page_quizzes():
     return page_or_json("Quiz.html")
@@ -1037,6 +1047,8 @@ def legacy_html_pages(page):
         "Sepecialization": "Specialization.html",
         "Courses": "Courses.html",
         "courses": "Courses.html",
+        "specialization-details": "specialization-details.html",
+        "course-details": "course-details.html",
         "Quiz": "Quiz.html",
         "ATS": "ATS.html",
         "ats": "ATS.html",
@@ -1293,6 +1305,25 @@ def add_course():
         return jsonify({"error": "spec_id and title are required"}), 400
     course_id = query_db("INSERT INTO courses (spec_id,title,description,link,image,video,level) VALUES (%s,%s,%s,%s,%s,%s,%s)", (spec_id, title, request.form.get("description", "").strip(), request.form.get("link", "").strip(), save_file("image"), save_file("video"), normalize_level(request.form.get("level", "beginner"))), commit=True)
     return jsonify({"message": "Course added", "id": course_id}), 201
+
+
+@app.route("/api/courses/<int:course_id>", methods=["GET"])
+def get_course(course_id):
+    course = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
+    if not course:
+        return jsonify({"error": "Course not found"}), 404
+    course["image_url"] = upload_url(course.get("image"))
+    course["video_url"] = upload_url(course.get("video"))
+    add_course_level_meta(course)
+    quizzes = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY id DESC", (course_id,), fetchall=True)
+    fixed = []
+    for quiz in quizzes:
+        quiz = normalize_quiz(quiz)
+        questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id ASC", (quiz["id"],), fetchall=True)
+        quiz["questions"] = [normalize_question(q) for q in questions]
+        fixed.append(quiz)
+    course["quizzes"] = fixed
+    return jsonify(course)
 
 
 @app.route("/api/courses/<int:course_id>", methods=["PUT"])
