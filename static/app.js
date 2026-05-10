@@ -188,7 +188,6 @@ function requireAdmin() {
 
 function blockAdminFromStudentPages() {
   const user = getUser();
-
   if (!user || user.role !== "admin") return;
 
   const allowedPages = ["admin.html", "profile.html"];
@@ -1172,3 +1171,4 @@ window.copyGeneratedResume = copyGeneratedResume;
 window.exportResumePdf = exportResumePdf;
 window.exportResumeDocx = exportResumeDocx;
 window.setupAtsChecker = setupAtsChecker;
+window.blockAdminFromStudentPages = blockAdminFromStudentPages;
