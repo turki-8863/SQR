@@ -111,14 +111,6 @@
       font-size:34px;
       font-weight:900;
     }
-
-    .search-box{
-      margin-bottom:14px;
-    }
-
-    .search-box input{
-      width:100%;
-    }
   </style>
 </head>
 
@@ -225,15 +217,6 @@
 
       </form>
 
-      <div class="search-box">
-        <input
-          type="text"
-          id="specializationSearch"
-          placeholder="Search specializations..."
-          onkeyup="filterAdminCards('adminSpecializationsList', this.value)"
-        >
-      </div>
-
       <div id="adminSpecializationsList" class="admin-list"></div>
 
     </section>
@@ -247,13 +230,6 @@
       <form id="addCourseForm" class="card admin-form">
 
         <h2>Add Course</h2>
-
-        <input
-          type="text"
-          id="courseSpecSearch"
-          placeholder="Search specialization..."
-          onkeyup="filterDropdown('courseSpecialization', this.value)"
-        >
 
         <select
           id="courseSpecialization"
@@ -308,14 +284,6 @@
 
       </form>
 
-      <div class="search-box">
-        <input
-          type="text"
-          placeholder="Search courses..."
-          onkeyup="filterAdminCards('adminCoursesList', this.value)"
-        >
-      </div>
-
       <div id="adminCoursesList" class="admin-list"></div>
 
     </section>
@@ -329,13 +297,6 @@
       <form id="addJobForm" class="card admin-form">
 
         <h2>Add Job</h2>
-
-        <input
-          type="text"
-          id="jobSpecSearch"
-          placeholder="Search specialization..."
-          onkeyup="filterDropdown('jobSpecialization', this.value)"
-        >
 
         <select
           id="jobSpecialization"
@@ -381,14 +342,6 @@
 
       </form>
 
-      <div class="search-box">
-        <input
-          type="text"
-          placeholder="Search jobs..."
-          onkeyup="filterAdminCards('adminJobsList', this.value)"
-        >
-      </div>
-
       <div id="adminJobsList" class="admin-list"></div>
 
     </section>
@@ -402,13 +355,6 @@
       <form id="addQuizForm" class="card admin-form">
 
         <h2>Add Quiz</h2>
-
-        <input
-          type="text"
-          id="quizCourseSearch"
-          placeholder="Search course..."
-          onkeyup="filterDropdown('quizCourseSelect', this.value)"
-        >
 
         <select
           id="quizCourseSelect"
@@ -469,14 +415,6 @@
 
       </form>
 
-      <div class="search-box">
-        <input
-          type="text"
-          placeholder="Search quizzes..."
-          onkeyup="filterAdminCards('adminQuizzesList', this.value)"
-        >
-      </div>
-
       <div id="adminQuizzesList" class="admin-list"></div>
 
     </section>
@@ -490,13 +428,6 @@
       <form id="addCertForm" class="card admin-form">
 
         <h2>Add Certificate</h2>
-
-        <input
-          type="text"
-          id="certSpecSearch"
-          placeholder="Search specialization..."
-          onkeyup="filterDropdown('certSpecialization', this.value)"
-        >
 
         <select
           id="certSpecialization"
@@ -537,14 +468,6 @@
         <button type="submit">Add Certificate</button>
 
       </form>
-
-      <div class="search-box">
-        <input
-          type="text"
-          placeholder="Search certificates..."
-          onkeyup="filterAdminCards('adminCertificatesList', this.value)"
-        >
-      </div>
 
       <div id="adminCertificatesList" class="admin-list"></div>
 
