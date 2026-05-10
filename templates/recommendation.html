@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Recommendation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
+</head>
+<body>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>navbar();</script>
+<div class="container">
+  <div id="message"></div>
+  <form id="recForm" class="card">
+    <h1>Career Recommendation Test</h1>
+    <p class="subtitle">Required fields are marked with <span class="required-star">*</span>.</p>
+    <label class="required" for="interests">Interests</label><textarea id="interests" name="interests" required placeholder="security, AI, data, cloud..."></textarea>
+    <label class="required" for="skills">Skills</label><textarea id="skills" name="skills" required placeholder="Python, SQL, Linux..."></textarea>
+    <label class="required" for="goal">Career Goal</label><textarea id="goal" name="goal" required placeholder="I want to become a SOC analyst..."></textarea>
+    <button type="submit">Get Recommendation</button>
+  </form>
+  <div id="recommendationResult"></div>
+</div>
+</body>
+</html>

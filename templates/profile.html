@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Profile</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
+</head>
+<body>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>navbar(); requireLogin();</script>
+<div class="container">
+  <div id="message"></div>
+  <div id="profileBox"></div>
+  <form id="profileForm" class="card">
+    <h2>Update Profile</h2>
+    <label class="required" for="name">Name</label><input id="name" name="name" required placeholder="Your name">
+    <label class="required" for="skills">Skills</label><textarea id="skills" name="skills" required placeholder="Python, SQL, Linux..."></textarea>
+    <label class="required" for="interests">Interests</label><textarea id="interests" name="interests" required placeholder="AI, cybersecurity, data..."></textarea>
+    <label class="required" for="goal">Goal</label><textarea id="goal" name="goal" required placeholder="I want to become..."></textarea>
+    <button type="submit">Save Profile</button>
+  </form>
+  <h2>Progress</h2>
+  <div id="progressBox" class="grid"></div>
+</div>
+</body>
+</html>

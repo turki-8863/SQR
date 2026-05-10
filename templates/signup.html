@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Sign Up</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
+</head>
+<body>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>navbar();</script>
+<div class="container auth-container">
+  <div id="message"></div>
+  <form id="signupForm" class="card auth-card">
+    <h1>Create Account</h1>
+    <p class="subtitle">Join SQR as a student. Admin access is managed by the owner only.</p>
+    <label class="required" for="name">Full Name</label>
+    <input id="name" name="name" placeholder="Your name" required>
+    <label class="required" for="email">Email</label>
+    <input id="email" name="email" type="email" placeholder="you@example.com" required>
+    <label class="required" for="password">Password</label>
+    <input id="password" name="password" type="password" placeholder="Create a strong password" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}">
+    <button type="submit">Sign Up</button>
+    <p>Already have an account? <a href="signin.html">Sign in</a></p>
+  </form>
+</div>
+</body>
+</html>

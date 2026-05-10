@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Sign In</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
+</head>
+<body>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>navbar();</script>
+<div class="container auth-container">
+  <div id="message"></div>
+  <form id="signinForm" class="card auth-card">
+    <h1>Sign In</h1>
+    <p class="subtitle">Use your SQR account to access your profile, ATS, courses, and progress.</p>
+    <label class="required" for="email">Email</label>
+    <input id="email" name="email" type="email" placeholder="you@example.com" required>
+    <label class="required" for="password">Password</label>
+    <input id="password" name="password" type="password" placeholder="Your password" required>
+    <button type="submit">Sign In</button>
+    <p>New to SQR? <a href="signup.html">Create account</a></p>
+  </form>
+</div>
+</body>
+</html>

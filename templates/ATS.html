@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | ATS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
+</head>
+<body>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>navbar(); requireLogin();</script>
+<div class="container">
+  <div id="message"></div>
+  <form id="atsGenerateForm" class="card">
+    <h1>ATS Resume Generator</h1>
+    <p class="subtitle">Fields marked with <span class="required-star">*</span> are required.</p>
+    <div class="form-grid">
+      <div><label class="required" for="name">Full name</label><input name="name" id="name" required placeholder="Full name"></div>
+      <div><label class="required" for="email">Email</label><input name="email" id="email" type="email" required placeholder="Email"></div>
+      <div><label for="phone">Phone</label><input name="phone" id="phone" placeholder="Phone"></div>
+      <div><label for="linkedin">LinkedIn</label><input name="linkedin" id="linkedin" placeholder="LinkedIn"></div>
+      <div><label for="portfolio">Portfolio</label><input name="portfolio" id="portfolio" placeholder="Portfolio"></div>
+      <div><label class="required" for="target_job">Target job</label><input name="target_job" id="target_job" required placeholder="Target job"></div>
+    </div>
+    <label class="required" for="summary">Summary</label><textarea name="summary" id="summary" required placeholder="Summary"></textarea>
+    <label class="required" for="skills">Technical skills</label><textarea name="skills" id="skills" required placeholder="Technical skills"></textarea>
+    <label for="soft_skills">Soft skills</label><textarea name="soft_skills" id="soft_skills" placeholder="Soft skills"></textarea>
+    <label for="languages">Languages</label><textarea name="languages" id="languages" placeholder="Languages"></textarea>
+    <label class="required" for="experience">Experience</label><textarea name="experience" id="experience" required placeholder="Experience"></textarea>
+    <label for="projects">Projects</label><textarea name="projects" id="projects" placeholder="Projects"></textarea>
+    <label class="required" for="education">Education</label><textarea name="education" id="education" required placeholder="Education"></textarea>
+    <label for="certifications">Certifications</label><textarea name="certifications" id="certifications" placeholder="Certifications"></textarea>
+    <button type="submit">Generate Resume</button>
+  </form>
+  <div id="generatedResume"></div>
+  <form id="atsCheckForm" class="card">
+    <h2>ATS Checker</h2>
+    <label class="required" for="resume_text">Resume Text</label><textarea name="resume_text" id="resume_text" required placeholder="Paste resume text"></textarea>
+    <label class="required" for="job_description">Job Description</label><textarea name="job_description" id="job_description" required placeholder="Paste job description"></textarea>
+    <button type="submit">Check ATS Score</button>
+  </form>
+  <div id="atsResult"></div>
+</div>
+</body>
+</html>
