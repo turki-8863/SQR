@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQR | Jobs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>navbar();</script>
+
+<div class="container">
+
+  <div id="message"></div>
+
+  <section class="hero small-hero">
+    <h1>Career Jobs & Recommendations</h1>
+    <p>
+      Discover jobs based on your specialization, skills, interests, and career goals.
+    </p>
+  </section>
+
+  <div class="card">
+    <h2>Job Recommendation</h2>
+
+    <form id="jobRecommendationForm">
+
+      <label>
+        Interests
+        <span class="required-star">*</span>
+      </label>
+      <textarea
+        id="interests"
+        required
+        placeholder="Cybersecurity, AI, Data Engineering..."
+      ></textarea>
+
+      <label>
+        Skills
+        <span class="required-star">*</span>
+      </label>
+      <textarea
+        id="skills"
+        required
+        placeholder="Python, SQL, Linux, Networking..."
+      ></textarea>
+
+      <label>
+        Career Goal
+        <span class="required-star">*</span>
+      </label>
+      <textarea
+        id="goal"
+        required
+        placeholder="I want to become a SOC analyst..."
+      ></textarea>
+
+      <button type="submit" class="btn primary">
+        Get Job Recommendation
+      </button>
+
+    </form>
+  </div>
+
+  <div id="jobRecommendationResult"></div>
+
+  <div class="card">
+    <div class="flex-between">
+      <h2>Available Jobs</h2>
+
+      <select id="jobSpecFilter">
+        <option value="">All Specializations</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="jobsBox" class="grid"></div>
+
+</div>
+
+<script>
+
+document.addEventListener("DOMContentLoaded", () => {
+
+  if (typeof loadJobs === "function") {
+    loadJobs();
+  }
+
+  if (typeof loadSpecializations === "function") {
+    loadSpecializations();
+  }
+
+  const filter = document.getElementById("jobSpecFilter");
+
+  if (filter) {
+    filter.addEventListener("change", () => {
+      loadJobs();
+    });
+  }
+
+  const form = document.getElementById("jobRecommendationForm");
+
+  form.addEventListener("submit", async (e) => {
+
+    e.preventDefault();
+
+    const resultBox = document.getElementById("jobRecommendationResult");
+
+    resultBox.innerHTML = `
+      <div class="card">
+        <p>Generating recommendations...</p>
+      </div>
+    `;
+
+    try {
+
+      const data = await api("/api/recommendation", {
+        method: "POST",
+        body: JSON.stringify({
+          interests: document.getElementById("interests").value,
+          skills: document.getElementById("skills").value,
+          goal: document.getElementById("goal").value
+        })
+      });
+
+      const jobs = data.recommended_jobs || data.jobs || [];
+
+      const specs = data.recommended_specializations || [];
+
+      resultBox.innerHTML = `
+        <div class="card">
+
+          <h2>Recommended Specializations</h2>
+
+          ${
+            specs.length
+            ? specs.map(spec => `
+              <div class="recommendation-item">
+                <h3>${spec.name || spec.specialization}</h3>
+
+                <p>
+                  Match:
+                  <b>${spec.match_percentage || spec.score || 0}%</b>
+                </p>
+
+                <p>${spec.reason || ""}</p>
+              </div>
+            `).join("")
+            : `<p>No specialization recommendations found.</p>`
+          }
+
+          <hr>
+
+          <h2>Recommended Jobs</h2>
+
+          ${
+            jobs.length
+            ? jobs.map(job => `
+              <div class="job-card">
+
+                <h3>${job.title || "Job Role"}</h3>
+
+                <p>
+                  <b>Specialization:</b>
+                  ${job.specialization || ""}
+                </p>
+
+                <p>
+                  <b>Match:</b>
+                  ${job.match_percentage || 0}%
+                </p>
+
+                <p>${job.description || ""}</p>
+
+                <p>
+                  <b>Skills:</b>
+                  ${job.skills || job.required_skills || ""}
+                </p>
+
+                ${
+                  job.salary
+                  ? `<p><b>Salary:</b> ${job.salary}</p>`
+                  : ""
+                }
+
+                ${
+                  job.link
+                  ? `
+                    <a
+                      href="${job.link}"
+                      target="_blank"
+                      class="btn primary"
+                    >
+                      Apply Now
+                    </a>
+                  `
+                  : ""
+                }
+
+              </div>
+            `).join("")
+            : `<p>No job recommendations found.</p>`
+          }
+
+        </div>
+      `;
+
+    } catch (err) {
+
+      resultBox.innerHTML = `
+        <div class="card error-text">
+          ${err.message}
+        </div>
+      `;
+    }
+
+  });
+
+});
+
+</script>
+
+</body>
+</html>
