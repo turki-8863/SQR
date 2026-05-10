@@ -4,23 +4,129 @@
   <meta charset="UTF-8">
   <title>SQR | Recommendation</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
 </head>
 <body>
+
 <script src="{{ url_for('static', filename='app.js') }}"></script>
-<script>navbar();</script>
+<script>
+  navbar();
+  requireLogin();
+</script>
+
 <div class="container">
   <div id="message"></div>
-  <form id="recForm" class="card">
+
+  <section class="card">
     <h1>Career Recommendation Test</h1>
-    <p class="subtitle">Required fields are marked with <span class="required-star">*</span>.</p>
-    <label class="required" for="interests">Interests</label><textarea id="interests" name="interests" required placeholder="security, AI, data, cloud..."></textarea>
-    <label class="required" for="skills">Skills</label><textarea id="skills" name="skills" required placeholder="Python, SQL, Linux..."></textarea>
-    <label class="required" for="goal">Career Goal</label><textarea id="goal" name="goal" required placeholder="I want to become a SOC analyst..."></textarea>
-    <button type="submit">Get Recommendation</button>
-  </form>
-  <div id="recommendationResult"></div>
+    <p class="subtitle">
+      Answer the questions below. SQR will recommend the best CS specialization for you based on your interests, skills, and goals.
+    </p>
+
+    <form id="recForm">
+      <label for="interests">Your Interests</label>
+      <textarea id="interests" name="interests" required placeholder="Example: AI, cybersecurity, data, cloud, web development"></textarea>
+
+      <label for="skills">Your Current Skills</label>
+      <textarea id="skills" name="skills" required placeholder="Example: Python, SQL, Java, Linux, networking, problem solving"></textarea>
+
+      <label for="goal">Your Career Goal</label>
+      <textarea id="goal" name="goal" required placeholder="Example: I want to become a cybersecurity analyst or AI engineer"></textarea>
+
+      <label for="preferred_work">Preferred Work Style</label>
+      <select id="preferred_work" name="preferred_work">
+        <option value="">Select one</option>
+        <option value="building software">Building software and applications</option>
+        <option value="security analysis">Protecting systems and analyzing attacks</option>
+        <option value="data analysis">Working with data and insights</option>
+        <option value="ai models">Creating AI models and smart systems</option>
+        <option value="cloud systems">Managing cloud and backend systems</option>
+      </select>
+
+      <label for="experience">Experience Level</label>
+      <select id="experience" name="experience">
+        <option value="beginner">Beginner</option>
+        <option value="intermediate">Intermediate</option>
+        <option value="advanced">Advanced</option>
+      </select>
+
+      <button type="submit">Get Recommendation</button>
+    </form>
+  </section>
+
+  <section id="recommendationResult" class="card hidden">
+    <h2>Your Recommended Specialization</h2>
+
+    <div id="recOutput"></div>
+
+    <div class="actions">
+      <a href="/Specialization.html" class="btn">View Specializations</a>
+      <a href="/Courses.html" class="btn secondary">View Courses</a>
+      <a href="/jobs.html" class="btn secondary">View Jobs</a>
+    </div>
+  </section>
 </div>
+
+<script>
+document.getElementById("recForm").addEventListener("submit", async function(e) {
+  e.preventDefault();
+
+  const data = {
+    interests: document.getElementById("interests").value.trim(),
+    skills: document.getElementById("skills").value.trim(),
+    goal: document.getElementById("goal").value.trim(),
+    preferred_work: document.getElementById("preferred_work").value,
+    experience: document.getElementById("experience").value
+  };
+
+  try {
+    const res = await fetch(API + "/api/recommendation", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders()
+      },
+      body: JSON.stringify(data)
+    });
+
+    const result = await res.json();
+
+    if (!res.ok) {
+      showMessage(result.error || "Recommendation failed", "error");
+      return;
+    }
+
+    document.getElementById("recommendationResult").classList.remove("hidden");
+
+    document.getElementById("recOutput").innerHTML = `
+      <h3>${result.specialization || "Recommended Specialization"}</h3>
+      <p>${result.description || "No description available."}</p>
+
+      <div class="score-box">
+        <strong>Match Score:</strong> ${result.match_score || result.score || 0}%
+      </div>
+
+      <h4>Why this specialization?</h4>
+      <p>${result.reason || "This recommendation is based on your interests, skills, and career goal."}</p>
+
+      <h4>Suggested Skills to Improve</h4>
+      <ul>
+        ${(result.skills_to_improve || []).map(skill => `<li>${skill}</li>`).join("")}
+      </ul>
+
+      <h4>Next Step</h4>
+      <p>${result.next_step || "Start with beginner courses and complete related quizzes to increase your progress."}</p>
+    `;
+
+    showMessage("Recommendation generated successfully", "success");
+
+  } catch (err) {
+    showMessage("Server error. Please check your backend route /api/recommendation", "error");
+  }
+});
+</script>
+
 </body>
 </html>
