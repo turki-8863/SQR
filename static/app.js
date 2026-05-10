@@ -1223,6 +1223,249 @@ async function unbanUser(id) {
     alert(err.message);
   }
 }
+function showAdminSection(sectionId) {
+  document.querySelectorAll(".admin-section").forEach(s => s.classList.remove("active"));
+  document.getElementById(sectionId)?.classList.add("active");
+
+  document.querySelectorAll(".admin-menu button").forEach(b => b.classList.remove("active"));
+  document.querySelector(`[data-section="${sectionId}"]`)?.classList.add("active");
+}
+
+async function loadAdminStats() {
+  const box = document.getElementById("adminStatsBox");
+  if (!box) return;
+
+  try {
+    const data = await api("/api/admin/stats");
+
+    box.innerHTML = `
+      <div class="stat-grid">
+        <div class="stat-card"><h3>Users</h3><p>${data.users || 0}</p></div>
+        <div class="stat-card"><h3>Specializations</h3><p>${data.specializations || 0}</p></div>
+        <div class="stat-card"><h3>Courses</h3><p>${data.courses || 0}</p></div>
+        <div class="stat-card"><h3>Jobs</h3><p>${data.jobs || 0}</p></div>
+        <div class="stat-card"><h3>Quizzes</h3><p>${data.quizzes || 0}</p></div>
+        <div class="stat-card"><h3>Certificates</h3><p>${data.certificates || 0}</p></div>
+      </div>
+    `;
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+
+async function loadAdminLists() {
+  await loadAdminSpecializationsList();
+  await loadAdminCoursesList();
+  await loadAdminJobsList();
+  await loadAdminQuizzesList();
+  await loadAdminCertificatesList();
+}
+
+async function loadAdminSpecializationsList() {
+  const box = document.getElementById("adminSpecializationsList");
+  if (!box) return;
+
+  const raw = await api("/api/specializations");
+  const specs = asArray(raw, "specializations");
+
+  box.innerHTML = specs.map(s => `
+    <div class="card">
+      <h3>${s.name || ""}</h3>
+      <p>${s.description || ""}</p>
+      <div class="admin-actions">
+        <button onclick="editSpecialization(${getId(s)})">Edit</button>
+        <button class="danger" onclick="deleteItem('/api/specializations/${getId(s)}')">Delete</button>
+      </div>
+    </div>
+  `).join("") || "<p>No specializations.</p>";
+}
+
+async function loadAdminCoursesList() {
+  const box = document.getElementById("adminCoursesList");
+  if (!box) return;
+
+  const raw = await api("/api/courses");
+  const courses = asArray(raw, "courses");
+
+  box.innerHTML = courses.map(c => `
+    <div class="card">
+      <h3>${c.title || ""}</h3>
+      <p>${c.description || ""}</p>
+      <p><b>Level:</b> ${c.level || "Beginner"}</p>
+      <div class="admin-actions">
+        <button onclick="editCourse(${getId(c)})">Edit</button>
+        <button class="danger" onclick="deleteItem('/api/courses/${getId(c)}')">Delete</button>
+      </div>
+    </div>
+  `).join("") || "<p>No courses.</p>";
+}
+
+async function loadAdminJobsList() {
+  const box = document.getElementById("adminJobsList");
+  if (!box) return;
+
+  const raw = await api("/api/jobs");
+  const jobs = asArray(raw, "jobs");
+
+  box.innerHTML = jobs.map(j => `
+    <div class="card">
+      <h3>${j.title || ""}</h3>
+      <p>${j.description || ""}</p>
+      <p><b>Skills:</b> ${j.required_skills || ""}</p>
+      <p><b>Salary:</b> ${j.average_salary || ""}</p>
+      <div class="admin-actions">
+        <button onclick="editJob(${getId(j)})">Edit</button>
+        <button class="danger" onclick="deleteItem('/api/jobs/${getId(j)}')">Delete</button>
+      </div>
+    </div>
+  `).join("") || "<p>No jobs.</p>";
+}
+
+async function loadAdminQuizzesList() {
+  const box = document.getElementById("adminQuizzesList");
+  if (!box) return;
+
+  const raw = await api("/api/quizzes");
+  const quizzes = asArray(raw, "quizzes");
+
+  box.innerHTML = quizzes.map(q => `
+    <div class="card">
+      <h3>${q.title || ""}</h3>
+      <p>${q.description || ""}</p>
+      <p><b>Course ID:</b> ${q.course_id || ""}</p>
+      <div class="admin-actions">
+        <button onclick="editQuiz(${getId(q)})">Edit</button>
+        <button class="danger" onclick="deleteItem('/api/quizzes/${getId(q)}')">Delete</button>
+      </div>
+    </div>
+  `).join("") || "<p>No quizzes.</p>";
+}
+
+async function loadAdminCertificatesList() {
+  const box = document.getElementById("adminCertificatesList");
+  if (!box) return;
+
+  try {
+    const raw = await api("/api/certificates");
+    const certs = asArray(raw, "certificates");
+
+    box.innerHTML = certs.map(c => `
+      <div class="card">
+        <h3>${c.name || ""}</h3>
+        <p>${c.description || ""}</p>
+        <p><b>Price:</b> ${c.price || ""}</p>
+        <div class="admin-actions">
+          <button onclick="editCertificate(${getId(c)})">Edit</button>
+          <button class="danger" onclick="deleteItem('/api/certificates/${getId(c)}')">Delete</button>
+        </div>
+      </div>
+    `).join("") || "<p>No certificates.</p>";
+  } catch {
+    box.innerHTML = "<p>No certificates.</p>";
+  }
+}
+
+async function deleteItem(path) {
+  if (!confirm("Delete this item?")) return;
+
+  try {
+    await api(path, { method: "DELETE" });
+    showMessage("Deleted successfully", "success");
+    loadAdminStats();
+    loadAdminLists();
+    loadSpecializations();
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+
+async function editSpecialization(id) {
+  const name = prompt("New specialization name:");
+  if (!name) return;
+
+  await api(`/api/specializations/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ name })
+  });
+
+  loadAdminLists();
+  loadAdminStats();
+}
+
+async function editCourse(id) {
+  const title = prompt("New course title:");
+  if (!title) return;
+
+  await api(`/api/courses/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ title })
+  });
+
+  loadAdminLists();
+  loadAdminStats();
+}
+
+async function editJob(id) {
+  const title = prompt("New job title:");
+  if (!title) return;
+
+  await api(`/api/jobs/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ title })
+  });
+
+  loadAdminLists();
+  loadAdminStats();
+}
+
+async function editQuiz(id) {
+  const title = prompt("New quiz title:");
+  if (!title) return;
+
+  await api(`/api/quizzes/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ title })
+  });
+
+  loadAdminLists();
+  loadAdminStats();
+}
+
+async function editCertificate(id) {
+  const name = prompt("New certificate name:");
+  if (!name) return;
+
+  await api(`/api/certificates/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ name })
+  });
+
+  loadAdminLists();
+  loadAdminStats();
+}
+
+const oldLoadAdmin = window.loadAdmin || loadAdmin;
+
+loadAdmin = async function () {
+  const adminBox = document.getElementById("adminBox");
+  if (!adminBox) return;
+
+  requireAdmin();
+  setupAdminForms();
+  loadAdminUsers();
+  loadSpecializations();
+  loadAdminStats();
+  loadAdminLists();
+  showAdminSection("dashboardSection");
+};
+
+window.showAdminSection = showAdminSection;
+window.deleteItem = deleteItem;
+window.editSpecialization = editSpecialization;
+window.editCourse = editCourse;
+window.editJob = editJob;
+window.editQuiz = editQuiz;
+window.editCertificate = editCertificate;
 
 window.navbar = navbar;
 window.logout = logout;
