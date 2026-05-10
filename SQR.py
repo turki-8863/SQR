@@ -1078,6 +1078,34 @@ def signup():
     token = generate_token(user)
     return jsonify({"message": "Signup successful", "token": token, "user": clean_user(user)}), 201
 
+
+
+@app.route("/api/login", methods=["POST"])
+@app.route("/api/signin", methods=["POST"])
+def login():
+    data = request.get_json(silent=True) or {}
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "").strip()
+
+    if not email or not password:
+        return jsonify({"error": "Email and password are required"}), 400
+
+    user = query_db("SELECT * FROM users WHERE email=%s", (email,), fetchone=True)
+
+    if not user or not check_password_hash(user.get("password", ""), password):
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    banned = user.get("is_banned", user.get("banned", 0))
+    if banned:
+        return jsonify({"error": "Your account is banned"}), 403
+
+    token = generate_token(user)
+    return jsonify({
+        "message": "Login successful",
+        "token": token,
+        "user": clean_user(user)
+    }), 200
+
 @app.route("/api/me")
 @login_required
 def me():
