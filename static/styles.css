@@ -1107,3 +1107,47 @@ select{
   text-transform:uppercase;
   letter-spacing:.5px;
 }
+.admin-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 24px;
+}
+
+.admin-sidebar {
+  position: sticky;
+  top: 90px;
+  height: fit-content;
+  background: #111827;
+  padding: 20px;
+  border-radius: 18px;
+}
+
+.admin-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-menu button {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  background: #1f2937;
+  color: white;
+  text-align: left;
+}
+
+.admin-menu button.active,
+.admin-menu button:hover {
+  background: #2563eb;
+}
+
+.admin-content {
+  min-width: 0;
+}
+
+.admin-section {
+  display: none;
+}
