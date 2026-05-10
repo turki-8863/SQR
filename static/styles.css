@@ -1008,3 +1008,29 @@ select{
   gap:20px;
   flex-wrap:wrap;
 }
+.required-star {
+  color: #ef4444 !important;
+  font-weight: 900 !important;
+  display: inline-block !important;
+  margin-left: 4px !important;
+  font-size: 1rem !important;
+  line-height: 1 !important;
+  vertical-align: top !important;
+}
+
+.option-row {
+  display: block;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.job-card {
+  margin-top: 18px;
+}
+
+.recommendation-item {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+}
