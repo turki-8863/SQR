@@ -583,43 +583,122 @@ function setupRecommendation() {
   });
 }
 
-function setupATS() {
+function setupAtsChecker() {
   const checkForm = document.getElementById("atsCheckForm");
-  const generateForm = document.getElementById("atsGenerateForm");
+  if (!checkForm || checkForm.dataset.ready) return;
 
-  if (checkForm && !checkForm.dataset.ready) {
-    checkForm.dataset.ready = "1";
-    checkForm.addEventListener("submit", async e => {
-      e.preventDefault();
-      requireLogin();
+  checkForm.dataset.ready = "1";
 
-      const data = Object.fromEntries(new FormData(checkForm).entries());
+  checkForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    requireLogin();
 
-      try {
-        const result = await api("/api/ats/check", {
-          method: "POST",
-          body: JSON.stringify(data)
-        });
+    const resultBox = document.getElementById("atsResult");
+    const resumeFile = document.getElementById("resume_file")?.files?.[0];
+    const resumeText = document.getElementById("resume_text")?.value?.trim() || "";
+    const targetJob = document.getElementById("target_job")?.value?.trim()
+      || document.getElementById("job_description")?.value?.trim()
+      || "";
 
-        const box = document.getElementById("atsResult");
-        if (box) {
-          box.innerHTML = `
-            <div class="card">
-              <h2>ATS Score: ${result.ats_score ?? result.score ?? 0}%</h2>
-              <p>${result.summary || result.feedback || ""}</p>
-              <h3>Missing Keywords</h3>
-              <p>${(result.missing_keywords || []).join(", ")}</p>
-              <h3>Matched Keywords</h3>
-              <p>${(result.matched_keywords || result.found_keywords || []).join(", ")}</p>
-              ${result.improvements ? `<h3>Improvements</h3><ul>${result.improvements.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
-            </div>
-          `;
-        }
-      } catch (err) {
-        showMessage(err.message);
+    if (!targetJob) {
+      showMessage("Target job or job description is required");
+      return;
+    }
+
+    if (!resumeFile && !resumeText) {
+      showMessage("Please upload a PDF/DOCX/TXT resume or paste your resume text");
+      return;
+    }
+
+    const formData = new FormData(checkForm);
+    formData.set("target_job", targetJob);
+    formData.set("job_description", targetJob);
+
+    if (resumeText) {
+      formData.set("resume_text", resumeText);
+    }
+
+    if (resumeFile) {
+      formData.set("resume_file", resumeFile);
+    }
+
+    if (resultBox) {
+      resultBox.classList.remove("hidden");
+      resultBox.innerHTML = `
+        <div class="card">
+          <h2>Checking Resume...</h2>
+          <p>Please wait while SQR analyzes your resume.</p>
+        </div>
+      `;
+    }
+
+    try {
+      const result = await api("/api/ats/check", {
+        method: "POST",
+        body: formData
+      });
+
+      if (resultBox) {
+        const sectionScores = result.section_scores || {};
+
+        resultBox.classList.remove("hidden");
+        resultBox.innerHTML = `
+          <div class="card">
+            <h2>ATS Score: ${result.ats_score ?? result.score ?? 0}%</h2>
+
+            <h3>Summary</h3>
+            <p>${result.summary || result.feedback || "ATS analysis completed."}</p>
+
+            <h3>Matched Keywords</h3>
+            <p>${Array.isArray(result.matched_keywords) && result.matched_keywords.length ? result.matched_keywords.join(", ") : "No matched keywords found."}</p>
+
+            <h3>Missing Keywords</h3>
+            <p>${Array.isArray(result.missing_keywords) && result.missing_keywords.length ? result.missing_keywords.join(", ") : "No missing keywords found."}</p>
+
+            <h3>Strengths</h3>
+            <ul>
+              ${Array.isArray(result.strengths) && result.strengths.length ? result.strengths.map(x => `<li>${x}</li>`).join("") : "<li>No strengths listed.</li>"}
+            </ul>
+
+            <h3>Weaknesses</h3>
+            <ul>
+              ${Array.isArray(result.weaknesses) && result.weaknesses.length ? result.weaknesses.map(x => `<li>${x}</li>`).join("") : "<li>No weaknesses listed.</li>"}
+            </ul>
+
+            <h3>Advice to Improve Resume</h3>
+            <ul>
+              ${Array.isArray(result.improvements) && result.improvements.length ? result.improvements.map(x => `<li>${x}</li>`).join("") : "<li>Add more role-specific keywords, measurable achievements, and clear project details.</li>"}
+            </ul>
+
+            ${Object.keys(sectionScores).length ? `
+              <h3>Section Scores</h3>
+              <div class="grid">
+                ${Object.entries(sectionScores).map(([key, value]) => `
+                  <div class="mini-card">
+                    <strong>${key.replaceAll("_", " ").toUpperCase()}</strong>
+                    <p>${value}%</p>
+                  </div>
+                `).join("")}
+              </div>
+            ` : ""}
+          </div>
+        `;
       }
-    });
-  }
+
+      showMessage("ATS check completed successfully", "success");
+    } catch (err) {
+      if (resultBox) {
+        resultBox.innerHTML = "";
+      }
+      showMessage(err.message);
+    }
+  });
+}
+
+function setupATS() {
+  setupAtsChecker();
+
+  const generateForm = document.getElementById("atsGenerateForm");
 
   if (generateForm && !generateForm.dataset.ready) {
     generateForm.dataset.ready = "1";
@@ -924,3 +1003,4 @@ window.unbanUser = unbanUser;
 window.copyGeneratedResume = copyGeneratedResume;
 window.exportResumePdf = exportResumePdf;
 window.exportResumeDocx = exportResumeDocx;
+window.setupAtsChecker = setupAtsChecker;
