@@ -20,6 +20,7 @@ function setAuth(token, user) {
   localStorage.setItem("sqr_token", token);
   localStorage.setItem("sqr_user", JSON.stringify(user));
   localStorage.removeItem("token");
+  lastGeneratedResume = "";
 }
 
 function authHeaders() {
@@ -28,9 +29,18 @@ function authHeaders() {
 }
 
 function logout() {
+  const user = getUser();
+
+  if (user?.id) {
+    localStorage.removeItem("lastGeneratedResume_user_" + user.id);
+  }
+
   localStorage.removeItem("sqr_token");
   localStorage.removeItem("sqr_user");
   localStorage.removeItem("token");
+  localStorage.removeItem("lastGeneratedResume");
+
+  lastGeneratedResume = "";
   window.location.href = "signin.html";
 }
 
@@ -38,7 +48,7 @@ function showMessage(text, type = "error") {
   const box = document.getElementById("message");
   if (!box) return;
   box.innerHTML = text;
-  box.className = type === "success" ? "message success" : "message error";
+  box.className = type === "success" ? "alert success" : "alert error";
 }
 
 async function api(path, options = {}) {
@@ -70,6 +80,7 @@ async function api(path, options = {}) {
 
 async function apiTry(paths, options = {}) {
   let lastError;
+
   for (const path of paths) {
     try {
       return await api(path, options);
@@ -78,6 +89,7 @@ async function apiTry(paths, options = {}) {
       if (!String(err.message).includes("404")) throw err;
     }
   }
+
   throw lastError || new Error("Request failed");
 }
 
@@ -88,7 +100,7 @@ function asArray(data, key) {
 }
 
 function getId(row) {
-  return row?.id || row?.specialization_id || row?.course_id || row?.quiz_id || row?.job_id;
+  return row?.id || row?.specialization_id || row?.course_id || row?.quiz_id || row?.job_id || row?.user_id;
 }
 
 function fileUrl(filename) {
@@ -98,8 +110,41 @@ function fileUrl(filename) {
   return `${API}/uploads/${filename}`;
 }
 
+function normalizeFormData(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+
+  if (data.spec_id && !data.specialization_id) data.specialization_id = data.spec_id;
+  if (data.specialization && !data.specialization_id) data.specialization_id = data.specialization;
+  if (data.course_id && !data.course) data.course = data.course_id;
+  if (data.required_skills && !data.skills) data.skills = data.required_skills;
+  if (data.skills && !data.required_skills) data.required_skills = data.skills;
+
+  return data;
+}
+
 function navbar() {
   const user = getUser();
+
+  if (user && user.role === "admin") {
+    document.body.insertAdjacentHTML("afterbegin", `
+      <header class="navbar">
+        <a href="admin.html" class="logo">
+          <span>SQR</span>
+          <small>Admin Panel</small>
+        </a>
+
+        <nav class="nav-links">
+          <a href="admin.html">Admin</a>
+          <a href="profile.html">Profile</a>
+        </nav>
+
+        <div class="auth-buttons">
+          <button onclick="logout()" class="btn danger">Logout</button>
+        </div>
+      </header>
+    `);
+    return;
+  }
 
   document.body.insertAdjacentHTML("afterbegin", `
     <header class="navbar">
@@ -116,7 +161,6 @@ function navbar() {
         <a href="jobs.html">Jobs</a>
         <a href="recommendation.html">Recommendation</a>
         ${user ? `<a href="profile.html">Profile</a>` : ""}
-        ${user && user.role === "admin" ? `<a href="admin.html">Admin</a>` : ""}
       </nav>
 
       <div class="auth-buttons">
@@ -135,13 +179,29 @@ function requireLogin() {
 
 function requireAdmin() {
   const user = getUser();
+
   if (!user || user.role !== "admin") {
     alert("Admin access only");
     window.location.href = "gp.html";
   }
 }
 
+function blockAdminFromStudentPages() {
+  const user = getUser();
+
+  if (!user || user.role !== "admin") return;
+
+  const allowedPages = ["admin.html", "profile.html"];
+  const currentPage = location.pathname.split("/").pop() || "gp.html";
+
+  if (!allowedPages.includes(currentPage)) {
+    window.location.href = "admin.html";
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  blockAdminFromStudentPages();
+
   setupSignup();
   setupSignin();
   loadProfile();
@@ -222,13 +282,14 @@ async function loadProfile() {
 
     box.innerHTML = `
       <div class="card">
-        <h2>${user.name || "Student"}</h2>
+        <h2>${user.name || "User"}</h2>
         <p><b>Email:</b> ${user.email || ""}</p>
         <p><b>Role:</b> ${user.role || "student"}</p>
       </div>
     `;
 
     const form = document.getElementById("profileForm");
+
     if (form && !form.dataset.ready) {
       form.dataset.ready = "1";
 
@@ -275,8 +336,8 @@ async function loadProgress(profileData = null) {
     box.innerHTML = progress.map(p => `
       <div class="card">
         <h3>${p.name || p.specialization || p.specialization_name || "Specialization"}</h3>
-        <div class="progress">
-          <div style="width:${p.progress || p.percentage || 0}%"></div>
+        <div class="progress-box">
+          <div class="progress-bar" style="width:${p.progress || p.percentage || 0}%"></div>
         </div>
         <p>${p.progress || p.percentage || 0}% completed</p>
       </div>
@@ -303,6 +364,7 @@ async function loadSpecializations() {
         <div class="card card-mini" onclick="window.location.href='specialization-details.html?id=${getId(s)}'">
           ${s.image || s.image_url ? `<img src="${fileUrl(s.image_url || s.image)}" class="card-img">` : ""}
           <h3>${s.name || ""}</h3>
+          <p>${s.description || ""}</p>
         </div>
       `).join("") || `<p>No specializations yet.</p>`;
     }
@@ -324,6 +386,7 @@ async function loadSpecializationDetails() {
   if (!box) return;
 
   const id = new URLSearchParams(location.search).get("id");
+
   if (!id) {
     box.innerHTML = `<div class="card">Specialization not found.</div>`;
     return;
@@ -386,6 +449,8 @@ async function loadCourses() {
       <div class="card card-mini" onclick="window.location.href='course-details.html?id=${getId(c)}'">
         ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
         <h3>${c.title || ""}</h3>
+        <p>${c.description || ""}</p>
+        <span class="badge">${c.level || "Beginner"}</span>
       </div>
     `).join("") || `<p>No courses yet.</p>`;
   } catch (err) {
@@ -398,6 +463,7 @@ async function loadCourseDetails() {
   if (!box) return;
 
   const id = new URLSearchParams(location.search).get("id");
+
   if (!id) {
     box.innerHTML = `<div class="card">Course not found.</div>`;
     return;
@@ -477,6 +543,7 @@ async function startQuiz(id) {
     box.innerHTML = `
       <div class="card">
         <h2>${quiz.title || "Quiz"}</h2>
+
         <form id="takeQuizForm">
           ${questions.map((q, i) => `
             <div class="quiz-question">
@@ -494,6 +561,7 @@ async function startQuiz(id) {
 
     document.getElementById("takeQuizForm").addEventListener("submit", async e => {
       e.preventDefault();
+
       const answers = {};
 
       questions.forEach(q => {
@@ -526,7 +594,12 @@ async function loadJobs() {
   try {
     const spec = document.getElementById("jobSpecFilter")?.value || "";
     const params = new URLSearchParams();
-    if (spec) params.append("specialization", spec);
+
+    if (spec) {
+      params.append("specialization", spec);
+      params.append("specialization_id", spec);
+      params.append("spec_id", spec);
+    }
 
     const raw = await api(`/api/jobs${params.toString() ? "?" + params.toString() : ""}`);
     const jobs = asArray(raw, "jobs");
@@ -538,7 +611,7 @@ async function loadJobs() {
         <p><b>Specialization:</b> ${j.specialization || j.specialization_name || ""}</p>
         <p><b>Required Skills:</b> ${j.required_skills || j.skills || ""}</p>
         ${j.salary ? `<p><b>Salary:</b> ${j.salary}</p>` : ""}
-        ${j.link ? `<a href="${j.link}" target="_blank">Apply / Details</a>` : ""}
+        ${j.link ? `<a href="${j.link}" target="_blank" class="btn">Apply / Details</a>` : ""}
         ${j.match_percentage !== undefined ? `<p><b>Match:</b> ${j.match_percentage}%</p>` : ""}
       </div>
     `).join("") || `<p>No jobs yet.</p>`;
@@ -549,34 +622,54 @@ async function loadJobs() {
 
 function setupRecommendation() {
   const form = document.getElementById("recommendationForm") || document.getElementById("recForm");
-  const box = document.getElementById("recommendationResult") || document.getElementById("resultBox");
+  const box = document.getElementById("recommendationResult") || document.getElementById("resultBox") || document.getElementById("recOutput");
 
-  if (!form || !box) return;
+  if (!form || !box || form.dataset.ready) return;
+
+  form.dataset.ready = "1";
 
   form.addEventListener("submit", async e => {
     e.preventDefault();
+    requireLogin();
 
     const data = Object.fromEntries(new FormData(form).entries());
+
     data.interests = data.interests || document.getElementById("interests")?.value || "";
     data.skills = data.skills || document.getElementById("skills")?.value || "";
     data.goal = data.goal || document.getElementById("goal")?.value || "";
+    data.preferred_work = data.preferred_work || document.getElementById("preferred_work")?.value || "";
+    data.experience = data.experience || document.getElementById("experience")?.value || "";
 
     try {
-      const result = await api("/api/recommendation", {
+      const result = await apiTry(["/api/recommendation", "/api/recommendations"], {
         method: "POST",
         body: JSON.stringify(data)
       });
 
-      const best = result.best || result.recommended_specializations?.[0] || result;
+      const best = result.best || result.recommended_specializations?.[0] || result.recommendation || result;
+
+      box.classList.remove("hidden");
 
       box.innerHTML = `
         <div class="card">
           <h2>Recommended Specialization</h2>
-          <h3>${best.name || best.specialization || ""}</h3>
-          <p>${best.reason || result.reason || ""}</p>
-          <p><b>Match:</b> ${best.match_percentage || best.score || best.percentage || 0}%</p>
+          <h3>${best.name || best.specialization || result.specialization || "Recommended Path"}</h3>
+          <p>${best.reason || result.reason || result.summary || "This recommendation is based on your answers."}</p>
+          <p><b>Match:</b> ${best.match_percentage || best.score || best.percentage || result.match_score || 0}%</p>
+
+          ${result.skills_to_improve ? `
+            <h3>Skills to Improve</h3>
+            <ul>${result.skills_to_improve.map(x => `<li>${x}</li>`).join("")}</ul>
+          ` : ""}
+
+          ${result.next_step ? `
+            <h3>Next Step</h3>
+            <p>${result.next_step}</p>
+          ` : ""}
         </div>
       `;
+
+      showMessage("Recommendation generated successfully", "success");
     } catch (err) {
       showMessage(err.message);
     }
@@ -589,14 +682,21 @@ function setupAtsChecker() {
 
   checkForm.dataset.ready = "1";
 
+  const textArea = document.getElementById("resume_text");
+  if (textArea) {
+    textArea.closest("div")?.remove();
+    textArea.remove();
+  }
+
   checkForm.addEventListener("submit", async e => {
     e.preventDefault();
     requireLogin();
 
     const resultBox = document.getElementById("atsResult");
     const resumeFile = document.getElementById("resume_file")?.files?.[0];
-    const resumeText = document.getElementById("resume_text")?.value?.trim() || "";
-    const targetJob = document.getElementById("target_job")?.value?.trim()
+
+    const targetJob =
+      document.getElementById("target_job")?.value?.trim()
       || document.getElementById("job_description")?.value?.trim()
       || "";
 
@@ -605,29 +705,30 @@ function setupAtsChecker() {
       return;
     }
 
-    if (!resumeFile && !resumeText) {
-      showMessage("Please upload a PDF/DOCX/TXT resume or paste your resume text");
+    if (!resumeFile) {
+      showMessage("Please upload your resume as PDF, DOCX, or TXT");
       return;
     }
 
-    const formData = new FormData(checkForm);
-    formData.set("target_job", targetJob);
-    formData.set("job_description", targetJob);
+    const allowed = [".pdf", ".docx", ".txt"];
+    const fileName = resumeFile.name.toLowerCase();
 
-    if (resumeText) {
-      formData.set("resume_text", resumeText);
+    if (!allowed.some(ext => fileName.endsWith(ext))) {
+      showMessage("Only PDF, DOCX, or TXT files are allowed");
+      return;
     }
 
-    if (resumeFile) {
-      formData.set("resume_file", resumeFile);
-    }
+    const formData = new FormData();
+    formData.append("target_job", targetJob);
+    formData.append("job_description", targetJob);
+    formData.append("resume_file", resumeFile);
 
     if (resultBox) {
       resultBox.classList.remove("hidden");
       resultBox.innerHTML = `
         <div class="card">
           <h2>Checking Resume...</h2>
-          <p>Please wait while SQR analyzes your resume.</p>
+          <p>SQR is analyzing your uploaded resume.</p>
         </div>
       `;
     }
@@ -667,7 +768,7 @@ function setupAtsChecker() {
 
             <h3>Advice to Improve Resume</h3>
             <ul>
-              ${Array.isArray(result.improvements) && result.improvements.length ? result.improvements.map(x => `<li>${x}</li>`).join("") : "<li>Add more role-specific keywords, measurable achievements, and clear project details.</li>"}
+              ${Array.isArray(result.improvements) && result.improvements.length ? result.improvements.map(x => `<li>${x}</li>`).join("") : "<li>Add role-specific keywords, measurable achievements, and clear project details.</li>"}
             </ul>
 
             ${Object.keys(sectionScores).length ? `
@@ -687,9 +788,7 @@ function setupAtsChecker() {
 
       showMessage("ATS check completed successfully", "success");
     } catch (err) {
-      if (resultBox) {
-        resultBox.innerHTML = "";
-      }
+      if (resultBox) resultBox.innerHTML = "";
       showMessage(err.message);
     }
   });
@@ -702,6 +801,7 @@ function setupATS() {
 
   if (generateForm && !generateForm.dataset.ready) {
     generateForm.dataset.ready = "1";
+
     generateForm.addEventListener("submit", async e => {
       e.preventDefault();
       requireLogin();
@@ -715,6 +815,13 @@ function setupATS() {
         });
 
         lastGeneratedResume = result.resume || "";
+
+        const currentUser = getUser();
+
+        if (currentUser?.id) {
+          localStorage.setItem("lastGeneratedResume_user_" + currentUser.id, lastGeneratedResume);
+        }
+
         const box = document.getElementById("generatedResume") || document.getElementById("resumeOutput");
 
         if (box) {
@@ -744,12 +851,29 @@ function setupATS() {
 }
 
 async function copyGeneratedResume() {
+  const user = getUser();
+
+  const saved = user?.id
+    ? localStorage.getItem("lastGeneratedResume_user_" + user.id)
+    : "";
+
+  lastGeneratedResume = lastGeneratedResume || saved || "";
+
   if (!lastGeneratedResume) return alert("Generate a resume first");
+
   await navigator.clipboard.writeText(lastGeneratedResume);
   alert("Resume copied");
 }
 
 async function downloadBlob(path, filename) {
+  const user = getUser();
+
+  const saved = user?.id
+    ? localStorage.getItem("lastGeneratedResume_user_" + user.id)
+    : "";
+
+  lastGeneratedResume = lastGeneratedResume || saved || "";
+
   if (!lastGeneratedResume) return alert("Generate a resume first");
 
   const res = await fetch(API + path, {
@@ -770,11 +894,14 @@ async function downloadBlob(path, filename) {
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
+
   a.href = url;
   a.download = filename;
+
   document.body.appendChild(a);
   a.click();
   a.remove();
+
   URL.revokeObjectURL(url);
 }
 
@@ -801,6 +928,7 @@ async function loadAdmin() {
   requireAdmin();
   setupAdminForms();
   loadAdminUsers();
+  loadSpecializations();
 }
 
 function setupAdminForms() {
@@ -812,13 +940,16 @@ function setupAdminForms() {
 
   if (specForm && !specForm.dataset.ready) {
     specForm.dataset.ready = "1";
+
     specForm.addEventListener("submit", async e => {
       e.preventDefault();
+
       try {
         await api("/api/specializations", {
           method: "POST",
           body: new FormData(specForm)
         });
+
         showMessage("Specialization added", "success");
         specForm.reset();
         loadSpecializations();
@@ -830,13 +961,32 @@ function setupAdminForms() {
 
   if (courseForm && !courseForm.dataset.ready) {
     courseForm.dataset.ready = "1";
+
     courseForm.addEventListener("submit", async e => {
       e.preventDefault();
+
+      const formData = new FormData(courseForm);
+
+      const specValue =
+        formData.get("specialization_id")
+        || formData.get("spec_id")
+        || formData.get("specialization")
+        || document.getElementById("courseSpec")?.value
+        || document.getElementById("courseSpecSelect")?.value
+        || document.getElementById("specSelect")?.value
+        || "";
+
+      if (specValue) {
+        formData.set("specialization_id", specValue);
+        formData.set("spec_id", specValue);
+      }
+
       try {
-        await api("/api/courses", {
+        await apiTry(["/api/courses", "/api/admin/courses"], {
           method: "POST",
-          body: new FormData(courseForm)
+          body: formData
         });
+
         showMessage("Course added", "success");
         courseForm.reset();
         loadCourses();
@@ -848,10 +998,11 @@ function setupAdminForms() {
 
   if (quizForm && !quizForm.dataset.ready) {
     quizForm.dataset.ready = "1";
+
     quizForm.addEventListener("submit", async e => {
       e.preventDefault();
 
-      const data = Object.fromEntries(new FormData(quizForm).entries());
+      const data = normalizeFormData(quizForm);
 
       data.questions = [{
         question_text: data.question_text || data.question || "Question",
@@ -863,7 +1014,7 @@ function setupAdminForms() {
       }];
 
       try {
-        await api("/api/admin/quizzes", {
+        await apiTry(["/api/admin/quizzes", "/api/quizzes"], {
           method: "POST",
           body: JSON.stringify(data)
         });
@@ -878,13 +1029,28 @@ function setupAdminForms() {
 
   if (jobForm && !jobForm.dataset.ready) {
     jobForm.dataset.ready = "1";
+
     jobForm.addEventListener("submit", async e => {
       e.preventDefault();
 
-      const data = Object.fromEntries(new FormData(jobForm).entries());
+      const data = normalizeFormData(jobForm);
+
+      const specValue =
+        data.specialization_id
+        || data.spec_id
+        || document.getElementById("jobSpec")?.value
+        || document.getElementById("jobSpecSelect")?.value
+        || document.getElementById("jobSpecFilter")?.value
+        || "";
+
+      if (specValue) {
+        data.specialization_id = specValue;
+        data.spec_id = specValue;
+        data.specialization = specValue;
+      }
 
       try {
-        await api("/api/jobs", {
+        await apiTry(["/api/jobs", "/api/admin/jobs"], {
           method: "POST",
           body: JSON.stringify(data)
         });
@@ -900,14 +1066,15 @@ function setupAdminForms() {
 
   if (certForm && !certForm.dataset.ready) {
     certForm.dataset.ready = "1";
+
     certForm.addEventListener("submit", async e => {
       e.preventDefault();
 
-      const data = Object.fromEntries(new FormData(certForm).entries());
+      const data = normalizeFormData(certForm);
       data.spec_id = data.spec_id || data.specialization_id;
 
       try {
-        await api("/api/certificates", {
+        await apiTry(["/api/certificates", "/api/admin/certificates"], {
           method: "POST",
           body: JSON.stringify(data)
         });
@@ -994,6 +1161,7 @@ window.navbar = navbar;
 window.logout = logout;
 window.requireLogin = requireLogin;
 window.requireAdmin = requireAdmin;
+window.blockAdminFromStudentPages = blockAdminFromStudentPages;
 window.completeCourse = completeCourse;
 window.startQuiz = startQuiz;
 window.makeAdmin = makeAdmin;
