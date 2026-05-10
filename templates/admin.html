@@ -5,121 +5,154 @@
   <title>SQR | Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+
+  <style>
+    .admin-layout{display:grid;grid-template-columns:260px 1fr;gap:24px;max-width:1400px;margin:30px auto;padding:0 20px}
+    .admin-sidebar{background:#111827;border-radius:20px;padding:22px;height:fit-content;position:sticky;top:90px}
+    .admin-sidebar h2{color:white;margin-bottom:18px}
+    .admin-menu{display:flex;flex-direction:column;gap:10px}
+    .admin-menu button{border:0;border-radius:12px;padding:13px 14px;background:#1f2937;color:white;text-align:left;cursor:pointer;font-weight:700}
+    .admin-menu button.active,.admin-menu button:hover{background:#2563eb}
+    .admin-main{min-width:0}
+    .admin-section{display:none}
+    .admin-section.active{display:block}
+    .admin-form{display:grid;gap:12px;margin-bottom:22px}
+    .admin-list{display:grid;gap:14px}
+    .admin-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+    .stat-card{background:#111827;color:white;border-radius:18px;padding:20px}
+    .stat-card h3{margin:0 0 8px}
+    .stat-card p{font-size:32px;font-weight:900;margin:0}
+  </style>
 </head>
+
 <body>
-<script src="{{ url_for('static', filename='app.js') }}"></script>
-<script>navbar(); requireAdmin();</script>
-<div class="container">
-  <div id="message"></div>
-  <div id="adminBox">
-    <div class="page-header">
-      <h1>Admin Dashboard</h1>
-      <p class="subtitle">Fields marked with <span class="required-star">*</span> are required.</p>
+<script>
+  window.addEventListener("DOMContentLoaded", () => {
+    navbar();
+    requireAdmin();
+  });
+</script>
+
+<div class="admin-layout" id="adminBox">
+  <aside class="admin-sidebar">
+    <h2>SQR Admin</h2>
+
+    <div class="admin-menu">
+      <button data-section="dashboardSection" onclick="showAdminSection('dashboardSection')">Dashboard</button>
+      <button data-section="specializationsSection" onclick="showAdminSection('specializationsSection')">Specializations</button>
+      <button data-section="coursesSection" onclick="showAdminSection('coursesSection')">Courses</button>
+      <button data-section="jobsSection" onclick="showAdminSection('jobsSection')">Jobs</button>
+      <button data-section="quizzesSection" onclick="showAdminSection('quizzesSection')">Quizzes</button>
+      <button data-section="certificatesSection" onclick="showAdminSection('certificatesSection')">Certificates</button>
+      <button data-section="usersSection" onclick="showAdminSection('usersSection')">Users</button>
     </div>
-    <div class="grid admin-grid">
-      <form id="addSpecForm" class="card" enctype="multipart/form-data">
+  </aside>
+
+  <main class="admin-main">
+    <div id="message"></div>
+
+    <section id="dashboardSection" class="admin-section active">
+      <h1>Dashboard</h1>
+      <p class="subtitle">Website numbers overview.</p>
+      <div id="adminStatsBox"></div>
+    </section>
+
+    <section id="specializationsSection" class="admin-section">
+      <h1>Specializations</h1>
+      <form id="addSpecForm" class="card admin-form">
         <h2>Add Specialization</h2>
-        <label class="required" for="specName">Specialization Title</label>
-        <input id="specName" name="name" required placeholder="Cybersecurity">
-        <label class="required" for="specDesc">Description</label>
-        <textarea id="specDesc" name="description" required placeholder="Describe the specialization"></textarea>
-        <label class="required" for="specSkills">Skills</label>
-        <textarea id="specSkills" name="skills" required placeholder="Linux, networking, Python..."></textarea>
-        <label class="required" for="specRoadmap">Roadmap</label>
-        <textarea id="specRoadmap" name="roadmap" required placeholder="Beginner steps, intermediate steps, advanced steps"></textarea>
-        <label class="required" for="specJobs">Job Titles</label>
-        <textarea id="specJobs" name="job_titles" required placeholder="SOC Analyst, Security Analyst..."></textarea>
-        <label for="specPaths">Career Paths</label>
-        <textarea id="specPaths" name="career_paths" placeholder="Optional extra paths"></textarea>
-        <label for="specImage">Image</label>
-        <input id="specImage" name="image" type="file" accept="image/*">
+        <input name="name" placeholder="Specialization name" required>
+        <textarea name="description" placeholder="Description"></textarea>
+        <textarea name="skills" placeholder="Skills"></textarea>
+        <textarea name="roadmap" placeholder="Roadmap"></textarea>
+        <textarea name="job_titles" placeholder="Job titles"></textarea>
+        <input name="image_url" placeholder="Image URL">
         <button type="submit">Add Specialization</button>
       </form>
-      <form id="addCourseForm" class="card" enctype="multipart/form-data">
+      <div id="adminSpecializationsList" class="admin-list"></div>
+    </section>
+
+    <section id="coursesSection" class="admin-section">
+      <h1>Courses</h1>
+      <form id="addCourseForm" class="card admin-form">
         <h2>Add Course</h2>
-        <label class="required" for="courseSpecFilter">Specialization</label>
-        <select id="courseSpecFilter" name="spec_id" required></select>
-        <label class="required" for="courseTitle">Course Title</label>
-        <input id="courseTitle" name="title" required placeholder="Intro to Cybersecurity">
-        <label class="required" for="courseDesc">Course Description</label>
-        <textarea id="courseDesc" name="description" required placeholder="What the user will learn"></textarea>
-        <label for="courseLink">Actual Course Link</label>
-        <input id="courseLink" name="link" placeholder="https://...">
-        <label for="courseLevel">Level</label>
-        <select id="courseLevel" name="level">
-          <option value="beginner">Beginner</option>
-          <option value="intermediate">Intermediate</option>
-          <option value="advanced">Advanced</option>
+        <select id="courseSpecialization" name="specialization_id" required></select>
+        <input id="courseTitle" name="title" placeholder="Course title" required>
+        <textarea id="courseDescription" name="description" placeholder="Description"></textarea>
+        <select id="courseDifficulty" name="level">
+          <option>Beginner</option>
+          <option>Intermediate</option>
+          <option>Advanced</option>
         </select>
-        <label for="courseImage">Course Image</label>
-        <input id="courseImage" name="image" type="file" accept="image/*">
-        <label for="courseVideo">Course Video</label>
-        <input id="courseVideo" name="video" type="file" accept="video/*">
+        <input id="courseLink" name="course_link" placeholder="Course link">
+        <input name="video_url" placeholder="Video URL">
+        <input id="courseImage" name="image_url" placeholder="Image URL">
         <button type="submit">Add Course</button>
       </form>
-      <form id="addQuizForm" class="card">
-        <h2>Add Quiz Inside Course</h2>
-        <label class="required" for="quizCourseFilter">Course</label>
-        <select id="quizCourseFilter" name="course_id" required></select>
-        <label class="required" for="quizTitle">Quiz Title</label>
-        <input id="quizTitle" name="title" required placeholder="Module 1 Quiz">
-        <label for="quizDescription">Quiz Description</label>
-        <textarea id="quizDescription" name="description" placeholder="Optional quiz description"></textarea>
-        <label class="required" for="questionText">Question</label>
-        <textarea id="questionText" name="question_text" required placeholder="Write the question"></textarea>
-        <label class="required" for="optionA">Option A</label>
-        <input id="optionA" name="option_a" required>
-        <label class="required" for="optionB">Option B</label>
-        <input id="optionB" name="option_b" required>
-        <label class="required" for="optionC">Option C</label>
-        <input id="optionC" name="option_c" required>
-        <label class="required" for="optionD">Option D</label>
-        <input id="optionD" name="option_d" required>
-        <label class="required" for="correctAnswer">Correct Answer</label>
-        <input id="correctAnswer" name="correct_answer" required placeholder="Type the exact correct option text">
+      <div id="adminCoursesList" class="admin-list"></div>
+    </section>
+
+    <section id="jobsSection" class="admin-section">
+      <h1>Jobs</h1>
+      <form id="addJobForm" class="card admin-form">
+        <h2>Add Job</h2>
+        <select id="jobSpecialization" name="specialization_id" required></select>
+        <input id="jobTitle" name="title" placeholder="Job title" required>
+        <textarea id="jobDescription" name="description" placeholder="Description"></textarea>
+        <textarea id="jobSkills" name="required_skills" placeholder="Required skills"></textarea>
+        <input id="jobSalary" name="average_salary" placeholder="Average salary">
+        <input id="jobLink" name="job_link" placeholder="Job link">
+        <button type="submit">Add Job</button>
+      </form>
+      <div id="adminJobsList" class="admin-list"></div>
+    </section>
+
+    <section id="quizzesSection" class="admin-section">
+      <h1>Quizzes</h1>
+      <form id="addQuizForm" class="card admin-form">
+        <h2>Add Quiz</h2>
+        <input name="course_id" placeholder="Course ID" required>
+        <input name="title" placeholder="Quiz title" required>
+        <textarea name="description" placeholder="Description"></textarea>
+        <input name="question_text" placeholder="Question">
+        <input name="option_a" placeholder="Option A">
+        <input name="option_b" placeholder="Option B">
+        <input name="option_c" placeholder="Option C">
+        <input name="option_d" placeholder="Option D">
+        <select name="correct_answer">
+          <option>A</option><option>B</option><option>C</option><option>D</option>
+        </select>
         <button type="submit">Add Quiz</button>
       </form>
-      <form id="addCertForm" class="card">
+      <div id="adminQuizzesList" class="admin-list"></div>
+    </section>
+
+    <section id="certificatesSection" class="admin-section">
+      <h1>Certificates</h1>
+      <form id="addCertForm" class="card admin-form">
         <h2>Add Certificate</h2>
-        <label class="required" for="specSelect">Specialization</label>
-        <select id="specSelect" name="spec_id" required></select>
-        <label class="required" for="certName">Certificate Name</label>
-        <input id="certName" name="name" required placeholder="Security+">
-        <label for="certDesc">Description</label>
-        <textarea id="certDesc" name="description" placeholder="Certificate description"></textarea>
-        <label for="certLink">Official Link</label>
-        <input id="certLink" name="link" placeholder="https://...">
-        <label for="certPrice">Price</label>
-        <input id="certPrice" name="price" placeholder="Example: 1500 SAR">
-        <label for="certType">Type</label>
-        <select id="certType" name="type">
+        <select id="certSpecialization" name="spec_id" required></select>
+        <input name="name" placeholder="Certificate name" required>
+        <textarea name="description" placeholder="Description"></textarea>
+        <input name="link" placeholder="Certificate link">
+        <input name="price" placeholder="Price">
+        <select name="type">
           <option value="both">Both</option>
           <option value="practical">Practical</option>
           <option value="theoretical">Theoretical</option>
         </select>
         <button type="submit">Add Certificate</button>
       </form>
-      <form id="addJobForm" class="card">
-        <h2>Add Job</h2>
-        <label class="required" for="jobTitle">Job Title</label>
-        <input id="jobTitle" name="title" required placeholder="SOC Analyst">
-        <label class="required" for="jobDescription">Description</label>
-        <textarea id="jobDescription" name="description" required placeholder="Job description"></textarea>
-        <label class="required" for="jobSkills">Required Skills</label>
-        <textarea id="jobSkills" name="skills" required placeholder="SIEM, Linux, Networking"></textarea>
-        <label for="jobSpecFilter">Specialization</label>
-        <select id="jobSpecFilter" name="specialization"></select>
-        <label for="jobSalary">Salary</label>
-        <input id="jobSalary" name="salary" placeholder="Optional">
-        <label for="jobLink">Apply Link</label>
-        <input id="jobLink" name="link" placeholder="https://...">
-        <button type="submit">Add Job</button>
-      </form>
-    </div>
-    <h2>Manage Users</h2>
-    <div id="usersBox" class="grid"></div>
-  </div>
+      <div id="adminCertificatesList" class="admin-list"></div>
+    </section>
+
+    <section id="usersSection" class="admin-section">
+      <h1>Users</h1>
+      <div id="usersBox"></div>
+    </section>
+  </main>
 </div>
 </body>
 </html>
