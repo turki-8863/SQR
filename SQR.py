@@ -23,6 +23,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 import base64
 import hashlib
+from PyPDF2 import PdfReader
 
 try:
     from openai import OpenAI
@@ -1809,22 +1810,73 @@ def delete_job(job_id):
     return jsonify({"message": "Job deleted"})
 
 
+def extract_resume_text_from_request():
+    resume_text = ""
+
+    if request.content_type and "multipart/form-data" in request.content_type:
+        resume_text = request.form.get("resume_text", "").strip()
+
+        file = (
+            request.files.get("resume_file")
+            or request.files.get("file")
+            or request.files.get("resume")
+        )
+
+        if file and file.filename:
+            filename = file.filename.lower()
+
+            if filename.endswith(".pdf"):
+                reader = PdfReader(file)
+                pages = []
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text:
+                        pages.append(text)
+                resume_text = "\n".join(pages).strip()
+
+            elif filename.endswith(".docx"):
+                doc = Document(file)
+                resume_text = "\n".join(
+                    p.text for p in doc.paragraphs if p.text.strip()
+                ).strip()
+
+            elif filename.endswith(".txt"):
+                resume_text = file.read().decode("utf-8", errors="ignore").strip()
+
+    else:
+        data = get_json()
+        resume_text = data.get("resume_text", "").strip()
+
+    return resume_text
+
+
 @app.route("/api/ats/check", methods=["POST"])
 @login_required
 def ats_check():
     resume_text = extract_resume_text_from_request()
+
     if request.content_type and "multipart/form-data" in request.content_type:
-        job_description = request.form.get("job_description", request.form.get("target_job", ""))
+        job_description = request.form.get(
+            "job_description",
+            request.form.get("target_job", "")
+        ).strip()
     else:
         data = get_json()
-        job_description = data.get("job_description", data.get("target_job", ""))
+        job_description = data.get(
+            "job_description",
+            data.get("target_job", "")
+        ).strip()
 
     if not resume_text:
-        return jsonify({"error": "Resume text or file is required"}), 400
+        return jsonify({
+            "error": "Resume text or PDF/DOCX/TXT file is required"
+        }), 400
 
     fallback = local_ats_score(resume_text, job_description)
+
     prompt = f"""
 You are a strict ATS engine and technical recruiter. Score the resume against the job description.
+
 Return valid JSON only using this schema:
 {{
   "ats_score": 0,
@@ -1835,200 +1887,62 @@ Return valid JSON only using this schema:
   "weaknesses": [],
   "improvements": [],
   "section_scores": {{
-    "contact": 0, "summary": 0, "skills": 0, "experience": 0, "education": 0, "projects": 0, "keywords": 0, "job_match": 0, "formatting": 0
+    "contact": 0,
+    "summary": 0,
+    "skills": 0,
+    "experience": 0,
+    "education": 0,
+    "projects": 0,
+    "keywords": 0,
+    "job_match": 0,
+    "formatting": 0
   }}
 }}
-Scoring rules: keyword relevance 30%, job-description match 30%, resume sections 20%, measurable achievements 10%, formatting/ATS readability 10%.
-Resume:\n{resume_text[:9000]}
-Job description:\n{job_description[:5000]}
+
+Scoring rules:
+- Keyword relevance: 30%
+- Job-description match: 30%
+- Resume sections: 20%
+- Measurable achievements: 10%
+- Formatting and ATS readability: 10%
+
+Resume:
+{resume_text[:9000]}
+
+Job description:
+{job_description[:5000]}
 """
+
     result = ai_json(prompt, fallback)
 
-    insert_dynamic("ats_results", {
-        "user_id": user_id_value(request.current_user),
-        "resume_text": resume_text,
-        "target_job": job_description,
-        "job_description": job_description,
-        "ats_score": result.get("ats_score", fallback.get("ats_score", 0)),
-        "missing_keywords": json.dumps(result.get("missing_keywords", []), ensure_ascii=False),
-        "matched_keywords": json.dumps(result.get("matched_keywords", []), ensure_ascii=False),
-        "suggestions": json.dumps(result.get("improvements", []), ensure_ascii=False),
-        "result_json": json.dumps(result, ensure_ascii=False)
-    })
-    return jsonify(result)
+    if not isinstance(result, dict):
+        result = fallback
 
-
-TECH_SKILLS = [
-    "python", "java", "javascript", "html", "css", "sql", "mysql", "flask",
-    "django", "react", "node", "linux", "git", "github", "api", "rest",
-    "cybersecurity", "network security", "data analysis", "machine learning",
-    "artificial intelligence", "cloud", "aws", "docker", "mongodb", "typescript"
-]
-
-def safe_text(value):
-    return str(value or "").strip()
-
-def split_lines(text):
-    return [line.strip() for line in safe_text(text).splitlines() if line.strip()]
-
-def improve_summary_local(summary, target_job, skills):
-    summary = safe_text(summary)
-    target_job = safe_text(target_job)
-    skills = safe_text(skills)
-
-    role_text = f" as a {target_job}" if target_job else ""
-    skill_list = ", ".join(split_lines(skills.replace(",", "\n"))[:6])
-
-    if skill_list:
-        return f"Motivated computer science professional{role_text} with hands-on knowledge in {skill_list}. Skilled in building practical solutions, solving technical problems, and applying strong analytical thinking to deliver reliable results."
-
-    return f"Motivated computer science professional{role_text} with strong problem-solving skills, technical understanding, and a focus on building reliable digital solutions."
-
-def ai_enhance_summary(summary, target_job, skills):
-    summary = safe_text(summary)
-    target_job = safe_text(target_job)
-    skills = safe_text(skills)
-
-    if not summary:
-        return improve_summary_local(summary, target_job, skills)
-
-    prompt = f"""
-Rewrite this resume summary for ATS and recruiter readability.
-
-Return JSON only:
-{{
-  "summary": "",
-  "keywords_added": []
-}}
-
-Rules:
-- Rewrite it completely.
-- Do not return the same text.
-- 2 sentences only.
-- No fake claims.
-- Use natural ATS keywords.
-- Match the target job if provided.
-- Use skills only when relevant.
-
-Target Job: {target_job}
-Skills: {skills}
-Original Summary: {summary}
-"""
+    result.setdefault("ats_score", fallback.get("ats_score", 0))
+    result.setdefault("summary", fallback.get("summary", "ATS analysis completed."))
+    result.setdefault("matched_keywords", fallback.get("matched_keywords", []))
+    result.setdefault("missing_keywords", fallback.get("missing_keywords", []))
+    result.setdefault("strengths", fallback.get("strengths", []))
+    result.setdefault("weaknesses", fallback.get("weaknesses", []))
+    result.setdefault("improvements", fallback.get("improvements", []))
+    result.setdefault("section_scores", fallback.get("section_scores", {}))
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an ATS resume writing engine. Return valid JSON only."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.5,
-            max_tokens=220
-        )
+        insert_dynamic("ats_results", {
+            "user_id": user_id_value(request.current_user),
+            "resume_text": resume_text,
+            "target_job": job_description,
+            "job_description": job_description,
+            "ats_score": result.get("ats_score", 0),
+            "missing_keywords": json.dumps(result.get("missing_keywords", []), ensure_ascii=False),
+            "matched_keywords": json.dumps(result.get("matched_keywords", []), ensure_ascii=False),
+            "suggestions": json.dumps(result.get("improvements", []), ensure_ascii=False),
+            "result_json": json.dumps(result, ensure_ascii=False)
+        })
+    except Exception as e:
+        print("ATS result save failed:", e)
 
-        content = response.choices[0].message.content.strip()
-        data = json.loads(content)
-        new_summary = safe_text(data.get("summary"))
-
-        if new_summary and new_summary.lower() != summary.lower():
-            return new_summary
-
-        return improve_summary_local(summary, target_job, skills)
-
-    except Exception:
-        return improve_summary_local(summary, target_job, skills)
-
-def ats_score_engine(data, enhanced_summary):
-    score = 0
-
-    if safe_text(data.get("name")):
-        score += 8
-    if safe_text(data.get("email")):
-        score += 8
-    if safe_text(data.get("phone")):
-        score += 6
-    if enhanced_summary:
-        score += 18
-    if safe_text(data.get("skills")):
-        score += 18
-    if safe_text(data.get("experience")):
-        score += 14
-    if safe_text(data.get("education")):
-        score += 10
-    if safe_text(data.get("projects")):
-        score += 8
-    if safe_text(data.get("certifications")):
-        score += 5
-    if safe_text(data.get("target_job")):
-        score += 5
-
-    text = " ".join([
-        safe_text(data.get("skills")),
-        safe_text(data.get("experience")),
-        safe_text(data.get("projects")),
-        enhanced_summary
-    ]).lower()
-
-    matched = [skill for skill in TECH_SKILLS if skill in text]
-
-    if len(matched) >= 8:
-        score += 10
-    elif len(matched) >= 5:
-        score += 7
-    elif len(matched) >= 3:
-        score += 4
-
-    return min(score, 100), matched[:10]
-
-def section(title, content):
-    content = safe_text(content)
-
-    if not content:
-        return ""
-
-    lines = split_lines(content)
-
-    if len(lines) > 1:
-        body = "\n".join([f"- {line}" for line in lines])
-    else:
-        body = content
-
-    return f"\n{title.upper()}\n{'-' * len(title)}\n{body}\n"
-
-def build_resume(data, enhanced_summary):
-    name = safe_text(data.get("name")) or "Your Name"
-    email = safe_text(data.get("email"))
-    phone = safe_text(data.get("phone"))
-    linkedin = safe_text(data.get("linkedin"))
-    portfolio = safe_text(data.get("portfolio"))
-    target_job = safe_text(data.get("target_job"))
-
-    contacts = " | ".join(filter(None, [email, phone, linkedin, portfolio]))
-
-    resume = f"{name.upper()}\n"
-
-    if contacts:
-        resume += f"{contacts}\n"
-
-    if target_job:
-        resume += f"Target Role: {target_job}\n"
-
-    resume += section("Professional Summary", enhanced_summary)
-    resume += section("Technical Skills", data.get("skills"))
-    resume += section("Soft Skills", data.get("soft_skills"))
-    resume += section("Languages", data.get("languages"))
-    resume += section("Work Experience", data.get("experience"))
-    resume += section("Projects", data.get("projects"))
-    resume += section("Education", data.get("education"))
-    resume += section("Certifications", data.get("certifications"))
-
-    return resume.strip()
+    return jsonify(result)
 
 @app.route("/api/ats/generate", methods=["POST"])
 @login_required
