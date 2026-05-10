@@ -1,115 +1,281 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>SQR | Admin Panel</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 
   <style>
-    .admin-layout{
-      display:grid;
-      grid-template-columns:260px 1fr;
-      gap:24px;
-      max-width:1500px;
-      margin:30px auto;
-      padding:0 20px;
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(37,99,235,.16), transparent 35%),
+        linear-gradient(135deg, #f8fafc, #eef2ff);
+      min-height: 100vh;
     }
 
-    .admin-sidebar{
-      background:#111827;
-      border-radius:22px;
-      padding:22px;
-      position:sticky;
-      top:90px;
-      height:fit-content;
+    .admin-layout {
+      display: grid;
+      grid-template-columns: 270px 1fr;
+      gap: 26px;
+      max-width: 1500px;
+      margin: 34px auto;
+      padding: 0 22px;
     }
 
-    .admin-sidebar h2{
-      color:white;
-      margin-bottom:18px;
+    .admin-sidebar {
+      background: linear-gradient(180deg, #0f172a, #111827);
+      border-radius: 24px;
+      padding: 24px;
+      position: sticky;
+      top: 90px;
+      height: fit-content;
+      box-shadow: 0 20px 50px rgba(15,23,42,.25);
     }
 
-    .admin-menu{
-      display:flex;
-      flex-direction:column;
-      gap:10px;
+    .admin-sidebar h2 {
+      color: white;
+      margin: 0 0 6px;
+      font-size: 26px;
     }
 
-    .admin-menu button{
-      border:0;
-      border-radius:12px;
-      padding:14px;
-      cursor:pointer;
-      font-weight:700;
-      text-align:left;
-      background:#1f2937;
-      color:white;
-      transition:.2s;
+    .admin-sidebar p {
+      color: #94a3b8;
+      margin: 0 0 20px;
+      font-size: 14px;
+    }
+
+    .admin-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .admin-menu button {
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 16px;
+      cursor: pointer;
+      font-weight: 800;
+      text-align: left;
+      background: rgba(255,255,255,.07);
+      color: #e5e7eb;
+      transition: .2s ease;
     }
 
     .admin-menu button:hover,
-    .admin-menu button.active{
-      background:#2563eb;
+    .admin-menu button.active {
+      background: #2563eb;
+      color: white;
+      transform: translateX(4px);
     }
 
-    .admin-main{
-      min-width:0;
+    .admin-main {
+      min-width: 0;
     }
 
-    .admin-section{
-      display:none;
+    .admin-header {
+      background: white;
+      border-radius: 24px;
+      padding: 24px;
+      margin-bottom: 22px;
+      box-shadow: 0 14px 40px rgba(15,23,42,.08);
+      border: 1px solid rgba(148,163,184,.2);
     }
 
-    .admin-section.active{
-      display:block;
+    .admin-header h1 {
+      margin: 0;
+      font-size: 34px;
+      color: #0f172a;
     }
 
-    .admin-form{
-      display:grid;
-      gap:12px;
-      margin-bottom:24px;
+    .admin-header p {
+      margin: 8px 0 0;
+      color: #64748b;
     }
 
-    .admin-list{
-      display:grid;
-      gap:16px;
+    .admin-section {
+      display: none;
+      animation: fadeIn .25s ease;
     }
 
-    .admin-actions{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      margin-top:12px;
+    .admin-section.active {
+      display: block;
     }
 
-    .admin-actions button{
-      padding:10px 14px;
+    @keyframes fadeIn {
+      from {opacity: 0; transform: translateY(8px);}
+      to {opacity: 1; transform: translateY(0);}
     }
 
-    .stat-grid{
-      display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-      gap:18px;
+    .admin-form {
+      display: grid;
+      gap: 13px;
+      margin-bottom: 24px;
+      background: white;
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 14px 40px rgba(15,23,42,.08);
+      border: 1px solid rgba(148,163,184,.2);
     }
 
-    .stat-card{
-      background:#111827;
-      color:white;
-      border-radius:18px;
-      padding:20px;
+    .admin-form h2 {
+      margin: 0 0 6px;
+      color: #0f172a;
     }
 
-    .stat-card h3{
-      margin:0 0 10px;
+    .admin-form h3 {
+      margin: 12px 0 0;
+      color: #0f172a;
     }
 
-    .stat-card p{
-      margin:0;
-      font-size:34px;
-      font-weight:900;
+    .admin-form input,
+    .admin-form textarea,
+    .admin-form select,
+    #userSearch {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-size: 15px;
+      outline: none;
+      background: #f8fafc;
+    }
+
+    .admin-form input:focus,
+    .admin-form textarea:focus,
+    .admin-form select:focus,
+    #userSearch:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 4px rgba(37,99,235,.12);
+      background: white;
+    }
+
+    .admin-form textarea {
+      min-height: 95px;
+      resize: vertical;
+    }
+
+    .admin-form button,
+    .admin-actions button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-weight: 800;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      transition: .2s ease;
+    }
+
+    .admin-form button:hover,
+    .admin-actions button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px rgba(37,99,235,.2);
+    }
+
+    .admin-form button[type="button"] {
+      background: #0f172a;
+    }
+
+    .admin-list {
+      display: grid;
+      gap: 16px;
+    }
+
+    .admin-list .card {
+      background: white;
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 12px 35px rgba(15,23,42,.08);
+      border: 1px solid rgba(148,163,184,.2);
+    }
+
+    .admin-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .admin-actions .danger,
+    button.danger {
+      background: #dc2626;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 18px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: white;
+      border-radius: 22px;
+      padding: 24px;
+      box-shadow: 0 18px 45px rgba(15,23,42,.22);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::after {
+      content: "";
+      position: absolute;
+      width: 120px;
+      height: 120px;
+      border-radius: 999px;
+      background: rgba(37,99,235,.22);
+      right: -35px;
+      top: -35px;
+    }
+
+    .stat-card h3 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      color: #cbd5e1;
+    }
+
+    .stat-card p {
+      margin: 0;
+      font-size: 36px;
+      font-weight: 950;
+    }
+
+    .quiz-question-admin {
+      background: #f8fafc;
+      border: 1px solid #dbeafe;
+      border-radius: 20px;
+      padding: 18px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .quiz-question-admin h4 {
+      margin: 0;
+      color: #1e293b;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .admin-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .admin-sidebar {
+        position: static;
+      }
+
+      .two-col {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -127,33 +293,16 @@
 
   <aside class="admin-sidebar">
     <h2>SQR Admin</h2>
+    <p>Manage the whole platform from one place.</p>
 
     <div class="admin-menu">
       <button data-section="dashboardSection" onclick="showAdminSection('dashboardSection')">Dashboard</button>
-
-      <button data-section="specializationsSection" onclick="showAdminSection('specializationsSection')">
-        Specializations
-      </button>
-
-      <button data-section="coursesSection" onclick="showAdminSection('coursesSection')">
-        Courses
-      </button>
-
-      <button data-section="jobsSection" onclick="showAdminSection('jobsSection')">
-        Jobs
-      </button>
-
-      <button data-section="quizzesSection" onclick="showAdminSection('quizzesSection')">
-        Quizzes
-      </button>
-
-      <button data-section="certificatesSection" onclick="showAdminSection('certificatesSection')">
-        Certificates
-      </button>
-
-      <button data-section="usersSection" onclick="showAdminSection('usersSection')">
-        Users
-      </button>
+      <button data-section="specializationsSection" onclick="showAdminSection('specializationsSection')">Specializations</button>
+      <button data-section="coursesSection" onclick="showAdminSection('coursesSection')">Courses</button>
+      <button data-section="jobsSection" onclick="showAdminSection('jobsSection')">Jobs</button>
+      <button data-section="quizzesSection" onclick="showAdminSection('quizzesSection')">Quizzes</button>
+      <button data-section="certificatesSection" onclick="showAdminSection('certificatesSection')">Certificates</button>
+      <button data-section="usersSection" onclick="showAdminSection('usersSection')">Users</button>
     </div>
   </aside>
 
@@ -161,303 +310,130 @@
 
     <div id="message"></div>
 
-    <!-- DASHBOARD -->
-
     <section id="dashboardSection" class="admin-section active">
-      <h1>Dashboard</h1>
-      <p class="subtitle">Website overview and statistics.</p>
+      <div class="admin-header">
+        <h1>Dashboard</h1>
+        <p>Quick overview of users, specializations, courses, jobs, quizzes, and certificates.</p>
+      </div>
 
       <div id="adminStatsBox"></div>
     </section>
 
-    <!-- SPECIALIZATIONS -->
-
     <section id="specializationsSection" class="admin-section">
+      <div class="admin-header">
+        <h1>Manage Specializations</h1>
+        <p>Add, edit, and delete CS learning paths.</p>
+      </div>
 
-      <h1>Manage Specializations</h1>
-
-      <form id="addSpecForm" class="card admin-form">
-
+      <form id="addSpecForm" class="admin-form">
         <h2>Add Specialization</h2>
 
-        <input
-          type="text"
-          name="name"
-          placeholder="Specialization Name"
-          required
-        >
-
-        <textarea
-          name="description"
-          placeholder="Description"
-        ></textarea>
-
-        <textarea
-          name="skills"
-          placeholder="Skills"
-        ></textarea>
-
-        <textarea
-          name="roadmap"
-          placeholder="Roadmap"
-        ></textarea>
-
-        <textarea
-          name="job_titles"
-          placeholder="Job Titles"
-        ></textarea>
-
-        <input
-          type="text"
-          name="image_url"
-          placeholder="Image URL"
-        >
+        <input type="text" name="name" placeholder="Specialization Name" required>
+        <textarea name="description" placeholder="Description"></textarea>
+        <textarea name="skills" placeholder="Skills"></textarea>
+        <textarea name="roadmap" placeholder="Roadmap"></textarea>
+        <textarea name="job_titles" placeholder="Job Titles"></textarea>
+        <input type="text" name="image_url" placeholder="Image URL">
 
         <button type="submit">Add Specialization</button>
-
       </form>
 
       <div id="adminSpecializationsList" class="admin-list"></div>
-
     </section>
 
-    <!-- COURSES -->
-
     <section id="coursesSection" class="admin-section">
+      <div class="admin-header">
+        <h1>Manage Courses</h1>
+        <p>Add courses and connect them to a specialization.</p>
+      </div>
 
-      <h1>Manage Courses</h1>
-
-      <form id="addCourseForm" class="card admin-form">
-
+      <form id="addCourseForm" class="admin-form">
         <h2>Add Course</h2>
 
-        <select
-          id="courseSpecialization"
-          name="specialization_id"
-          required
-        ></select>
+        <select id="courseSpecialization" name="specialization_id" required></select>
 
-        <input
-          type="text"
-          id="courseTitle"
-          name="title"
-          placeholder="Course Title"
-          required
-        >
+        <input type="text" id="courseTitle" name="title" placeholder="Course Title" required>
+        <textarea id="courseDescription" name="description" placeholder="Description"></textarea>
 
-        <textarea
-          id="courseDescription"
-          name="description"
-          placeholder="Description"
-        ></textarea>
-
-        <select
-          id="courseDifficulty"
-          name="level"
-        >
+        <select id="courseDifficulty" name="level">
           <option value="Beginner">Beginner</option>
           <option value="Intermediate">Intermediate</option>
           <option value="Advanced">Advanced</option>
         </select>
 
-        <input
-          type="text"
-          id="courseLink"
-          name="course_link"
-          placeholder="Course Link"
-        >
-
-        <input
-          type="text"
-          name="video_url"
-          placeholder="Video URL"
-        >
-
-        <input
-          type="text"
-          id="courseImage"
-          name="image_url"
-          placeholder="Image URL"
-        >
+        <input type="text" id="courseLink" name="course_link" placeholder="Course Link">
+        <input type="text" name="video_url" placeholder="Video URL">
+        <input type="text" id="courseImage" name="image_url" placeholder="Image URL">
 
         <button type="submit">Add Course</button>
-
       </form>
 
       <div id="adminCoursesList" class="admin-list"></div>
-
     </section>
 
-    <!-- JOBS -->
-
     <section id="jobsSection" class="admin-section">
+      <div class="admin-header">
+        <h1>Manage Jobs</h1>
+        <p>Add job roles and connect them with specializations.</p>
+      </div>
 
-      <h1>Manage Jobs</h1>
-
-      <form id="addJobForm" class="card admin-form">
-
+      <form id="addJobForm" class="admin-form">
         <h2>Add Job</h2>
 
-        <select
-          id="jobSpecialization"
-          name="specialization_id"
-          required
-        ></select>
+        <select id="jobSpecialization" name="specialization_id" required></select>
 
-        <input
-          type="text"
-          id="jobTitle"
-          name="title"
-          placeholder="Job Title"
-          required
-        >
-
-        <textarea
-          id="jobDescription"
-          name="description"
-          placeholder="Description"
-        ></textarea>
-
-        <textarea
-          id="jobSkills"
-          name="required_skills"
-          placeholder="Required Skills"
-        ></textarea>
-
-        <input
-          type="text"
-          id="jobSalary"
-          name="average_salary"
-          placeholder="Average Salary"
-        >
-
-        <input
-          type="text"
-          id="jobLink"
-          name="job_link"
-          placeholder="Job Link"
-        >
+        <input type="text" id="jobTitle" name="title" placeholder="Job Title" required>
+        <textarea id="jobDescription" name="description" placeholder="Description"></textarea>
+        <textarea id="jobSkills" name="required_skills" placeholder="Required Skills"></textarea>
+        <input type="text" id="jobSalary" name="average_salary" placeholder="Average Salary">
+        <input type="text" id="jobLink" name="job_link" placeholder="Job Link">
 
         <button type="submit">Add Job</button>
-
       </form>
 
       <div id="adminJobsList" class="admin-list"></div>
-
     </section>
 
-    <!-- QUIZZES -->
-
     <section id="quizzesSection" class="admin-section">
+      <div class="admin-header">
+        <h1>Manage Quizzes</h1>
+        <p>Create one quiz module with many questions.</p>
+      </div>
 
-      <h1>Manage Quizzes</h1>
+      <form id="addQuizForm" class="admin-form">
+        <h2>Add Quiz / Module</h2>
 
-      <form id="addQuizForm" class="card admin-form">
+        <select id="quizCourseSelect" name="course_id" required></select>
 
-        <h2>Add Quiz</h2>
+        <input type="text" name="title" placeholder="Quiz Title / Module 1" required>
+        <textarea name="description" placeholder="Description"></textarea>
 
-        <select
-          id="quizCourseSelect"
-          name="course_id"
-          required
-        ></select>
+        <h3>Questions</h3>
 
-        <input
-          type="text"
-          name="title"
-          placeholder="Quiz Title"
-          required
-        >
+        <div id="quizQuestionsContainer"></div>
 
-        <textarea
-          name="description"
-          placeholder="Description"
-        ></textarea>
-
-        <input
-          type="text"
-          name="question_text"
-          placeholder="Question"
-        >
-
-        <input
-          type="text"
-          name="option_a"
-          placeholder="Option A"
-        >
-
-        <input
-          type="text"
-          name="option_b"
-          placeholder="Option B"
-        >
-
-        <input
-          type="text"
-          name="option_c"
-          placeholder="Option C"
-        >
-
-        <input
-          type="text"
-          name="option_d"
-          placeholder="Option D"
-        >
-
-        <select name="correct_answer">
-          <option value="A">A</option>
-          <option value="B">B</option>
-          <option value="C">C</option>
-          <option value="D">D</option>
-        </select>
-
-        <button type="submit">Add Quiz</button>
-
+        <button type="button" onclick="addQuizQuestion()">+ Add Question</button>
+        <button type="submit">Save Quiz</button>
       </form>
 
       <div id="adminQuizzesList" class="admin-list"></div>
-
     </section>
 
-    <!-- CERTIFICATES -->
-
     <section id="certificatesSection" class="admin-section">
+      <div class="admin-header">
+        <h1>Manage Certificates</h1>
+        <p>Add certificates for each specialization.</p>
+      </div>
 
-      <h1>Manage Certificates</h1>
-
-      <form id="addCertForm" class="card admin-form">
-
+      <form id="addCertForm" class="admin-form">
         <h2>Add Certificate</h2>
 
-        <select
-          id="certSpecialization"
-          name="spec_id"
-          required
-        ></select>
+        <select id="certSpecialization" name="spec_id" required></select>
 
-        <input
-          type="text"
-          name="name"
-          placeholder="Certificate Name"
-          required
-        >
-
-        <textarea
-          name="description"
-          placeholder="Description"
-        ></textarea>
-
-        <input
-          type="text"
-          name="link"
-          placeholder="Certificate Link"
-        >
-
-        <input
-          type="text"
-          name="price"
-          placeholder="Price"
-        >
+        <input type="text" name="name" placeholder="Certificate Name" required>
+        <textarea name="description" placeholder="Description"></textarea>
+        <input type="text" name="link" placeholder="Certificate Link">
+        <input type="text" name="price" placeholder="Price">
 
         <select name="type">
           <option value="both">Both</option>
@@ -466,17 +442,26 @@
         </select>
 
         <button type="submit">Add Certificate</button>
-
       </form>
 
       <div id="adminCertificatesList" class="admin-list"></div>
-
     </section>
 
-    <!-- USERS -->
-
     <section id="usersSection" class="admin-section">
-      <h1>Manage Users</h1>
+      <div class="admin-header">
+        <h1>Manage Users</h1>
+        <p>Search, ban, unban, or change user roles.</p>
+      </div>
+
+      <input
+        type="text"
+        id="userSearch"
+        placeholder="Search users by name, email, or role..."
+        onkeyup="filterAdminUsers(this.value)"
+      >
+
+      <br><br>
+
       <div id="usersBox"></div>
     </section>
 
