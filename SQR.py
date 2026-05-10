@@ -1333,70 +1333,124 @@ def unban_user(user_id):
     return jsonify({"message": "User unbanned"})
 
 
+
 @app.route("/api/specializations", methods=["GET"])
 def get_specializations():
-    specs = query_db("SELECT * FROM specializations ORDER BY id DESC", fetchall=True)
+    spk = spec_pk_col()
+    image_col = spec_image_col()
+    specs = query_db(f"SELECT * FROM specializations ORDER BY `{spk}` DESC", fetchall=True) or []
+    fixed = []
     for spec in specs:
-        spec["image_url"] = upload_url(spec.get("image"))
-        spec["certificates"] = query_db("SELECT * FROM certificates WHERE spec_id=%s ORDER BY id DESC", (spec["id"],), fetchall=True)
-    return jsonify(specs)
+        spec = normalize_specialization(spec)
+        raw_image = spec.get("image_url") or spec.get("image") or ""
+        spec["image_url"] = raw_image if str(raw_image).startswith("http") or str(raw_image).startswith("/uploads/") else upload_url(raw_image)
+        try:
+            spec["certificates"] = query_db("SELECT * FROM certificates WHERE spec_id=%s ORDER BY id DESC", (spec["id"],), fetchall=True) or []
+        except Exception:
+            spec["certificates"] = []
+        fixed.append(spec)
+    return jsonify(fixed)
 
 
 @app.route("/api/specializations/<int:spec_id>")
 def get_specialization(spec_id):
-    spec = query_db("SELECT * FROM specializations WHERE id=%s", (spec_id,), fetchone=True)
+    spk = spec_pk_col()
+    spec = query_db(f"SELECT * FROM specializations WHERE `{spk}`=%s", (spec_id,), fetchone=True)
     if not spec:
         return jsonify({"error": "Specialization not found"}), 404
-    spec["image_url"] = upload_url(spec.get("image"))
-    spec["certificates"] = query_db("SELECT * FROM certificates WHERE spec_id=%s ORDER BY id DESC", (spec_id,), fetchall=True)
-    spec["courses"] = query_db("SELECT * FROM courses WHERE spec_id=%s ORDER BY id DESC", (spec_id,), fetchall=True)
-    for course in spec["courses"]:
-        course["image_url"] = upload_url(course.get("image"))
-        course["video_url"] = upload_url(course.get("video"))
+    spec = normalize_specialization(spec)
+    raw_image = spec.get("image_url") or spec.get("image") or ""
+    spec["image_url"] = raw_image if str(raw_image).startswith("http") or str(raw_image).startswith("/uploads/") else upload_url(raw_image)
+    try:
+        spec["certificates"] = query_db("SELECT * FROM certificates WHERE spec_id=%s ORDER BY id DESC", (spec["id"],), fetchall=True) or []
+    except Exception:
+        spec["certificates"] = []
+    cpk = course_pk_col()
+    cspec = course_spec_col()
+    courses = query_db(f"SELECT * FROM courses WHERE `{cspec}`=%s ORDER BY `{cpk}` DESC", (spec_id,), fetchall=True) or []
+    fixed_courses = []
+    for course in courses:
+        course = normalize_course(course)
+        raw_cimg = course.get("image_url") or course.get("image") or ""
+        raw_vid = course.get("video_url") or course.get("video") or ""
+        course["image_url"] = raw_cimg if str(raw_cimg).startswith("http") or str(raw_cimg).startswith("/uploads/") else upload_url(raw_cimg)
+        course["video_url"] = raw_vid if str(raw_vid).startswith("http") or str(raw_vid).startswith("/uploads/") else upload_url(raw_vid)
         add_course_level_meta(course)
-        course["quizzes"] = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY id DESC", (course["id"],), fetchall=True)
-    spec["quizzes"] = query_db("SELECT q.* FROM quizzes q JOIN courses c ON q.course_id=c.id WHERE c.spec_id=%s ORDER BY q.id DESC", (spec_id,), fetchall=True)
+        course["quizzes"] = query_db(f"SELECT * FROM quizzes WHERE course_id=%s ORDER BY `{quiz_pk_col()}` DESC", (course["id"],), fetchall=True) or []
+        fixed_courses.append(course)
+    spec["courses"] = fixed_courses
+    spec["quizzes"] = query_db(f"SELECT q.* FROM quizzes q JOIN courses c ON q.course_id=c.`{cpk}` WHERE c.`{cspec}`=%s ORDER BY q.`{quiz_pk_col()}` DESC", (spec_id,), fetchall=True) or []
     return jsonify(spec)
 
 
 @app.route("/api/specializations", methods=["POST"])
 @admin_required
 def add_specialization():
-    name = request.form.get("name", "").strip()
-    description = request.form.get("description", "").strip()
-    skills = request.form.get("skills", "").strip()
-    roadmap = request.form.get("roadmap", "").strip()
-    job_titles = request.form.get("job_titles", "").strip()
-    career_paths = request.form.get("career_paths", "").strip()
-    image = save_file("image")
+    data = request.form.to_dict() if request.form else get_json()
+    name = str(data.get("name", "")).strip()
     if not name:
         return jsonify({"error": "Specialization name is required"}), 400
-    spec_id = query_db("INSERT INTO specializations (name,description,skills,roadmap,job_titles,career_paths,image) VALUES (%s,%s,%s,%s,%s,%s,%s)", (name, description, skills, roadmap, job_titles, career_paths, image), commit=True)
-    return jsonify({"message": "Specialization added", "id": spec_id}), 201
+    image = save_file("image") or data.get("image_url") or data.get("image") or ""
+    spec_id = insert_dynamic("specializations", {
+        "name": name,
+        "description": data.get("description", ""),
+        "skills": data.get("skills", ""),
+        "roadmap": data.get("roadmap", ""),
+        "job_titles": data.get("job_titles", ""),
+        "career_paths": data.get("career_paths", ""),
+        "image_url": image,
+        "image": image,
+    })
+    return jsonify({"message": "Specialization added", "id": spec_id, "specialization_id": spec_id}), 201
 
 
 @app.route("/api/specializations/<int:spec_id>", methods=["PUT"])
 @admin_required
 def update_specialization(spec_id):
-    old = query_db("SELECT * FROM specializations WHERE id=%s", (spec_id,), fetchone=True)
+    spk = spec_pk_col()
+    old = query_db(f"SELECT * FROM specializations WHERE `{spk}`=%s", (spec_id,), fetchone=True)
     if not old:
         return jsonify({"error": "Specialization not found"}), 404
-    name = request.form.get("name", old["name"]).strip()
-    description = request.form.get("description", old.get("description") or "").strip()
-    skills = request.form.get("skills", old.get("skills") or "").strip()
-    roadmap = request.form.get("roadmap", old.get("roadmap") or "").strip()
-    job_titles = request.form.get("job_titles", old.get("job_titles") or "").strip()
-    career_paths = request.form.get("career_paths", old.get("career_paths") or "").strip()
-    image = save_file("image") or old.get("image", "")
-    exec_db("UPDATE specializations SET name=%s,description=%s,skills=%s,roadmap=%s,job_titles=%s,career_paths=%s,image=%s WHERE id=%s", (name, description, skills, roadmap, job_titles, career_paths, image, spec_id))
+    old = normalize_specialization(old)
+    data = request.form.to_dict() if request.form else get_json()
+    image = save_file("image") or data.get("image_url") or data.get("image") or old.get("image_url") or old.get("image") or ""
+    values = {
+        "name": data.get("name", old.get("name")),
+        "description": data.get("description", old.get("description")),
+        "skills": data.get("skills", old.get("skills")),
+        "roadmap": data.get("roadmap", old.get("roadmap")),
+        "job_titles": data.get("job_titles", old.get("job_titles")),
+        "career_paths": data.get("career_paths", old.get("career_paths")),
+        "image_url": image,
+        "image": image,
+    }
+    sets, params = [], []
+    for col, val in values.items():
+        if column_exists("specializations", col):
+            sets.append(f"`{col}`=%s")
+            params.append(val)
+    params.append(spec_id)
+    exec_db(f"UPDATE specializations SET {','.join(sets)} WHERE `{spk}`=%s", tuple(params))
     return jsonify({"message": "Specialization updated"})
 
 
 @app.route("/api/specializations/<int:spec_id>", methods=["DELETE"])
 @admin_required
 def delete_specialization(spec_id):
-    exec_db("DELETE FROM specializations WHERE id=%s", (spec_id,))
+    exec_db(f"DELETE FROM specializations WHERE `{spec_pk_col()}`=%s", (spec_id,))
     return jsonify({"message": "Specialization deleted"})
+
+@app.route("/api/certificates", methods=["GET"])
+def get_certificates():
+    spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
+    sql = "SELECT * FROM certificates WHERE 1=1"
+    params = []
+    if spec_id:
+        sql += " AND spec_id=%s"
+        params.append(spec_id)
+    sql += " ORDER BY id DESC"
+    rows = query_db(sql, tuple(params), fetchall=True)
+    return jsonify(rows or [])
 
 
 @app.route("/api/certificates", methods=["POST"])
@@ -1424,56 +1478,85 @@ def delete_certificate(cert_id):
     return jsonify({"message": "Certificate deleted"})
 
 
+
 @app.route("/api/courses", methods=["GET"])
 def get_courses():
-    spec_id = request.args.get("spec_id")
-    level = request.args.get("level")
+    spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
+    level = request.args.get("level") or request.args.get("difficulty")
     search = request.args.get("search", "")
     sort = request.args.get("sort", "newest")
+    cpk = course_pk_col()
+    cspec = course_spec_col()
     sql = "SELECT * FROM courses WHERE 1=1"
     params = []
     if spec_id:
-        sql += " AND spec_id=%s"
+        sql += f" AND `{cspec}`=%s"
         params.append(spec_id)
     if level:
-        sql += " AND level=%s"
+        sql += " AND LOWER(level)=LOWER(%s)"
         params.append(level)
     if search:
         sql += " AND (title LIKE %s OR description LIKE %s)"
         params.extend([f"%{search}%", f"%{search}%"])
-    sql += " ORDER BY title ASC" if sort == "title" else " ORDER BY id ASC" if sort == "oldest" else " ORDER BY id DESC"
-    courses = query_db(sql, tuple(params), fetchall=True)
+    sql += " ORDER BY title ASC" if sort == "title" else f" ORDER BY `{cpk}` ASC" if sort == "oldest" else f" ORDER BY `{cpk}` DESC"
+    courses = query_db(sql, tuple(params), fetchall=True) or []
+    fixed = []
     for course in courses:
-        course["image_url"] = upload_url(course.get("image"))
-        course["video_url"] = upload_url(course.get("video"))
+        course = normalize_course(course)
+        raw_image = course.get("image_url") or course.get("image") or ""
+        raw_video = course.get("video_url") or course.get("video") or ""
+        course["image_url"] = raw_image if str(raw_image).startswith("http") or str(raw_image).startswith("/uploads/") else upload_url(raw_image)
+        course["video_url"] = raw_video if str(raw_video).startswith("http") or str(raw_video).startswith("/uploads/") else upload_url(raw_video)
         add_course_level_meta(course)
-    return jsonify(courses)
+        fixed.append(course)
+    return jsonify(fixed)
 
 
 @app.route("/api/courses", methods=["POST"])
 @admin_required
 def add_course():
-    spec_id = request.form.get("spec_id")
-    title = request.form.get("title", "").strip()
+    data = request.form.to_dict() if request.form else get_json()
+    spec_id = data.get("specialization_id") or data.get("spec_id") or data.get("specialization")
+    title = str(data.get("title") or data.get("course_title") or "").strip()
     if not spec_id or not title:
         return jsonify({"error": "spec_id and title are required"}), 400
-    course_id = query_db("INSERT INTO courses (spec_id,title,description,link,image,video,level) VALUES (%s,%s,%s,%s,%s,%s,%s)", (spec_id, title, request.form.get("description", "").strip(), request.form.get("link", "").strip(), save_file("image"), save_file("video"), normalize_level(request.form.get("level", "beginner"))), commit=True)
-    return jsonify({"message": "Course added", "id": course_id}), 201
+    image = save_file("image") or data.get("image_url") or data.get("image") or ""
+    video = save_file("video") or data.get("video_url") or data.get("video") or ""
+    level = data.get("level") or data.get("difficulty") or "Beginner"
+    level_db = {"beginner":"Beginner", "intermediate":"Intermediate", "advanced":"Advanced"}.get(str(level).lower(), str(level))
+    course_id = insert_dynamic("courses", {
+        "specialization_id": spec_id,
+        "spec_id": spec_id,
+        "title": title,
+        "description": data.get("description", ""),
+        "course_link": data.get("course_link") or data.get("link") or "",
+        "link": data.get("link") or data.get("course_link") or "",
+        "image_url": image,
+        "image": image,
+        "video_url": video,
+        "video": video,
+        "level": level_db,
+    })
+    return jsonify({"message": "Course added", "id": course_id, "course_id": course_id}), 201
 
 
 @app.route("/api/courses/<int:course_id>", methods=["GET"])
 def get_course(course_id):
-    course = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
+    cpk = course_pk_col()
+    course = query_db(f"SELECT * FROM courses WHERE `{cpk}`=%s", (course_id,), fetchone=True)
     if not course:
         return jsonify({"error": "Course not found"}), 404
-    course["image_url"] = upload_url(course.get("image"))
-    course["video_url"] = upload_url(course.get("video"))
+    course = normalize_course(course)
+    raw_image = course.get("image_url") or course.get("image") or ""
+    raw_video = course.get("video_url") or course.get("video") or ""
+    course["image_url"] = raw_image if str(raw_image).startswith("http") or str(raw_image).startswith("/uploads/") else upload_url(raw_image)
+    course["video_url"] = raw_video if str(raw_video).startswith("http") or str(raw_video).startswith("/uploads/") else upload_url(raw_video)
     add_course_level_meta(course)
-    quizzes = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY id DESC", (course_id,), fetchall=True)
+    quizzes = query_db(f"SELECT * FROM quizzes WHERE course_id=%s ORDER BY `{quiz_pk_col()}` DESC", (course_id,), fetchall=True) or []
     fixed = []
     for quiz in quizzes:
         quiz = normalize_quiz(quiz)
-        questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id ASC", (quiz["id"],), fetchall=True)
+        questions = query_db(f"SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY `{question_pk_col()}` ASC", (quiz["id"],), fetchall=True) or []
         quiz["questions"] = [normalize_question(q) for q in questions]
         fixed.append(quiz)
     course["quizzes"] = fixed
@@ -1483,18 +1566,44 @@ def get_course(course_id):
 @app.route("/api/courses/<int:course_id>", methods=["PUT"])
 @admin_required
 def update_course(course_id):
-    old = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
+    cpk = course_pk_col()
+    old = query_db(f"SELECT * FROM courses WHERE `{cpk}`=%s", (course_id,), fetchone=True)
     if not old:
         return jsonify({"error": "Course not found"}), 404
-    values = (request.form.get("spec_id") or old["spec_id"], request.form.get("title") or old["title"], request.form.get("description") or old.get("description"), request.form.get("link") or old.get("link"), save_file("image") or old.get("image"), save_file("video") or old.get("video"), request.form.get("level") or old.get("level"), course_id)
-    exec_db("UPDATE courses SET spec_id=%s,title=%s,description=%s,link=%s,image=%s,video=%s,level=%s WHERE id=%s", values)
+    old = normalize_course(old)
+    data = request.form.to_dict() if request.form else get_json()
+    spec_id = data.get("specialization_id") or data.get("spec_id") or old.get("spec_id")
+    image = save_file("image") or data.get("image_url") or data.get("image") or old.get("image_url") or old.get("image") or ""
+    video = save_file("video") or data.get("video_url") or data.get("video") or old.get("video_url") or old.get("video") or ""
+    level = data.get("level") or data.get("difficulty") or old.get("level") or "Beginner"
+    level_db = {"beginner":"Beginner", "intermediate":"Intermediate", "advanced":"Advanced"}.get(str(level).lower(), str(level))
+    values = {
+        "specialization_id": spec_id,
+        "spec_id": spec_id,
+        "title": data.get("title", old.get("title")),
+        "description": data.get("description", old.get("description")),
+        "course_link": data.get("course_link") or data.get("link") or old.get("course_link"),
+        "link": data.get("link") or data.get("course_link") or old.get("link"),
+        "image_url": image,
+        "image": image,
+        "video_url": video,
+        "video": video,
+        "level": level_db,
+    }
+    sets, params = [], []
+    for col, val in values.items():
+        if column_exists("courses", col):
+            sets.append(f"`{col}`=%s")
+            params.append(val)
+    params.append(course_id)
+    exec_db(f"UPDATE courses SET {','.join(sets)} WHERE `{cpk}`=%s", tuple(params))
     return jsonify({"message": "Course updated"})
 
 
 @app.route("/api/courses/<int:course_id>", methods=["DELETE"])
 @admin_required
 def delete_course(course_id):
-    exec_db("DELETE FROM courses WHERE id=%s", (course_id,))
+    exec_db(f"DELETE FROM courses WHERE `{course_pk_col()}`=%s", (course_id,))
     return jsonify({"message": "Course deleted"})
 
 
@@ -1762,92 +1871,114 @@ def enrolled_courses():
     return jsonify(rows)
 
 
+
 @app.route("/api/jobs", methods=["GET"])
 def get_jobs():
     search = request.args.get("search", "")
-    specialization = request.args.get("specialization", "")
+    specialization = request.args.get("specialization", "") or request.args.get("specialization_id", "") or request.args.get("spec_id", "")
     profile_text = request.args.get("profile_text", "") or current_profile_text()
-    sql = "SELECT * FROM jobs WHERE 1=1"
+    jpk = db_primary("jobs")
+    sql = "SELECT j.*"
+    if column_exists("jobs", "specialization_id") and column_exists("specializations", "specialization_id"):
+        sql += ", s.name AS specialization_name"
+        sql += " FROM jobs j LEFT JOIN specializations s ON s.specialization_id=j.specialization_id WHERE 1=1"
+    else:
+        sql += " FROM jobs j WHERE 1=1"
     params = []
     if search:
-        sql += " AND (title LIKE %s OR description LIKE %s OR skills LIKE %s)"
+        skill_col = "required_skills" if column_exists("jobs", "required_skills") else "skills"
+        sql += f" AND (j.title LIKE %s OR j.description LIKE %s OR j.`{skill_col}` LIKE %s)"
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
     if specialization:
-        sql += " AND specialization LIKE %s"
-        params.append(f"%{specialization}%")
-    jobs = query_db(sql + " ORDER BY id DESC", tuple(params), fetchall=True)
+        if str(specialization).isdigit() and column_exists("jobs", "specialization_id"):
+            sql += " AND j.specialization_id=%s"
+            params.append(specialization)
+        elif column_exists("jobs", "specialization"):
+            sql += " AND j.specialization LIKE %s"
+            params.append(f"%{specialization}%")
+    jobs = query_db(sql + f" ORDER BY j.`{jpk}` DESC", tuple(params), fetchall=True) or []
+    fixed = []
     for job in jobs:
-        job_text = f"{job.get('title','')} {job.get('description','')} {job.get('skills','')} {job.get('specialization','')}"
+        job = dict(job)
+        job["id"] = job.get("id") or job.get("job_id")
+        job["job_id"] = job.get("job_id") or job.get("id")
+        job["required_skills"] = job.get("required_skills") or job.get("skills") or ""
+        job["skills"] = job.get("skills") or job.get("required_skills") or ""
+        job["average_salary"] = job.get("average_salary") or job.get("salary") or ""
+        job["salary"] = job.get("salary") or job.get("average_salary") or ""
+        job["job_link"] = job.get("job_link") or job.get("link") or ""
+        job["link"] = job.get("link") or job.get("job_link") or ""
+        job["specialization"] = job.get("specialization_name") or job.get("specialization") or job.get("specialization_id") or ""
+        job_text = f"{job.get('title','')} {job.get('description','')} {job.get('required_skills','')} {job.get('specialization','')}"
         score, matches = calculate_match_percentage(profile_text, job_text)
         job["match_percentage"] = score
         job["match_label"] = "Strong match" if score >= 75 else "Good match" if score >= 55 else "Partial match" if score > 0 else "Add profile skills"
         job["matched_skills"] = matches
-    return jsonify(jobs)
+        fixed.append(job)
+    return jsonify(fixed)
 
 
 @app.route("/api/jobs", methods=["POST"])
 @admin_required
 def add_job():
-    data = get_json()
-    if not data.get("title"):
+    data = request.form.to_dict() if request.form else get_json()
+    spec_id = data.get("specialization_id") or data.get("spec_id") or data.get("specialization")
+    title = str(data.get("title") or data.get("job_title") or "").strip()
+    if not title:
         return jsonify({"error": "title is required"}), 400
-    job_id = query_db("INSERT INTO jobs (title,description,skills,specialization,salary,link) VALUES (%s,%s,%s,%s,%s,%s)", (data.get("title"), data.get("description"), data.get("skills"), data.get("specialization"), data.get("salary"), data.get("link")), commit=True)
-    return jsonify({"message": "Job added", "id": job_id}), 201
+    if column_exists("jobs", "specialization_id") and not spec_id:
+        return jsonify({"error": "specialization_id and title are required"}), 400
+    job_id = insert_dynamic("jobs", {
+        "specialization_id": spec_id,
+        "title": title,
+        "description": data.get("description", ""),
+        "required_skills": data.get("required_skills") or data.get("skills") or "",
+        "skills": data.get("skills") or data.get("required_skills") or "",
+        "average_salary": data.get("average_salary") or data.get("salary") or "",
+        "salary": data.get("salary") or data.get("average_salary") or "",
+        "job_link": data.get("job_link") or data.get("link") or "",
+        "link": data.get("link") or data.get("job_link") or "",
+        "specialization": data.get("specialization_name") or data.get("specialization") or spec_id or "",
+    })
+    return jsonify({"message": "Job added", "id": job_id, "job_id": job_id}), 201
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["PUT"])
 @admin_required
 def update_job(job_id):
-    data = get_json()
-    exec_db("UPDATE jobs SET title=%s,description=%s,skills=%s,specialization=%s,salary=%s,link=%s WHERE id=%s", (data.get("title"), data.get("description"), data.get("skills"), data.get("specialization"), data.get("salary"), data.get("link"), job_id))
+    data = request.form.to_dict() if request.form else get_json()
+    jpk = db_primary("jobs")
+    old = query_db(f"SELECT * FROM jobs WHERE `{jpk}`=%s", (job_id,), fetchone=True)
+    if not old:
+        return jsonify({"error": "Job not found"}), 404
+    spec_id = data.get("specialization_id") or data.get("spec_id") or old.get("specialization_id")
+    values = {
+        "specialization_id": spec_id,
+        "title": data.get("title", old.get("title")),
+        "description": data.get("description", old.get("description")),
+        "required_skills": data.get("required_skills") or data.get("skills") or old.get("required_skills"),
+        "skills": data.get("skills") or data.get("required_skills") or old.get("skills"),
+        "average_salary": data.get("average_salary") or data.get("salary") or old.get("average_salary"),
+        "salary": data.get("salary") or data.get("average_salary") or old.get("salary"),
+        "job_link": data.get("job_link") or data.get("link") or old.get("job_link"),
+        "link": data.get("link") or data.get("job_link") or old.get("link"),
+        "specialization": data.get("specialization") or data.get("specialization_name") or old.get("specialization"),
+    }
+    sets, params = [], []
+    for col, val in values.items():
+        if column_exists("jobs", col):
+            sets.append(f"`{col}`=%s")
+            params.append(val)
+    params.append(job_id)
+    exec_db(f"UPDATE jobs SET {','.join(sets)} WHERE `{jpk}`=%s", tuple(params))
     return jsonify({"message": "Job updated"})
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
 @admin_required
 def delete_job(job_id):
-    exec_db("DELETE FROM jobs WHERE id=%s", (job_id,))
+    exec_db(f"DELETE FROM jobs WHERE `{db_primary('jobs')}`=%s", (job_id,))
     return jsonify({"message": "Job deleted"})
-
-
-def extract_resume_text_from_request():
-    resume_text = ""
-
-    if request.content_type and "multipart/form-data" in request.content_type:
-        resume_text = request.form.get("resume_text", "").strip()
-
-        file = (
-            request.files.get("resume_file")
-            or request.files.get("file")
-            or request.files.get("resume")
-        )
-
-        if file and file.filename:
-            filename = file.filename.lower()
-
-            if filename.endswith(".pdf"):
-                reader = PdfReader(file)
-                pages = []
-                for page in reader.pages:
-                    text = page.extract_text()
-                    if text:
-                        pages.append(text)
-                resume_text = "\n".join(pages).strip()
-
-            elif filename.endswith(".docx"):
-                doc = Document(file)
-                resume_text = "\n".join(
-                    p.text for p in doc.paragraphs if p.text.strip()
-                ).strip()
-
-            elif filename.endswith(".txt"):
-                resume_text = file.read().decode("utf-8", errors="ignore").strip()
-
-    else:
-        data = get_json()
-        resume_text = data.get("resume_text", "").strip()
-
-    return resume_text
 
 
 @app.route("/api/ats/check", methods=["POST"])
@@ -2249,6 +2380,7 @@ def get_system_specializations_for_ai():
     return fixed
 
 
+@app.route("/api/recommendation", methods=["POST"])
 @app.route("/api/recommendation/submit", methods=["POST"])
 @app.route("/api/recommendations", methods=["POST"])
 @login_required
@@ -2451,13 +2583,15 @@ def update_user_role_alias(user_id):
 @app.route("/api/admin/stats")
 @admin_required
 def admin_stats():
-    return jsonify({
+    stats = {
         "users": query_db("SELECT COUNT(*) AS total FROM users", fetchone=True)["total"],
         "specializations": query_db("SELECT COUNT(*) AS total FROM specializations", fetchone=True)["total"],
         "courses": query_db("SELECT COUNT(*) AS total FROM courses", fetchone=True)["total"],
         "quizzes": query_db("SELECT COUNT(*) AS total FROM quizzes", fetchone=True)["total"],
         "jobs": query_db("SELECT COUNT(*) AS total FROM jobs", fetchone=True)["total"],
-    })
+        "certificates": query_db("SELECT COUNT(*) AS total FROM certificates", fetchone=True)["total"] if table_exists("certificates") else 0,
+    }
+    return jsonify(stats)
 
 
 try:
