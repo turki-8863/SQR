@@ -86,12 +86,8 @@
   <form id="atsCheckForm" class="card">
     <h2>ATS Checker</h2>
 
-    <label class="required" for="resume_text">Resume Text</label>
-    <textarea name="resume_text" id="resume_text" required placeholder="Paste resume text"></textarea>
-
-    <label class="required" for="job_description">Job Description</label>
-    <textarea name="job_description" id="job_description" required placeholder="Paste job description"></textarea>
-
+    <label class="required" for="resume_file">Upload Resume PDF, DOCX, or TXT</label>
+    <input id="resume_file" name="resume_file" type="file" accept=".pdf,.docx,.txt" required>
     <button type="submit">Check ATS Score</button>
   </form>
 
