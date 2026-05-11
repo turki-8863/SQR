@@ -1061,11 +1061,12 @@ def recalculate_specialization_progress(user_id, spec_id):
         VALUES (%s,%s,%s,%s,IF(%s='completed',NOW(),NULL))
         ON DUPLICATE KEY UPDATE progress=%s,status=%s,completed_at=IF(%s='completed',NOW(),completed_at)
     """, (user_id, spec_id, progress, status, status, progress, status, status))
-    exec_db("""
-        INSERT INTO progress (user_id,spec_id,progress)
-        VALUES (%s,%s,%s)
-        ON DUPLICATE KEY UPDATE progress=%s
-    """, (user_id, spec_id, progress, progress))
+    if table_exists("progress"):
+        exec_db("""
+            INSERT INTO progress (user_id,spec_id,progress)
+            VALUES (%s,%s,%s)
+            ON DUPLICATE KEY UPDATE progress=%s
+        """, (user_id, spec_id, progress, progress))
     return progress
 
 
@@ -1755,7 +1756,9 @@ def submit_quiz(quiz_id):
                 course_progress = recalculate_course_progress(request.current_user["id"], quiz.get("course_id"))
                 specialization_progress = recalculate_specialization_progress(request.current_user["id"], course["spec_id"])
         elif quiz.get("spec_id"):
-            exec_db("INSERT INTO progress (user_id,spec_id,progress) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE progress=GREATEST(progress,VALUES(progress))", (request.current_user["id"], quiz["spec_id"], score))
+            exec_db("INSERT INTO specialization_enrollments (user_id,spec_id,progress,status) VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE progress=GREATEST(progress,VALUES(progress)),status=%s", (request.current_user["id"], quiz["spec_id"], score, "completed" if score >= 100 else "in_progress", "completed" if score >= 100 else "in_progress"))
+            if table_exists("progress"):
+                exec_db("INSERT INTO progress (user_id,spec_id,progress) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE progress=GREATEST(progress,VALUES(progress))", (request.current_user["id"], quiz["spec_id"], score))
     return jsonify({"score": score, "correct": correct, "total": len(questions), "passed": bool(passed), "course_progress": course_progress, "specialization_progress": specialization_progress})
 
 
@@ -1795,14 +1798,15 @@ def update_profile():
 @login_required
 def update_progress():
     data = get_json()
-    spec_id = data.get("spec_id")
-    progress = max(0, min(int(data.get("progress", 0)), 100))
+    spec_id = data.get("spec_id") or data.get("specialization_id")
+    progress_value = max(0, min(int(data.get("progress", 0)), 100))
     if not spec_id:
         return jsonify({"error": "spec_id is required"}), 400
-    exec_db("INSERT INTO progress (user_id,spec_id,progress) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE progress=%s", (request.current_user["id"], spec_id, progress, progress))
-    exec_db("INSERT INTO specialization_enrollments (user_id,spec_id,progress,status) VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE progress=%s,status=%s", (request.current_user["id"], spec_id, progress, "completed" if progress >= 100 else "in_progress", progress, "completed" if progress >= 100 else "in_progress"))
-    return jsonify({"message": "Progress updated"})
-
+    status = "completed" if progress_value >= 100 else "in_progress" if progress_value > 0 else "not_started"
+    exec_db("INSERT INTO specialization_enrollments (user_id,spec_id,progress,status) VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE progress=%s,status=%s", (request.current_user["id"], spec_id, progress_value, status, progress_value, status))
+    if table_exists("progress"):
+        exec_db("INSERT INTO progress (user_id,spec_id,progress) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE progress=%s", (request.current_user["id"], spec_id, progress_value, progress_value))
+    return jsonify({"message": "Progress updated", "progress": progress_value, "status": status})
 
 @app.route("/api/specializations/<int:spec_id>/enroll", methods=["POST"])
 @login_required
@@ -2501,12 +2505,14 @@ Allowed CS specialization examples:
             rec["specialization_id"] = sid
             rec["id"] = sid
             try:
-                insert_dynamic("recommendations", {
+                insert_dynamic("specialization_recommendations", {
                     "user_id": user_id_value(request.current_user),
-                    "specialization_id": sid,
+                    "spec_id": sid,
                     "assessment_id": assessment_id,
-                    "match_score": rec.get("match_score", rec.get("match_percentage", 0)),
-                    "explanation": rec.get("reason", "")
+                    "match_percentage": rec.get("match_percentage", rec.get("match_score", 0)),
+                    "matched_skills": json.dumps(rec.get("skills_to_learn", []), ensure_ascii=False),
+                    "missing_skills": "",
+                    "reason": rec.get("reason", "")
                 })
             except Exception:
                 pass
@@ -2530,21 +2536,35 @@ def analyze_recommendations():
 @app.route("/api/specialization-recommendations")
 @login_required
 def get_specialization_recommendations():
+    if not table_exists("specialization_recommendations"):
+        return jsonify([])
     rows = query_db("""
-        SELECT r.*, s.name, s.description, s.image_url, s.roadmap, s.job_titles, s.career_paths
-        FROM recommendations r
-        JOIN specializations s ON s.specialization_id=r.specialization_id
-        WHERE r.user_id=%s
-        ORDER BY r.generated_at DESC
-    """, (user_id_value(request.current_user),), fetchall=True)
-    return jsonify(rows or [])
-
+        SELECT sr.*, s.name, s.description, s.image, s.roadmap, s.job_titles, s.career_paths
+        FROM specialization_recommendations sr
+        JOIN specializations s ON s.id=sr.spec_id
+        WHERE sr.user_id=%s
+        ORDER BY sr.created_at DESC
+    """, (user_id_value(request.current_user),), fetchall=True) or []
+    for row in rows:
+        row["image_url"] = upload_url(row.get("image")) if row.get("image") else ""
+        row["specialization_id"] = row.get("spec_id")
+        row["match_score"] = row.get("match_percentage", 0)
+        row["explanation"] = row.get("reason", "")
+    return jsonify(rows)
 
 @app.route("/api/job-recommendations")
 @login_required
 def get_job_recommendations():
+    if table_exists("job_recommendations"):
+        rows = query_db("""
+            SELECT jr.*, j.title, j.description, j.skills, j.specialization, j.salary, j.link
+            FROM job_recommendations jr
+            JOIN jobs j ON j.id=jr.job_id
+            WHERE jr.user_id=%s
+            ORDER BY jr.created_at DESC
+        """, (user_id_value(request.current_user),), fetchall=True) or []
+        return jsonify(rows)
     return jsonify([])
-
 
 @app.route("/api/admin/specializations", methods=["POST"])
 @admin_required
