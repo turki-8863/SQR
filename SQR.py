@@ -2196,19 +2196,8 @@ def generate_ats_resume():
         "target_job": target_job
     }
 
-    try:
-        insert_dynamic("ats_results", {
-            "user_id": user_id_value(request.current_user),
-            "ats_score": ats_score,
-            "resume_text": generated_resume,
-            "generated_resume": generated_resume,
-            "job_description": target_job,
-            "target_job": target_job,
-            "result_json": json.dumps(result, ensure_ascii=False)
-        })
-    except Exception as e:
-        print("ATS generator save failed:", e)
-
+    # Privacy fix: ATS generator returns the generated resume only in the response.
+    # It does NOT save generated resumes or user-entered generator data in ats_results.
     return jsonify(result)
 
 
