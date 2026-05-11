@@ -62,6 +62,7 @@ def decrypt_text(value):
 cipher = Fernet(get_aes_key())
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 def strong_password(password):
+    password = str(password or "")
     if len(password) < 8:
         return False
     if not re.search(r"[A-Z]", password):
@@ -69,6 +70,8 @@ def strong_password(password):
     if not re.search(r"[a-z]", password):
         return False
     if not re.search(r"[0-9]", password):
+        return False
+    if not re.search(r"[^A-Za-z0-9]", password):
         return False
     return True
 DB_CONFIG = {
@@ -141,7 +144,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(150) NOT NULL,
-            email VARCHAR(150) UNIQUE NOT NULL,
+            username VARCHAR(100) NOT NULL UNIQUE,
+            email VARCHAR(150) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL,
             role ENUM('student','admin') DEFAULT 'student',
             current_mode ENUM('student','admin') DEFAULT 'student',
@@ -166,19 +170,6 @@ def init_db():
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS certificates (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            spec_id INT NOT NULL,
-            name VARCHAR(150) NOT NULL,
-            description TEXT,
-            link VARCHAR(255),
-            price VARCHAR(100),
-            type ENUM('practical','theoretical','both') DEFAULT 'both',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
-        )
-        """,
-        """
         CREATE TABLE IF NOT EXISTS courses (
             id INT AUTO_INCREMENT PRIMARY KEY,
             spec_id INT NOT NULL,
@@ -188,6 +179,20 @@ def init_db():
             image VARCHAR(255),
             video VARCHAR(255),
             level ENUM('beginner','intermediate','advanced') DEFAULT 'beginner',
+            completed_weight INT DEFAULT 50,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS certificates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            spec_id INT NOT NULL,
+            name VARCHAR(200) NOT NULL,
+            description TEXT,
+            link VARCHAR(255),
+            price VARCHAR(100),
+            type ENUM('practical','theoretical','both') DEFAULT 'both',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
         )
@@ -199,8 +204,10 @@ def init_db():
             course_id INT NULL,
             title VARCHAR(200) NOT NULL,
             description TEXT,
+            total_questions INT DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
+            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE SET NULL,
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
         )
         """,
         """
@@ -213,20 +220,52 @@ def init_db():
             option3 VARCHAR(255),
             option4 VARCHAR(255),
             answer VARCHAR(255),
+            score INT DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS progress (
+        CREATE TABLE IF NOT EXISTS specialization_enrollments (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             spec_id INT NOT NULL,
             progress INT DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY unique_progress (user_id, spec_id),
+            status ENUM('not_started','in_progress','completed') DEFAULT 'not_started',
+            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP NULL,
+            UNIQUE KEY unique_spec_enrollment (user_id, spec_id),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS course_enrollments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            course_id INT NOT NULL,
+            progress INT DEFAULT 0,
+            status ENUM('not_started','in_progress','completed') DEFAULT 'not_started',
+            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP NULL,
+            UNIQUE KEY unique_course_enrollment (user_id, course_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS quiz_attempts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            quiz_id INT NOT NULL,
+            course_id INT NULL,
+            score INT DEFAULT 0,
+            passed TINYINT DEFAULT 0,
+            answers_json LONGTEXT,
+            attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL
         )
         """,
         """
@@ -244,10 +283,12 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS ats_results (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT,
-            ats_score INT,
+            user_id INT NULL,
+            ats_score INT DEFAULT 0,
             resume_text LONGTEXT,
+            generated_resume LONGTEXT,
             job_description LONGTEXT,
+            target_job VARCHAR(255),
             result_json LONGTEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -263,7 +304,6 @@ def init_db():
     finally:
         cursor.close()
         db.close()
-
 
 def db_primary(table_name):
     mapping = {
@@ -786,12 +826,17 @@ def insert_dynamic(table_name, values):
 
 def ensure_runtime_schema():
     try:
+        # This keeps the backend compatible with the clean 11-table Railway schema.
+        # It does not recreate old tables like progress, admins, assessments, or recommendation tables.
         if table_exists("users"):
+            add_column_if_missing("users", "username", "username VARCHAR(100) NULL AFTER name")
             add_column_if_missing("users", "current_mode", "current_mode ENUM('student','admin') DEFAULT 'student'")
             add_column_if_missing("users", "banned", "banned TINYINT DEFAULT 0")
             add_column_if_missing("users", "skills", "skills TEXT")
             add_column_if_missing("users", "interests", "interests TEXT")
             add_column_if_missing("users", "goal", "goal TEXT")
+            if column_exists("users", "username"):
+                exec_db("UPDATE users SET username=LOWER(REPLACE(SUBSTRING_INDEX(email,'@',1),'.','_')) WHERE username IS NULL OR username=''")
         if table_exists("specializations"):
             add_column_if_missing("specializations", "roadmap", "roadmap TEXT")
             add_column_if_missing("specializations", "job_titles", "job_titles TEXT")
@@ -800,116 +845,21 @@ def ensure_runtime_schema():
             add_column_if_missing("specializations", "image", "image VARCHAR(255)")
         if table_exists("courses"):
             add_column_if_missing("courses", "completed_weight", "completed_weight INT DEFAULT 50")
+            add_column_if_missing("courses", "image", "image VARCHAR(255)")
+            add_column_if_missing("courses", "video", "video VARCHAR(255)")
+            add_column_if_missing("courses", "link", "link VARCHAR(255)")
         if table_exists("quizzes"):
             add_column_if_missing("quizzes", "course_id", "course_id INT NULL")
             add_column_if_missing("quizzes", "spec_id", "spec_id INT NULL")
-        exec_db("""
-        CREATE TABLE IF NOT EXISTS admins (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL UNIQUE,
-            admin_level ENUM('owner','manager') DEFAULT 'manager',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-        """)
-        exec_db("""
-        CREATE TABLE IF NOT EXISTS specialization_enrollments (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            spec_id INT NOT NULL,
-            progress INT DEFAULT 0,
-            status ENUM('not_started','in_progress','completed') DEFAULT 'not_started',
-            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP NULL,
-            UNIQUE KEY unique_spec_enrollment (user_id, spec_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
-        )
-        """)
-        exec_db("""
-        CREATE TABLE IF NOT EXISTS course_enrollments (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            course_id INT NOT NULL,
-            progress INT DEFAULT 0,
-            status ENUM('not_started','in_progress','completed') DEFAULT 'not_started',
-            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP NULL,
-            UNIQUE KEY unique_course_enrollment (user_id, course_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
-        )
-        """)
-        exec_db("""
-        CREATE TABLE IF NOT EXISTS quiz_attempts (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            quiz_id INT NOT NULL,
-            course_id INT NULL,
-            score INT DEFAULT 0,
-            passed TINYINT DEFAULT 0,
-            answers_json LONGTEXT,
-            attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
-        )
-        """)
-        exec_db("""
-        CREATE TABLE IF NOT EXISTS assessments (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            interests TEXT,
-            skills TEXT,
-            goal TEXT,
-            total_score INT DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-        """)
-        exec_db("""
-        CREATE TABLE IF NOT EXISTS assessment_answers (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            assessment_id INT NOT NULL,
-            question TEXT NOT NULL,
-            selected_answer TEXT,
-            score INT DEFAULT 0,
-            FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE
-        )
-        """)
-        exec_db("""
-        CREATE TABLE IF NOT EXISTS specialization_recommendations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            assessment_id INT NULL,
-            spec_id INT NOT NULL,
-            match_percentage INT DEFAULT 0,
-            matched_skills TEXT,
-            missing_skills TEXT,
-            reason TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE,
-            FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE SET NULL
-        )
-        """)
-        exec_db("""
-        CREATE TABLE IF NOT EXISTS job_recommendations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            job_id INT NOT NULL,
-            match_percentage INT DEFAULT 0,
-            matched_skills TEXT,
-            missing_skills TEXT,
-            reason TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-        )
-        """)
+            add_column_if_missing("quizzes", "total_questions", "total_questions INT DEFAULT 0")
+        if table_exists("quiz_questions"):
+            add_column_if_missing("quiz_questions", "score", "score INT DEFAULT 1")
+        if table_exists("ats_results"):
+            add_column_if_missing("ats_results", "generated_resume", "generated_resume LONGTEXT NULL")
+            add_column_if_missing("ats_results", "target_job", "target_job VARCHAR(255) NULL")
+            add_column_if_missing("ats_results", "result_json", "result_json LONGTEXT NULL")
     except Exception as e:
         print("Runtime schema update skipped:", e)
-
-
 
 def ensure_compatibility_schema():
     try:
@@ -1209,22 +1159,33 @@ def uploads(filename):
 def signup():
     data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
+    username = data.get("username", "").strip().lower()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "").strip()
 
-    if not name or not email or not password:
-        return jsonify({"error": "Name, email, and password are required"}), 400
+    if not name or not username or not email or not password:
+        return jsonify({"error": "Name, username, email, and password are required"}), 400
 
     if not strong_password(password):
-        return jsonify({"error": "Password must be at least 8 characters and include uppercase, lowercase, and number"}), 400
+        return jsonify({"error": "Password must be at least 8 characters and include uppercase, lowercase, number, and special character"}), 400
 
     upk = db_primary("users")
-    existing = query_db("SELECT * FROM users WHERE email=%s", (email,), fetchone=True)
-    if existing:
+    if query_db("SELECT * FROM users WHERE email=%s", (email,), fetchone=True):
         return jsonify({"error": "Email already exists"}), 409
+    if column_exists("users", "username") and query_db("SELECT * FROM users WHERE username=%s", (username,), fetchone=True):
+        return jsonify({"error": "Username already exists"}), 409
 
     hashed_password = generate_password_hash(password, method="pbkdf2:sha256", salt_length=16)
-    values = {"name": name, "email": email, "password": hashed_password, "role": "student", "current_mode": "student", "is_banned": 0, "banned": 0}
+    values = {
+        "name": name,
+        "username": username,
+        "email": email,
+        "password": hashed_password,
+        "role": "student",
+        "current_mode": "student",
+        "is_banned": 0,
+        "banned": 0
+    }
     user_id = insert_dynamic("users", values)
     user = query_db(f"SELECT * FROM users WHERE `{upk}`=%s", (user_id,), fetchone=True)
     token = generate_token(user)
@@ -1790,7 +1751,14 @@ def profile():
 @login_required
 def update_profile():
     data = get_json()
-    exec_db("UPDATE users SET name=%s,skills=%s,interests=%s,goal=%s WHERE id=%s", (data.get("name", request.current_user["name"]), data.get("skills", request.current_user.get("skills")), data.get("interests", request.current_user.get("interests")), data.get("goal", request.current_user.get("goal")), request.current_user["id"]))
+    if column_exists("users", "username") and data.get("username"):
+        username = str(data.get("username", "")).strip().lower()
+        existing = query_db("SELECT id FROM users WHERE username=%s AND id<>%s", (username, request.current_user["id"]), fetchone=True)
+        if existing:
+            return jsonify({"error": "Username already exists"}), 409
+        exec_db("UPDATE users SET name=%s,username=%s,skills=%s,interests=%s,goal=%s WHERE id=%s", (data.get("name", request.current_user["name"]), username, data.get("skills", request.current_user.get("skills")), data.get("interests", request.current_user.get("interests")), data.get("goal", request.current_user.get("goal")), request.current_user["id"]))
+    else:
+        exec_db("UPDATE users SET name=%s,skills=%s,interests=%s,goal=%s WHERE id=%s", (data.get("name", request.current_user["name"]), data.get("skills", request.current_user.get("skills")), data.get("interests", request.current_user.get("interests")), data.get("goal", request.current_user.get("goal")), request.current_user["id"]))
     return jsonify({"message": "Profile updated"})
 
 
@@ -2079,25 +2047,151 @@ Job description:
 
     return jsonify(result)
 
+
+
+def safe_text(value):
+    return str(value or "").strip()
+
+
+def ai_enhance_summary(summary, target_job="", skills=""):
+    summary = safe_text(summary)
+    target_job = safe_text(target_job)
+    skills = safe_text(skills)
+    fallback = improve_summary_local(summary or "Motivated technology candidate", target_job, skills)
+    prompt = f"""
+Improve this resume summary for ATS and recruiter readability.
+Return JSON only: {{"summary":""}}
+Rules: 2-3 sentences, natural wording, no fake claims.
+Target job: {target_job}
+Skills: {skills}
+Original summary: {summary}
+"""
+    result = ai_json(prompt, {"summary": fallback})
+    return safe_text(result.get("summary") or fallback)
+
+
+def build_resume(data, enhanced_summary):
+    name = safe_text(data.get("name") or data.get("full_name"))
+    email = safe_text(data.get("email"))
+    phone = safe_text(data.get("phone"))
+    location = safe_text(data.get("location"))
+    target_job = safe_text(data.get("target_job"))
+    skills = safe_text(data.get("skills"))
+    education = safe_text(data.get("education"))
+    experience = safe_text(data.get("experience"))
+    projects = safe_text(data.get("projects"))
+    certifications = safe_text(data.get("certifications"))
+
+    lines = []
+    if name:
+        lines.append(name.upper())
+    contact = " | ".join(x for x in [email, phone, location] if x)
+    if contact:
+        lines.append(contact)
+    if target_job:
+        lines.append(f"Target Role: {target_job}")
+    lines.append("")
+    lines.append("PROFESSIONAL SUMMARY")
+    lines.append(enhanced_summary)
+    if skills:
+        lines.extend(["", "SKILLS", skills])
+    if experience:
+        lines.extend(["", "EXPERIENCE", experience])
+    if projects:
+        lines.extend(["", "PROJECTS", projects])
+    if education:
+        lines.extend(["", "EDUCATION", education])
+    if certifications:
+        lines.extend(["", "CERTIFICATIONS", certifications])
+    return "\n".join(lines).strip()
+
+
+def ats_score_engine(data, enhanced_summary=""):
+    resume_text = " ".join(str(data.get(k) or "") for k in [
+        "name", "full_name", "email", "phone", "summary", "target_job", "skills",
+        "education", "experience", "projects", "certifications"
+    ])
+    resume_text = f"{resume_text} {enhanced_summary}"
+    target_text = safe_text(data.get("job_description") or data.get("target_job"))
+    result = local_ats_score(resume_text, target_text)
+    return result.get("ats_score", 0), result.get("matched_keywords", [])
+
 @app.route("/api/ats/generate", methods=["POST"])
 @login_required
 def generate_ats_resume():
     data = request.get_json(silent=True) or {}
 
     summary = safe_text(data.get("summary"))
-    target_job = safe_text(data.get("target_job"))
+    target_job = safe_text(data.get("target_job") or data.get("job_description"))
     skills = safe_text(data.get("skills"))
 
+    if not summary and not skills and not data.get("experience") and not data.get("education"):
+        return jsonify({"error": "Please enter resume information before generating."}), 400
+
     enhanced_summary = ai_enhance_summary(summary, target_job, skills)
-    resume = build_resume(data, enhanced_summary)
+    generated_resume = build_resume(data, enhanced_summary)
     ats_score, matched_keywords = ats_score_engine(data, enhanced_summary)
 
-    return jsonify({
-        "resume": resume,
+    result = {
+        "resume": generated_resume,
+        "generated_resume": generated_resume,
         "enhanced_summary": enhanced_summary,
         "ats_score": ats_score,
-        "matched_keywords": matched_keywords
-    })
+        "matched_keywords": matched_keywords,
+        "target_job": target_job
+    }
+
+    try:
+        insert_dynamic("ats_results", {
+            "user_id": user_id_value(request.current_user),
+            "ats_score": ats_score,
+            "resume_text": generated_resume,
+            "generated_resume": generated_resume,
+            "job_description": target_job,
+            "target_job": target_job,
+            "result_json": json.dumps(result, ensure_ascii=False)
+        })
+    except Exception as e:
+        print("ATS generator save failed:", e)
+
+    return jsonify(result)
+
+
+@app.route("/api/ats/history", methods=["GET"])
+@login_required
+def ats_history():
+    rows = query_db("""
+        SELECT *
+        FROM ats_results
+        WHERE user_id=%s
+        ORDER BY id DESC
+    """, (user_id_value(request.current_user),), fetchall=True) or []
+    for row in rows:
+        try:
+            row["result"] = json.loads(row.get("result_json") or "{}")
+        except Exception:
+            row["result"] = {}
+    return jsonify(rows)
+
+
+@app.route("/api/ats/latest", methods=["GET"])
+@login_required
+def ats_latest():
+    row = query_db("""
+        SELECT *
+        FROM ats_results
+        WHERE user_id=%s
+        ORDER BY id DESC
+        LIMIT 1
+    """, (user_id_value(request.current_user),), fetchone=True)
+    if not row:
+        return jsonify({})
+    try:
+        row["result"] = json.loads(row.get("result_json") or "{}")
+    except Exception:
+        row["result"] = {}
+    return jsonify(row)
+
 
 @app.route("/api/ats/enhance-summary", methods=["POST"])
 @login_required
