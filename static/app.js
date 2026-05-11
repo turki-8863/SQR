@@ -3,6 +3,12 @@ const API = location.hostname === "localhost" || location.hostname === "127.0.0.
   : "https://sqr-ba83.onrender.com";
 
 let lastGeneratedResume = "";
+const API_CACHE = new Map();
+const API_CACHE_MS = 8000;
+
+function clearApiCache() {
+  API_CACHE.clear();
+}
 
 function getToken() {
   return localStorage.getItem("sqr_token") || localStorage.getItem("token");
@@ -21,6 +27,7 @@ function setAuth(token, user) {
   localStorage.setItem("sqr_user", JSON.stringify(user));
   localStorage.removeItem("token");
   lastGeneratedResume = "";
+  clearApiCache();
 }
 
 function authHeaders() {
@@ -51,6 +58,7 @@ function logout() {
   sessionStorage.removeItem("generated_resume");
 
   lastGeneratedResume = "";
+  clearApiCache();
   window.location.href = "signin.html";
 }
 
@@ -71,6 +79,14 @@ function escapeHTML(value) {
 }
 
 async function api(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const cacheKey = method + ":" + path;
+
+  if (method === "GET" && API_CACHE.has(cacheKey)) {
+    const cached = API_CACHE.get(cacheKey);
+    if (Date.now() - cached.time < API_CACHE_MS) return cached.data;
+  }
+
   const headers = {
     ...(options.headers || {}),
     ...authHeaders()
@@ -92,6 +108,12 @@ async function api(path, options = {}) {
 
   if (!res.ok) {
     throw new Error(data.error || data.message || data.details || `Request failed (${res.status})`);
+  }
+
+  if (method === "GET") {
+    API_CACHE.set(cacheKey, { time: Date.now(), data });
+  } else {
+    clearApiCache();
   }
 
   return data;
@@ -506,6 +528,46 @@ async function loadCoursesIntoAdminSelects() {
   } catch (err) {
     showMessage(err.message);
   }
+}
+
+
+function addQuizQuestion() {
+  const container = document.getElementById("quizQuestionsContainer");
+  if (!container) return;
+
+  const number = container.querySelectorAll(".quiz-question-admin").length + 1;
+  const div = document.createElement("div");
+  div.className = "quiz-question-admin";
+  div.innerHTML = `
+    <h4>Question ${number}</h4>
+    <textarea name="question" placeholder="Question" required></textarea>
+    <div class="two-col">
+      <input name="option_a" placeholder="Option A" required>
+      <input name="option_b" placeholder="Option B" required>
+    </div>
+    <div class="two-col">
+      <input name="option_c" placeholder="Option C" required>
+      <input name="option_d" placeholder="Option D" required>
+    </div>
+    <select name="correct_answer" required>
+      <option value="">Correct Answer</option>
+      <option value="A">A</option>
+      <option value="B">B</option>
+      <option value="C">C</option>
+      <option value="D">D</option>
+    </select>
+    <button type="button" class="danger" onclick="this.parentElement.remove()">Remove Question</button>
+  `;
+  container.appendChild(div);
+}
+
+function setupAddQuizForm() {
+  const form = document.getElementById("addQuizForm");
+  if (!form || form.dataset.quizReady) return;
+  form.dataset.quizReady = "1";
+
+  const container = document.getElementById("quizQuestionsContainer");
+  if (container && container.children.length === 0) addQuizQuestion();
 }
 
 async function loadSpecializationDetails() {
@@ -1165,11 +1227,16 @@ async function loadAdmin() {
 
   requireAdmin();
   setupAdminForms();
-  loadAdminUsers();
-  loadSpecializations();
-  loadAdminStats();
-  loadAdminLists();
-  loadCoursesIntoAdminSelects();
+  setupAddQuizForm();
+
+  await Promise.allSettled([
+    loadAdminUsers(),
+    loadSpecializations(),
+    loadAdminStats(),
+    loadAdminLists(),
+    loadCoursesIntoAdminSelects()
+  ]);
+
   showAdminSection("dashboardSection");
 }
 
@@ -1224,23 +1291,60 @@ function setupAdminForms() {
 
   if (quizForm && !quizForm.dataset.ready) {
     quizForm.dataset.ready = "1";
+
+    const container = document.getElementById("quizQuestionsContainer");
+    if (container && container.children.length === 0) addQuizQuestion();
+
     quizForm.addEventListener("submit", async e => {
       e.preventDefault();
-      const data = normalizeFormData(quizForm);
-      data.questions = [{
-        question_text: data.question_text || data.question || "Question",
-        option_a: data.option_a || data.option1 || "A",
-        option_b: data.option_b || data.option2 || "B",
-        option_c: data.option_c || data.option3 || "C",
-        option_d: data.option_d || data.option4 || "D",
-        correct_answer: data.correct_answer || data.answer || "A"
-      }];
+
+      const courseValue = document.getElementById("quizCourseSelect")?.value ||
+        document.getElementById("quizCourse")?.value ||
+        quizForm.querySelector('[name="course_id"]')?.value || "";
+
+      const titleValue = quizForm.querySelector('[name="title"]')?.value.trim() ||
+        quizForm.querySelector('[name="quiz_title"]')?.value.trim() || "";
+
+      const descriptionValue = quizForm.querySelector('[name="description"]')?.value.trim() || "";
+
+      const questionCards = Array.from(document.querySelectorAll(".quiz-question-admin"));
+      const questions = questionCards.map(card => ({
+        question: card.querySelector('[name="question"]')?.value.trim() || card.querySelector('[name="question_text"]')?.value.trim() || "",
+        question_text: card.querySelector('[name="question"]')?.value.trim() || card.querySelector('[name="question_text"]')?.value.trim() || "",
+        option_a: card.querySelector('[name="option_a"]')?.value.trim() || card.querySelector('[name="option1"]')?.value.trim() || "",
+        option_b: card.querySelector('[name="option_b"]')?.value.trim() || card.querySelector('[name="option2"]')?.value.trim() || "",
+        option_c: card.querySelector('[name="option_c"]')?.value.trim() || card.querySelector('[name="option3"]')?.value.trim() || "",
+        option_d: card.querySelector('[name="option_d"]')?.value.trim() || card.querySelector('[name="option4"]')?.value.trim() || "",
+        correct_answer: card.querySelector('[name="correct_answer"]')?.value.trim() || card.querySelector('[name="answer"]')?.value.trim() || ""
+      }));
+
+      if (!courseValue) return showMessage("Please choose a course for this quiz");
+      if (!titleValue) return showMessage("Quiz title is required");
+      if (!questions.length) return showMessage("Add at least one question");
+
+      for (const q of questions) {
+        if (!q.question || !q.option_a || !q.option_b || !q.option_c || !q.option_d || !q.correct_answer) {
+          return showMessage("Please fill all question fields");
+        }
+      }
+
+      const data = {
+        course_id: courseValue,
+        title: titleValue,
+        description: descriptionValue,
+        module_title: titleValue,
+        questions
+      };
+
       try {
-        await apiTry(["/api/admin/quizzes", "/api/quizzes"], { method: "POST", body: JSON.stringify(data) });
+        await api("/api/admin/quizzes", { method: "POST", body: JSON.stringify(data) });
         showMessage("Quiz added", "success");
         quizForm.reset();
-        loadAdminStats();
-        loadAdminLists();
+        if (container) {
+          container.innerHTML = "";
+          addQuizQuestion();
+        }
+        await Promise.allSettled([loadAdminStats(), loadAdminLists(), loadCoursesIntoAdminSelects()]);
       } catch (err) { showMessage(err.message); }
     });
   }
@@ -1479,6 +1583,9 @@ window.showAdminSection = showAdminSection;
 window.loadAdminStats = loadAdminStats;
 window.loadAdminLists = loadAdminLists;
 window.loadCoursesIntoAdminSelects = loadCoursesIntoAdminSelects;
+window.addQuizQuestion = addQuizQuestion;
+window.setupAddQuizForm = setupAddQuizForm;
+window.clearApiCache = clearApiCache;
 window.setupSelectSearch = setupSelectSearch;
 window.deleteItem = deleteItem;
 window.editSpecialization = editSpecialization;
