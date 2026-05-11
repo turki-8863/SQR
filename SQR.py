@@ -85,6 +85,8 @@ DB_CONFIG = {
 }
 
 pool = None
+COLUMN_EXISTS_CACHE = {}
+TABLE_EXISTS_CACHE = {}
 
 try:
     pool = pooling.MySQLConnectionPool(
@@ -654,6 +656,9 @@ def get_json():
 
 
 def column_exists(table_name, column_name):
+    cache_key = (table_name, column_name)
+    if cache_key in COLUMN_EXISTS_CACHE:
+        return COLUMN_EXISTS_CACHE[cache_key]
     row = query_db(
         """
         SELECT COUNT(*) AS total
@@ -663,10 +668,14 @@ def column_exists(table_name, column_name):
         (DB_CONFIG["database"], table_name, column_name),
         fetchone=True
     )
-    return bool(row and row.get("total"))
+    exists = bool(row and row.get("total"))
+    COLUMN_EXISTS_CACHE[cache_key] = exists
+    return exists
 
 
 def table_exists(table_name):
+    if table_name in TABLE_EXISTS_CACHE:
+        return TABLE_EXISTS_CACHE[table_name]
     row = query_db(
         """
         SELECT COUNT(*) AS total
@@ -676,8 +685,9 @@ def table_exists(table_name):
         (DB_CONFIG["database"], table_name),
         fetchone=True
     )
-    return bool(row and row.get("total"))
-
+    exists = bool(row and row.get("total"))
+    TABLE_EXISTS_CACHE[table_name] = exists
+    return exists
 
 def add_column_if_missing(table_name, column_name, column_sql):
     if not column_exists(table_name, column_name):
@@ -1598,44 +1608,96 @@ def add_quiz():
     data = get_json()
     course_id = data.get("course_id")
     title = str(data.get("title", "")).strip()
-    description = str(data.get("description", "")).strip()
+    description = str(data.get("description", data.get("module_title", ""))).strip()
     questions = data.get("questions", [])
+
     if not course_id or not title:
         return jsonify({"error": "course_id and title are required"}), 400
     if not isinstance(questions, list) or not questions:
         return jsonify({"error": "At least one question is required"}), 400
+
     cpk = course_pk_col()
     course = normalize_course(query_db(f"SELECT * FROM courses WHERE `{cpk}`=%s", (course_id,), fetchone=True))
     if not course:
         return jsonify({"error": "Course not found"}), 404
-    quiz_values = {
-        "course_id": course_id,
-        "spec_id": course.get("spec_id"),
-        "specialization_id": course.get("specialization_id"),
-        "title": title,
-        "description": description,
-        "total_questions": len(questions)
-    }
-    quiz_id = insert_dynamic("quizzes", quiz_values)
+
     qt = question_text_col()
     qa = question_option_col("a")
     qb = question_option_col("b")
     qc = question_option_col("c")
     qd = question_option_col("d")
     ans = question_answer_col()
-    for q in questions:
-        insert_dynamic("quiz_questions", {
-            "quiz_id": quiz_id,
-            qt: q.get("question_text") or q.get("question"),
-            qa: q.get("option_a") or q.get("option1"),
-            qb: q.get("option_b") or q.get("option2"),
-            qc: q.get("option_c") or q.get("option3"),
-            qd: q.get("option_d") or q.get("option4"),
-            ans: q.get("correct_answer") or q.get("answer"),
+
+    normalized_questions = []
+    for index, q in enumerate(questions, start=1):
+        question = str(q.get("question") or q.get("question_text") or "").strip()
+        option_a = str(q.get("option_a") or q.get("option1") or "").strip()
+        option_b = str(q.get("option_b") or q.get("option2") or "").strip()
+        option_c = str(q.get("option_c") or q.get("option3") or "").strip()
+        option_d = str(q.get("option_d") or q.get("option4") or "").strip()
+        correct = str(q.get("correct_answer") or q.get("answer") or "").strip().upper()[:1]
+
+        if not question or not option_a or not option_b or not option_c or not option_d or correct not in ["A", "B", "C", "D"]:
+            return jsonify({"error": f"Question {index} is incomplete or has an invalid correct answer"}), 400
+
+        normalized_questions.append({
+            qt: question,
+            qa: option_a,
+            qb: option_b,
+            qc: option_c,
+            qd: option_d,
+            ans: correct,
             "score": q.get("score", 1)
         })
-    return jsonify({"message": "Quiz added successfully", "quiz_id": quiz_id, "id": quiz_id}), 201
 
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        quiz_values = {
+            "course_id": course_id,
+            "spec_id": course.get("spec_id") or course.get("specialization_id"),
+            "specialization_id": course.get("specialization_id") or course.get("spec_id"),
+            "title": title,
+            "description": description,
+            "total_questions": len(normalized_questions)
+        }
+        quiz_columns = []
+        quiz_params = []
+        for key, value in quiz_values.items():
+            if value is not None and column_exists("quizzes", key):
+                quiz_columns.append(key)
+                quiz_params.append(value)
+
+        if not quiz_columns:
+            return jsonify({"error": "No matching quiz columns found"}), 500
+
+        cursor.execute(
+            f"INSERT INTO quizzes ({','.join(f'`{c}`' for c in quiz_columns)}) VALUES ({','.join(['%s'] * len(quiz_columns))})",
+            tuple(quiz_params)
+        )
+        quiz_id = cursor.lastrowid
+
+        for q in normalized_questions:
+            q_values = {"quiz_id": quiz_id, **q}
+            q_columns = []
+            q_params = []
+            for key, value in q_values.items():
+                if value is not None and column_exists("quiz_questions", key):
+                    q_columns.append(key)
+                    q_params.append(value)
+            cursor.execute(
+                f"INSERT INTO quiz_questions ({','.join(f'`{c}`' for c in q_columns)}) VALUES ({','.join(['%s'] * len(q_columns))})",
+                tuple(q_params)
+            )
+
+        db.commit()
+        return jsonify({"message": "Quiz added successfully", "quiz_id": quiz_id, "id": quiz_id}), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": "Failed to add quiz", "details": str(e)}), 500
+    finally:
+        cursor.close()
+        db.close()
 
 @app.route("/api/quizzes/<int:quiz_id>", methods=["PUT"])
 @admin_required
@@ -2714,6 +2776,15 @@ try:
     print("SQR database schema compatibility checked")
 except Exception as e:
     print("Schema startup check skipped:", e)
+
+
+@app.after_request
+def add_cache_headers(response):
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    elif request.path.endswith((".css", ".js", ".png", ".jpg", ".jpeg", ".webp", ".gif")):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 @app.errorhandler(Exception)
