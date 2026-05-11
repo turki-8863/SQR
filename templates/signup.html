@@ -4,26 +4,173 @@
   <meta charset="UTF-8">
   <title>SQR | Sign Up</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
+
+  <style>
+    .password-checklist {
+      margin: 12px 0 18px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.06);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    .password-checklist p {
+      margin: 8px 0;
+      font-size: 14px;
+      color: #ef4444;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: 0.2s ease;
+    }
+
+    .password-checklist p.valid {
+      color: #22c55e;
+      font-weight: 700;
+    }
+
+    .password-checklist span {
+      width: 20px;
+      font-weight: 900;
+      display: inline-block;
+    }
+
+    .username-note {
+      font-size: 13px;
+      margin-top: -6px;
+      margin-bottom: 10px;
+      color: #64748b;
+    }
+  </style>
 </head>
+
 <body>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 <script>navbar();</script>
+
 <div class="container auth-container">
   <div id="message"></div>
+
   <form id="signupForm" class="card auth-card">
     <h1>Create Account</h1>
     <p class="subtitle">Join SQR as a student. Admin access is managed by the owner only.</p>
+
     <label class="required" for="name">Full Name</label>
     <input id="name" name="name" placeholder="Your name" required>
+
+    <label class="required" for="username">Username</label>
+    <input id="username" name="username" placeholder="Choose a unique username" required>
+    <p class="username-note">Each user must have a different username.</p>
+
     <label class="required" for="email">Email</label>
     <input id="email" name="email" type="email" placeholder="you@example.com" required>
+
     <label class="required" for="password">Password</label>
-    <input id="password" name="password" type="password" placeholder="Create a strong password" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}">
+    <input 
+      id="password" 
+      name="password" 
+      type="password" 
+      placeholder="Create a strong password" 
+      required
+    >
+
+    <div class="password-checklist">
+      <p id="lengthCheck"><span>✗</span> At least 8 characters</p>
+      <p id="upperCheck"><span>✗</span> At least one capital letter</p>
+      <p id="lowerCheck"><span>✗</span> At least one lowercase letter</p>
+      <p id="numberCheck"><span>✗</span> At least one number</p>
+      <p id="specialCheck"><span>✗</span> At least one special character</p>
+    </div>
+
     <button type="submit">Sign Up</button>
+
     <p>Already have an account? <a href="signin.html">Sign in</a></p>
   </form>
 </div>
+
+<script>
+  const passwordInput = document.getElementById("password");
+
+  const passwordRules = {
+    lengthCheck: password => password.length >= 8,
+    upperCheck: password => /[A-Z]/.test(password),
+    lowerCheck: password => /[a-z]/.test(password),
+    numberCheck: password => /[0-9]/.test(password),
+    specialCheck: password => /[^A-Za-z0-9]/.test(password)
+  };
+
+  function updatePasswordChecklist() {
+    const password = passwordInput.value;
+
+    Object.keys(passwordRules).forEach(id => {
+      const item = document.getElementById(id);
+      const icon = item.querySelector("span");
+
+      if (passwordRules[id](password)) {
+        item.classList.add("valid");
+        icon.textContent = "✓";
+      } else {
+        item.classList.remove("valid");
+        icon.textContent = "✗";
+      }
+    });
+  }
+
+  function isPasswordStrong(password) {
+    return Object.values(passwordRules).every(rule => rule(password));
+  }
+
+  passwordInput.addEventListener("input", updatePasswordChecklist);
+
+  document.getElementById("signupForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+
+    const name = document.getElementById("name").value.trim();
+    const username = document.getElementById("username").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+
+    if (!isPasswordStrong(password)) {
+      showMessage("Please complete all password requirements.", "error");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API}/api/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name,
+          username,
+          email,
+          password
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        showMessage(data.error || "Signup failed", "error");
+        return;
+      }
+
+      setAuth(data.token, data.user);
+      showMessage("Signup successful. Redirecting...", "success");
+
+      setTimeout(() => {
+        window.location.href = "profile.html";
+      }, 800);
+
+    } catch (error) {
+      showMessage("Server connection failed. Please try again.", "error");
+    }
+  });
+</script>
+
 </body>
 </html>
