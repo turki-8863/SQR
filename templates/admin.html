@@ -284,8 +284,8 @@
 
 <script>
   window.addEventListener("DOMContentLoaded", () => {
-    navbar();
-    requireAdmin();
+    if (typeof navbar === "function") navbar();
+    if (typeof requireAdmin === "function") requireAdmin();
   });
 </script>
 
@@ -350,7 +350,9 @@
       <form id="addCourseForm" class="admin-form">
         <h2>Add Course</h2>
 
-        <select id="courseSpecialization" name="specialization_id" required></select>
+        <select id="courseSpecialization" name="specialization_id" required>
+          <option value="">Select Specialization</option>
+        </select>
 
         <input type="text" id="courseTitle" name="title" placeholder="Course Title" required>
         <textarea id="courseDescription" name="description" placeholder="Description"></textarea>
@@ -380,7 +382,9 @@
       <form id="addJobForm" class="admin-form">
         <h2>Add Job</h2>
 
-        <select id="jobSpecialization" name="specialization_id" required></select>
+        <select id="jobSpecialization" name="specialization_id" required>
+          <option value="">Select Specialization</option>
+        </select>
 
         <input type="text" id="jobTitle" name="title" placeholder="Job Title" required>
         <textarea id="jobDescription" name="description" placeholder="Description"></textarea>
@@ -403,9 +407,15 @@
       <form id="addQuizForm" class="admin-form">
         <h2>Add Quiz / Module</h2>
 
-        <select id="quizCourseSelect" name="course_id" required></select>
+        <label>Course</label>
+        <select id="quizCourseSelect" name="course_id" required>
+          <option value="">Select Course</option>
+        </select>
 
+        <label>Quiz Title</label>
         <input type="text" name="title" placeholder="Quiz Title / Module 1" required>
+
+        <label>Description</label>
         <textarea name="description" placeholder="Description"></textarea>
 
         <h3>Questions</h3>
@@ -428,7 +438,9 @@
       <form id="addCertForm" class="admin-form">
         <h2>Add Certificate</h2>
 
-        <select id="certSpecialization" name="spec_id" required></select>
+        <select id="certSpecialization" name="spec_id" required>
+          <option value="">Select Specialization</option>
+        </select>
 
         <input type="text" name="name" placeholder="Certificate Name" required>
         <textarea name="description" placeholder="Description"></textarea>
