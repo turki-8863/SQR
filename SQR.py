@@ -85,8 +85,6 @@ DB_CONFIG = {
 }
 
 pool = None
-COLUMN_EXISTS_CACHE = {}
-TABLE_EXISTS_CACHE = {}
 
 try:
     pool = pooling.MySQLConnectionPool(
@@ -656,9 +654,6 @@ def get_json():
 
 
 def column_exists(table_name, column_name):
-    cache_key = (table_name, column_name)
-    if cache_key in COLUMN_EXISTS_CACHE:
-        return COLUMN_EXISTS_CACHE[cache_key]
     row = query_db(
         """
         SELECT COUNT(*) AS total
@@ -668,14 +663,10 @@ def column_exists(table_name, column_name):
         (DB_CONFIG["database"], table_name, column_name),
         fetchone=True
     )
-    exists = bool(row and row.get("total"))
-    COLUMN_EXISTS_CACHE[cache_key] = exists
-    return exists
+    return bool(row and row.get("total"))
 
 
 def table_exists(table_name):
-    if table_name in TABLE_EXISTS_CACHE:
-        return TABLE_EXISTS_CACHE[table_name]
     row = query_db(
         """
         SELECT COUNT(*) AS total
@@ -685,9 +676,8 @@ def table_exists(table_name):
         (DB_CONFIG["database"], table_name),
         fetchone=True
     )
-    exists = bool(row and row.get("total"))
-    TABLE_EXISTS_CACHE[table_name] = exists
-    return exists
+    return bool(row and row.get("total"))
+
 
 def add_column_if_missing(table_name, column_name, column_sql):
     if not column_exists(table_name, column_name):
@@ -980,30 +970,50 @@ def recalculate_course_progress(user_id, course_id):
     course = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
     if not course:
         return 0
-    quizzes = query_db("SELECT id FROM quizzes WHERE course_id=%s", (course_id,), fetchall=True)
+
+    quizzes = query_db("SELECT id FROM quizzes WHERE course_id=%s", (course_id,), fetchall=True) or []
     quiz_ids = [q["id"] for q in quizzes]
-    completed_row = query_db("SELECT status FROM course_enrollments WHERE user_id=%s AND course_id=%s", (user_id, course_id), fetchone=True)
-    base = 50 if completed_row and completed_row.get("status") == "completed" else 0
+
+    enrollment = query_db(
+        """
+        SELECT progress, status
+        FROM course_enrollments
+        WHERE user_id=%s AND course_id=%s
+        """,
+        (user_id, course_id),
+        fetchone=True
+    )
+
+    # Opening the video or external course link gives the course-content part of progress.
+    content_score = 50 if enrollment and int(enrollment.get("progress") or 0) >= 50 else 0
+
     quiz_score = 0
     if quiz_ids:
         passed = 0
         for quiz_id in quiz_ids:
-            row = query_db("SELECT MAX(passed) AS passed FROM quiz_attempts WHERE user_id=%s AND quiz_id=%s", (user_id, quiz_id), fetchone=True)
+            row = query_db(
+                "SELECT MAX(passed) AS passed FROM quiz_attempts WHERE user_id=%s AND quiz_id=%s",
+                (user_id, quiz_id),
+                fetchone=True
+            )
             if row and row.get("passed"):
                 passed += 1
         quiz_score = round((passed / len(quiz_ids)) * 50)
-    else:
-        quiz_score = 50 if base == 50 else 0
-    progress = min(100, int(base + quiz_score))
+
+    progress = min(100, int(content_score + quiz_score))
     status = "completed" if progress >= 100 else "in_progress" if progress > 0 else "not_started"
+
     exec_db("""
         INSERT INTO course_enrollments (user_id, course_id, progress, status, completed_at)
         VALUES (%s,%s,%s,%s,IF(%s='completed',NOW(),NULL))
-        ON DUPLICATE KEY UPDATE progress=%s,status=%s,completed_at=IF(%s='completed',NOW(),completed_at)
+        ON DUPLICATE KEY UPDATE
+            progress=%s,
+            status=%s,
+            completed_at=IF(%s='completed',NOW(),completed_at)
     """, (user_id, course_id, progress, status, status, progress, status, status))
+
     recalculate_specialization_progress(user_id, course.get("spec_id"))
     return progress
-
 
 def recalculate_specialization_progress(user_id, spec_id):
     if not spec_id:
@@ -1608,96 +1618,44 @@ def add_quiz():
     data = get_json()
     course_id = data.get("course_id")
     title = str(data.get("title", "")).strip()
-    description = str(data.get("description", data.get("module_title", ""))).strip()
+    description = str(data.get("description", "")).strip()
     questions = data.get("questions", [])
-
     if not course_id or not title:
         return jsonify({"error": "course_id and title are required"}), 400
     if not isinstance(questions, list) or not questions:
         return jsonify({"error": "At least one question is required"}), 400
-
     cpk = course_pk_col()
     course = normalize_course(query_db(f"SELECT * FROM courses WHERE `{cpk}`=%s", (course_id,), fetchone=True))
     if not course:
         return jsonify({"error": "Course not found"}), 404
-
+    quiz_values = {
+        "course_id": course_id,
+        "spec_id": course.get("spec_id"),
+        "specialization_id": course.get("specialization_id"),
+        "title": title,
+        "description": description,
+        "total_questions": len(questions)
+    }
+    quiz_id = insert_dynamic("quizzes", quiz_values)
     qt = question_text_col()
     qa = question_option_col("a")
     qb = question_option_col("b")
     qc = question_option_col("c")
     qd = question_option_col("d")
     ans = question_answer_col()
-
-    normalized_questions = []
-    for index, q in enumerate(questions, start=1):
-        question = str(q.get("question") or q.get("question_text") or "").strip()
-        option_a = str(q.get("option_a") or q.get("option1") or "").strip()
-        option_b = str(q.get("option_b") or q.get("option2") or "").strip()
-        option_c = str(q.get("option_c") or q.get("option3") or "").strip()
-        option_d = str(q.get("option_d") or q.get("option4") or "").strip()
-        correct = str(q.get("correct_answer") or q.get("answer") or "").strip().upper()[:1]
-
-        if not question or not option_a or not option_b or not option_c or not option_d or correct not in ["A", "B", "C", "D"]:
-            return jsonify({"error": f"Question {index} is incomplete or has an invalid correct answer"}), 400
-
-        normalized_questions.append({
-            qt: question,
-            qa: option_a,
-            qb: option_b,
-            qc: option_c,
-            qd: option_d,
-            ans: correct,
+    for q in questions:
+        insert_dynamic("quiz_questions", {
+            "quiz_id": quiz_id,
+            qt: q.get("question_text") or q.get("question"),
+            qa: q.get("option_a") or q.get("option1"),
+            qb: q.get("option_b") or q.get("option2"),
+            qc: q.get("option_c") or q.get("option3"),
+            qd: q.get("option_d") or q.get("option4"),
+            ans: q.get("correct_answer") or q.get("answer"),
             "score": q.get("score", 1)
         })
+    return jsonify({"message": "Quiz added successfully", "quiz_id": quiz_id, "id": quiz_id}), 201
 
-    db = get_db()
-    cursor = db.cursor(dictionary=True)
-    try:
-        quiz_values = {
-            "course_id": course_id,
-            "spec_id": course.get("spec_id") or course.get("specialization_id"),
-            "specialization_id": course.get("specialization_id") or course.get("spec_id"),
-            "title": title,
-            "description": description,
-            "total_questions": len(normalized_questions)
-        }
-        quiz_columns = []
-        quiz_params = []
-        for key, value in quiz_values.items():
-            if value is not None and column_exists("quizzes", key):
-                quiz_columns.append(key)
-                quiz_params.append(value)
-
-        if not quiz_columns:
-            return jsonify({"error": "No matching quiz columns found"}), 500
-
-        cursor.execute(
-            f"INSERT INTO quizzes ({','.join(f'`{c}`' for c in quiz_columns)}) VALUES ({','.join(['%s'] * len(quiz_columns))})",
-            tuple(quiz_params)
-        )
-        quiz_id = cursor.lastrowid
-
-        for q in normalized_questions:
-            q_values = {"quiz_id": quiz_id, **q}
-            q_columns = []
-            q_params = []
-            for key, value in q_values.items():
-                if value is not None and column_exists("quiz_questions", key):
-                    q_columns.append(key)
-                    q_params.append(value)
-            cursor.execute(
-                f"INSERT INTO quiz_questions ({','.join(f'`{c}`' for c in q_columns)}) VALUES ({','.join(['%s'] * len(q_columns))})",
-                tuple(q_params)
-            )
-
-        db.commit()
-        return jsonify({"message": "Quiz added successfully", "quiz_id": quiz_id, "id": quiz_id}), 201
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error": "Failed to add quiz", "details": str(e)}), 500
-    finally:
-        cursor.close()
-        db.close()
 
 @app.route("/api/quizzes/<int:quiz_id>", methods=["PUT"])
 @admin_required
@@ -1875,16 +1833,51 @@ def enroll_course(course_id):
     return jsonify({"message": "Enrolled in course", "course_id": course_id})
 
 
-@app.route("/api/courses/<int:course_id>/complete", methods=["POST"])
+
+@app.route("/api/courses/<int:course_id>/open", methods=["POST"])
 @login_required
-def complete_course(course_id):
+def open_course(course_id):
     course = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
     if not course:
         return jsonify({"error": "Course not found"}), 404
-    query_db("INSERT IGNORE INTO course_enrollments (user_id,course_id,progress,status) VALUES (%s,%s,0,'not_started')", (request.current_user["id"], course_id), commit=True)
-    exec_db("UPDATE course_enrollments SET status='completed', completed_at=NOW() WHERE user_id=%s AND course_id=%s", (request.current_user["id"], course_id))
-    progress = recalculate_course_progress(request.current_user["id"], course_id)
-    return jsonify({"message": "Course marked completed", "course_progress": progress})
+
+    user_id = request.current_user["id"]
+
+    query_db(
+        """
+        INSERT IGNORE INTO specialization_enrollments (user_id, spec_id, progress, status)
+        VALUES (%s, %s, 0, 'not_started')
+        """,
+        (user_id, course["spec_id"]),
+        commit=True
+    )
+
+    query_db(
+        """
+        INSERT INTO course_enrollments (user_id, course_id, progress, status)
+        VALUES (%s, %s, 50, 'in_progress')
+        ON DUPLICATE KEY UPDATE
+            progress = GREATEST(progress, 50),
+            status = IF(GREATEST(progress, 50) >= 100, 'completed', 'in_progress')
+        """,
+        (user_id, course_id),
+        commit=True
+    )
+
+    progress = recalculate_course_progress(user_id, course_id)
+
+    return jsonify({
+        "message": "Course activity tracked",
+        "course_id": course_id,
+        "course_progress": progress
+    })
+
+@app.route("/api/courses/<int:course_id>/complete", methods=["POST"])
+@login_required
+def complete_course(course_id):
+    # Kept only for backward compatibility. The user UI no longer shows "Mark Completed".
+    # Opening the video or course link records course activity; quizzes finish the remaining progress.
+    return open_course(course_id)
 
 
 @app.route("/api/courses/enrolled")
@@ -2776,15 +2769,6 @@ try:
     print("SQR database schema compatibility checked")
 except Exception as e:
     print("Schema startup check skipped:", e)
-
-
-@app.after_request
-def add_cache_headers(response):
-    if request.path.startswith("/api/"):
-        response.headers["Cache-Control"] = "no-store"
-    elif request.path.endswith((".css", ".js", ".png", ".jpg", ".jpeg", ".webp", ".gif")):
-        response.headers["Cache-Control"] = "public, max-age=86400"
-    return response
 
 
 @app.errorhandler(Exception)
