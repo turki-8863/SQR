@@ -54,7 +54,7 @@ function showMessage(text, type = "error") {
 async function api(path, options = {}) {
   const headers = {
     ...(options.headers || {}),
-    ...authHeaders()
+    .....authHeaders()
   };
 
   if (!(options.body instanceof FormData)) {
@@ -198,19 +198,63 @@ function blockAdminFromStudentPages() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  const page = location.pathname.split("/").pop() || "gp.html";
+
   blockAdminFromStudentPages();
 
   setupSignup();
   setupSignin();
-  loadProfile();
-  loadSpecializations();
-  loadSpecializationDetails();
-  loadCourses();
-  loadCourseDetails();
-  loadJobs();
-  setupRecommendation();
-  setupATS();
-  loadAdmin();
+
+  if (page === "profile.html") {
+    loadProfile();
+    return;
+  }
+
+  if (page === "Specialization.html" || page === "Sepecialization.html") {
+    loadSpecializations();
+    return;
+  }
+
+  if (page === "specialization-details.html") {
+    loadSpecializationDetails();
+    return;
+  }
+
+  if (page === "Courses.html" || page === "courses.html") {
+    loadSpecializations();
+    loadCourses();
+    return;
+  }
+
+  if (page === "course-details.html") {
+    loadCourseDetails();
+    return;
+  }
+
+  if (page === "jobs.html") {
+    loadSpecializations();
+    loadJobs();
+    return;
+  }
+
+  if (page === "recommendation.html") {
+    setupRecommendation();
+    return;
+  }
+
+  if (page === "ATS.html" || page === "ats.html") {
+    setupATS();
+    return;
+  }
+
+  if (page === "admin.html") {
+    loadAdmin();
+    return;
+  }
+
+  if (page === "gp.html" || page === "" || page === "/") {
+    loadSpecializations();
+  }
 });
 
 function setupSignup() {
@@ -1046,7 +1090,7 @@ async function downloadBlob(path, filename) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...authHeaders()
+      .....authHeaders()
     },
     body: JSON.stringify({ resume: lastGeneratedResume })
   });
@@ -1094,12 +1138,19 @@ async function loadAdmin() {
 
   requireAdmin();
   setupAdminForms();
-  loadAdminUsers();
-  loadSpecializations();
-  loadAdminStats();
-  loadAdminLists();
-  loadCoursesIntoAdminSelects();
   showAdminSection("dashboardSection");
+
+  await loadAdminStats();
+
+  setTimeout(() => {
+    loadSpecializations();
+    loadCoursesIntoAdminSelects();
+  }, 200);
+
+  setTimeout(() => {
+    loadAdminUsers();
+    loadAdminLists();
+  }, 500);
 }
 
 function setupAdminForms() {
