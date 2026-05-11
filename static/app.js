@@ -874,6 +874,11 @@ function getATSUserKey() {
 }
 
 function clearOldSharedATSStorage() {
+  const user = getUser();
+  if (user?.id) {
+    localStorage.removeItem(`lastGeneratedResume_user_${user.id}`);
+    localStorage.removeItem(`sqr_ats_generate_user_${user.id}`);
+  }
   [
     "ats_data",
     "ats_resume",
@@ -1050,23 +1055,9 @@ function setupAtsChecker() {
 }
 
 async function loadOnlyThisUserLatestATS() {
-  const user = getUser();
-  if (!user?.id || !getToken()) return;
-
-  try {
-    const latest = await api("/api/ats/latest");
-    if (!latest || !latest.id || String(latest.user_id) !== String(user.id)) return;
-
-    const result = latest.result || {};
-    const resume = latest.generated_resume || result.generated_resume || result.resume || latest.resume_text || "";
-
-    if (resume) {
-      lastGeneratedResume = resume;
-      localStorage.setItem(getATSUserKey(), resume);
-    }
-  } catch {
-    /* Latest ATS is optional. Do not block the page. */
-  }
+  // Privacy fix: do not reload ATS generator output from backend/localStorage.
+  // Generated resumes should only exist on the current page after the user clicks Generate.
+  return;
 }
 
 function setupATS() {
@@ -1092,8 +1083,7 @@ function setupATS() {
         });
 
         lastGeneratedResume = result.generated_resume || result.resume || "";
-        localStorage.setItem(getATSUserKey(), lastGeneratedResume);
-        localStorage.setItem(`sqr_ats_generate_user_${getUser()?.id || "guest"}`, JSON.stringify(result));
+        // Privacy fix: do not save generated resume or ATS generator result in localStorage/sessionStorage.
 
         const box =
           document.getElementById("generatedResume") ||
@@ -1128,12 +1118,13 @@ function setupATS() {
     });
   }
 
-  loadOnlyThisUserLatestATS();
+  // Privacy fix: do not auto-load previously generated ATS resumes.
+  // loadOnlyThisUserLatestATS();
 }
 
 async function copyGeneratedResume() {
-  const saved = localStorage.getItem(getATSUserKey()) || "";
-  lastGeneratedResume = lastGeneratedResume || saved;
+  const visibleResume = document.querySelector(".resume-text")?.textContent || "";
+  lastGeneratedResume = lastGeneratedResume || visibleResume;
 
   if (!lastGeneratedResume) return alert("Generate a resume first");
 
@@ -1142,8 +1133,8 @@ async function copyGeneratedResume() {
 }
 
 async function downloadBlob(path, filename) {
-  const saved = localStorage.getItem(getATSUserKey()) || "";
-  lastGeneratedResume = lastGeneratedResume || saved;
+  const visibleResume = document.querySelector(".resume-text")?.textContent || "";
+  lastGeneratedResume = lastGeneratedResume || visibleResume;
 
   if (!lastGeneratedResume) return alert("Generate a resume first");
 
