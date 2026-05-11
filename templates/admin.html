@@ -106,8 +106,8 @@
     }
 
     @keyframes fadeIn {
-      from {opacity: 0; transform: translateY(8px);}
-      to {opacity: 1; transform: translateY(0);}
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .admin-form {
@@ -129,6 +129,12 @@
     .admin-form h3 {
       margin: 12px 0 0;
       color: #0f172a;
+    }
+
+    .admin-form label {
+      font-weight: 800;
+      color: #1e293b;
+      margin-top: 4px;
     }
 
     .admin-form input,
@@ -156,6 +162,11 @@
     .admin-form textarea {
       min-height: 95px;
       resize: vertical;
+    }
+
+    .admin-form input[type="file"] {
+      background: white;
+      cursor: pointer;
     }
 
     .admin-form button,
@@ -264,6 +275,12 @@
       gap: 12px;
     }
 
+    .help-text {
+      color: #64748b;
+      font-size: 13px;
+      margin-top: -7px;
+    }
+
     @media (max-width: 900px) {
       .admin-layout {
         grid-template-columns: 1fr;
@@ -325,15 +342,27 @@
         <p>Add, edit, and delete CS learning paths.</p>
       </div>
 
-      <form id="addSpecForm" class="admin-form">
+      <form id="addSpecForm" class="admin-form" enctype="multipart/form-data">
         <h2>Add Specialization</h2>
 
+        <label>Specialization Name</label>
         <input type="text" name="name" placeholder="Specialization Name" required>
+
+        <label>Description</label>
         <textarea name="description" placeholder="Description"></textarea>
+
+        <label>Skills</label>
         <textarea name="skills" placeholder="Skills"></textarea>
+
+        <label>Roadmap</label>
         <textarea name="roadmap" placeholder="Roadmap"></textarea>
+
+        <label>Job Titles</label>
         <textarea name="job_titles" placeholder="Job Titles"></textarea>
-        <input type="text" name="image_url" placeholder="Image URL">
+
+        <label>Specialization Image</label>
+        <input type="file" name="image" accept="image/*">
+        <p class="help-text">Upload JPG, PNG, GIF, or WEBP image.</p>
 
         <button type="submit">Add Specialization</button>
       </form>
@@ -344,28 +373,40 @@
     <section id="coursesSection" class="admin-section">
       <div class="admin-header">
         <h1>Manage Courses</h1>
-        <p>Add courses and connect them to a specialization.</p>
+        <p>Add courses and connect them to a specialization. Upload course image and video directly.</p>
       </div>
 
-      <form id="addCourseForm" class="admin-form">
+      <form id="addCourseForm" class="admin-form" enctype="multipart/form-data">
         <h2>Add Course</h2>
 
+        <label>Specialization</label>
         <select id="courseSpecialization" name="specialization_id" required>
           <option value="">Select Specialization</option>
         </select>
 
+        <label>Course Title</label>
         <input type="text" id="courseTitle" name="title" placeholder="Course Title" required>
+
+        <label>Description</label>
         <textarea id="courseDescription" name="description" placeholder="Description"></textarea>
 
+        <label>Difficulty</label>
         <select id="courseDifficulty" name="level">
           <option value="Beginner">Beginner</option>
           <option value="Intermediate">Intermediate</option>
           <option value="Advanced">Advanced</option>
         </select>
 
+        <label>Course Link</label>
         <input type="text" id="courseLink" name="course_link" placeholder="Course Link">
-        <input type="text" name="video_url" placeholder="Video URL">
-        <input type="text" id="courseImage" name="image_url" placeholder="Image URL">
+
+        <label>Course Image</label>
+        <input type="file" id="courseImage" name="image" accept="image/*">
+        <p class="help-text">Upload course image instead of image URL.</p>
+
+        <label>Course Video</label>
+        <input type="file" id="courseVideo" name="video" accept="video/*">
+        <p class="help-text">Upload course video instead of video URL. MP4 is recommended.</p>
 
         <button type="submit">Add Course</button>
       </form>
@@ -382,14 +423,24 @@
       <form id="addJobForm" class="admin-form">
         <h2>Add Job</h2>
 
+        <label>Specialization</label>
         <select id="jobSpecialization" name="specialization_id" required>
           <option value="">Select Specialization</option>
         </select>
 
+        <label>Job Title</label>
         <input type="text" id="jobTitle" name="title" placeholder="Job Title" required>
+
+        <label>Description</label>
         <textarea id="jobDescription" name="description" placeholder="Description"></textarea>
+
+        <label>Required Skills</label>
         <textarea id="jobSkills" name="required_skills" placeholder="Required Skills"></textarea>
+
+        <label>Average Salary</label>
         <input type="text" id="jobSalary" name="average_salary" placeholder="Average Salary">
+
+        <label>Job Link</label>
         <input type="text" id="jobLink" name="job_link" placeholder="Job Link">
 
         <button type="submit">Add Job</button>
@@ -438,15 +489,24 @@
       <form id="addCertForm" class="admin-form">
         <h2>Add Certificate</h2>
 
+        <label>Specialization</label>
         <select id="certSpecialization" name="spec_id" required>
           <option value="">Select Specialization</option>
         </select>
 
+        <label>Certificate Name</label>
         <input type="text" name="name" placeholder="Certificate Name" required>
+
+        <label>Description</label>
         <textarea name="description" placeholder="Description"></textarea>
+
+        <label>Certificate Link</label>
         <input type="text" name="link" placeholder="Certificate Link">
+
+        <label>Price</label>
         <input type="text" name="price" placeholder="Price">
 
+        <label>Type</label>
         <select name="type">
           <option value="both">Both</option>
           <option value="practical">Practical</option>
