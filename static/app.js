@@ -39,6 +39,16 @@ function logout() {
   localStorage.removeItem("sqr_user");
   localStorage.removeItem("token");
   localStorage.removeItem("lastGeneratedResume");
+  localStorage.removeItem("ats_data");
+  localStorage.removeItem("ats_resume");
+  localStorage.removeItem("ats_result");
+  localStorage.removeItem("ats_latest");
+  localStorage.removeItem("generated_resume");
+  sessionStorage.removeItem("ats_data");
+  sessionStorage.removeItem("ats_resume");
+  sessionStorage.removeItem("ats_result");
+  sessionStorage.removeItem("ats_latest");
+  sessionStorage.removeItem("generated_resume");
 
   lastGeneratedResume = "";
   window.location.href = "signin.html";
@@ -51,10 +61,19 @@ function showMessage(text, type = "error") {
   box.className = type === "success" ? "alert success" : "alert error";
 }
 
+function escapeHTML(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 async function api(path, options = {}) {
   const headers = {
     ...(options.headers || {}),
-    .....authHeaders()
+    ...authHeaders()
   };
 
   if (!(options.body instanceof FormData)) {
@@ -198,68 +217,25 @@ function blockAdminFromStudentPages() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const page = location.pathname.split("/").pop() || "gp.html";
-
   blockAdminFromStudentPages();
 
   setupSignup();
   setupSignin();
-
-  if (page === "profile.html") {
-    loadProfile();
-    return;
-  }
-
-  if (page === "Specialization.html" || page === "Sepecialization.html") {
-    loadSpecializations();
-    return;
-  }
-
-  if (page === "specialization-details.html") {
-    loadSpecializationDetails();
-    return;
-  }
-
-  if (page === "Courses.html" || page === "courses.html") {
-    loadSpecializations();
-    loadCourses();
-    return;
-  }
-
-  if (page === "course-details.html") {
-    loadCourseDetails();
-    return;
-  }
-
-  if (page === "jobs.html") {
-    loadSpecializations();
-    loadJobs();
-    return;
-  }
-
-  if (page === "recommendation.html") {
-    setupRecommendation();
-    return;
-  }
-
-  if (page === "ATS.html" || page === "ats.html") {
-    setupATS();
-    return;
-  }
-
-  if (page === "admin.html") {
-    loadAdmin();
-    return;
-  }
-
-  if (page === "gp.html" || page === "" || page === "/") {
-    loadSpecializations();
-  }
+  loadProfile();
+  loadSpecializations();
+  loadSpecializationDetails();
+  loadCourses();
+  loadCourseDetails();
+  loadJobs();
+  setupRecommendation();
+  setupATS();
+  loadAdmin();
 });
 
 function setupSignup() {
   const form = document.getElementById("signupForm");
-  if (!form) return;
+  if (!form || form.dataset.ready) return;
+  form.dataset.ready = "1";
 
   const passwordInput = document.getElementById("password");
   const passwordRules = {
@@ -272,7 +248,7 @@ function setupSignup() {
 
   function updatePasswordChecklist() {
     if (!passwordInput) return;
-    const password = passwordInput.value || "";
+    const password = passwordInput.value;
 
     Object.keys(passwordRules).forEach(id => {
       const item = document.getElementById(id);
@@ -293,14 +269,10 @@ function setupSignup() {
     return Object.values(passwordRules).every(rule => rule(password));
   }
 
-  if (passwordInput && !passwordInput.dataset.checklistReady) {
-    passwordInput.dataset.checklistReady = "1";
+  if (passwordInput) {
     passwordInput.addEventListener("input", updatePasswordChecklist);
     updatePasswordChecklist();
   }
-
-  if (form.dataset.ready) return;
-  form.dataset.ready = "1";
 
   form.addEventListener("submit", async e => {
     e.preventDefault();
@@ -318,7 +290,7 @@ function setupSignup() {
     }
 
     if (!isPasswordStrong(data.password)) {
-      showMessage("Password must complete all checklist requirements");
+      showMessage("Please complete all password requirements.");
       return;
     }
 
@@ -788,34 +760,18 @@ function setupRecommendation() {
     e.preventDefault();
     requireLogin();
 
-    const interests = document.getElementById("interests")?.value.trim() || "";
-    const skills = document.getElementById("skills")?.value.trim() || "";
-    const preferredWork = document.getElementById("preferred_work")?.value.trim() || "";
+    const data = Object.fromEntries(new FormData(form).entries());
 
-    if (!interests || !skills || !preferredWork) {
-      showMessage("Please fill in your interests, skills, and preferred work style.");
-      return;
+    data.interests = data.interests || document.getElementById("interests")?.value || "";
+    data.skills = data.skills || document.getElementById("skills")?.value || "";
+    data.goal = data.goal || document.getElementById("goal")?.value || "";
+    data.preferred_work = data.preferred_work || document.getElementById("preferred_work")?.value || "";
+    data.experience = data.experience || document.getElementById("experience")?.value || "";
+
+    if (!data.answers) {
+      const profileText = [data.interests, data.skills, data.goal, data.preferred_work, data.experience].filter(Boolean).join(" ");
+      data.answers = profileText ? [{ question: "Student profile", answer: profileText }] : [];
     }
-
-    const data = {
-      interests,
-      skills,
-      preferred_work: preferredWork,
-      goal: preferredWork,
-      answers: [
-        { question: "Student interests", answer: interests },
-        { question: "Student skills", answer: skills },
-        { question: "Preferred work style", answer: preferredWork }
-      ]
-    };
-
-    box.classList.remove("hidden");
-    box.innerHTML = `
-      <div class="card">
-        <h2>Generating Recommendation...</h2>
-        <p>SQR AI is analyzing your interests, skills, and preferred work style.</p>
-      </div>
-    `;
 
     try {
       const result = await apiTry(["/api/recommendation", "/api/recommendation/submit", "/api/recommendations"], {
@@ -832,13 +788,8 @@ function setupRecommendation() {
         <div class="card">
           <h2>Recommended Specialization</h2>
           <h3>${best.name || best.specialization || result.best_match || "Recommended Path"}</h3>
-          <p>${best.reason || result.reason || result.summary || "This recommendation is based on your interests, skills, and preferred work style."}</p>
+          <p>${best.reason || result.reason || result.summary || "This recommendation is based on your answers."}</p>
           <p><b>Match:</b> ${best.match_percentage || best.match_score || best.score || result.match_score || 0}%</p>
-
-          ${Array.isArray(best.matched_skills) && best.matched_skills.length ? `
-            <h3>Matched Skills</h3>
-            <p>${best.matched_skills.join(", ")}</p>
-          ` : ""}
 
           ${Array.isArray(best.skills_to_learn) && best.skills_to_learn.length ? `
             <h3>Skills to Learn</h3>
@@ -851,8 +802,8 @@ function setupRecommendation() {
               ${specs.slice(1, 5).map(s => `
                 <div class="mini-card">
                   <strong>${s.name || "Specialization"}</strong>
-                  <p>${s.match_percentage || s.match_score || s.score || 0}% match</p>
-                  <small>${s.reason || "Matched with your profile."}</small>
+                  <p>${s.match_percentage || s.match_score || 0}% match</p>
+                  <small>${s.reason || "Matched with your answers."}</small>
                 </div>
               `).join("")}
             </div>
@@ -865,14 +816,13 @@ function setupRecommendation() {
                 <div class="mini-card">
                   <strong>${j.title || "Job"}</strong>
                   <p>${j.match_percentage || j.score || 0}% match</p>
-                  <small>${j.reason || "Matched with your preferred work style."}</small>
                 </div>
               `).join("")}
             </div>
           ` : ""}
 
           ${Array.isArray(result.roadmap) && result.roadmap.length ? `
-            <h3>Suggested Roadmap</h3>
+            <h3>Roadmap</h3>
             <ol>${result.roadmap.map(x => `<li>${x}</li>`).join("")}</ol>
           ` : ""}
         </div>
@@ -880,10 +830,57 @@ function setupRecommendation() {
 
       showMessage("Recommendation generated successfully", "success");
     } catch (err) {
-      box.innerHTML = "";
-      showMessage(err.message || "Recommendation failed.");
+      showMessage(err.message);
     }
   });
+}
+
+function getATSUserKey() {
+  const user = getUser();
+  return user?.id ? `lastGeneratedResume_user_${user.id}` : "lastGeneratedResume_guest";
+}
+
+function clearOldSharedATSStorage() {
+  [
+    "ats_data",
+    "ats_resume",
+    "ats_result",
+    "ats_latest",
+    "generated_resume",
+    "resume_data",
+    "lastGeneratedResume"
+  ].forEach(key => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+}
+
+function resetATSFormsIfDifferentUser() {
+  const user = getUser();
+  const currentUserId = user?.id ? String(user.id) : "guest";
+  const previousUserId = sessionStorage.getItem("sqr_active_ats_user");
+
+  if (previousUserId && previousUserId !== currentUserId) {
+    document.getElementById("atsGenerateForm")?.reset();
+    document.getElementById("atsCheckForm")?.reset();
+
+    [
+      "generatedResume",
+      "resumeOutput",
+      "atsResult",
+      "atsResults",
+      "atsOutput",
+      "atsCheckResult",
+      "generatedResumeBox"
+    ].forEach(id => {
+      const box = document.getElementById(id);
+      if (box) box.innerHTML = "";
+    });
+
+    lastGeneratedResume = "";
+  }
+
+  sessionStorage.setItem("sqr_active_ats_user", currentUserId);
 }
 
 function setupAtsChecker() {
@@ -902,13 +899,25 @@ function setupAtsChecker() {
     e.preventDefault();
     requireLogin();
 
-    const resultBox = document.getElementById("atsResult");
-    const resumeFile = document.getElementById("resume_file")?.files?.[0];
+    const resultBox =
+      document.getElementById("atsCheckResult") ||
+      document.getElementById("atsResult") ||
+      document.getElementById("atsResults") ||
+      document.getElementById("atsOutput");
+
+    const resumeFile =
+      document.getElementById("resume")?.files?.[0] ||
+      document.getElementById("resume_file")?.files?.[0] ||
+      document.querySelector('input[type="file"][name="resume"]')?.files?.[0] ||
+      document.querySelector('input[type="file"][name="resume_file"]')?.files?.[0];
 
     const targetJob =
-      document.getElementById("target_job")?.value?.trim()
-      || document.getElementById("job_description")?.value?.trim()
-      || "";
+      document.getElementById("target_job_check")?.value?.trim() ||
+      document.getElementById("target_job")?.value?.trim() ||
+      document.getElementById("job_description")?.value?.trim() ||
+      checkForm.querySelector('[name="target_job"]')?.value?.trim() ||
+      checkForm.querySelector('[name="job_description"]')?.value?.trim() ||
+      "";
 
     if (!targetJob) {
       showMessage("Target job or job description is required");
@@ -931,6 +940,7 @@ function setupAtsChecker() {
     const formData = new FormData();
     formData.append("target_job", targetJob);
     formData.append("job_description", targetJob);
+    formData.append("resume", resumeFile);
     formData.append("resume_file", resumeFile);
 
     if (resultBox) {
@@ -949,36 +959,38 @@ function setupAtsChecker() {
         body: formData
       });
 
+      localStorage.setItem(`sqr_ats_check_user_${getUser()?.id || "guest"}`, JSON.stringify(result));
+
       if (resultBox) {
         const sectionScores = result.section_scores || {};
 
         resultBox.classList.remove("hidden");
         resultBox.innerHTML = `
           <div class="card">
-            <h2>ATS Score: ${result.ats_score ?? result.score ?? 0}%</h2>
+            <h2>ATS Score: ${escapeHTML(result.ats_score ?? result.score ?? 0)}%</h2>
 
             <h3>Summary</h3>
-            <p>${result.summary || result.feedback || "ATS analysis completed."}</p>
+            <p>${escapeHTML(result.summary || result.feedback || "ATS analysis completed.")}</p>
 
             <h3>Matched Keywords</h3>
-            <p>${Array.isArray(result.matched_keywords) && result.matched_keywords.length ? result.matched_keywords.join(", ") : "No matched keywords found."}</p>
+            <p>${Array.isArray(result.matched_keywords) && result.matched_keywords.length ? result.matched_keywords.map(escapeHTML).join(", ") : "No matched keywords found."}</p>
 
             <h3>Missing Keywords</h3>
-            <p>${Array.isArray(result.missing_keywords) && result.missing_keywords.length ? result.missing_keywords.join(", ") : "No missing keywords found."}</p>
+            <p>${Array.isArray(result.missing_keywords) && result.missing_keywords.length ? result.missing_keywords.map(escapeHTML).join(", ") : "No missing keywords found."}</p>
 
             <h3>Strengths</h3>
             <ul>
-              ${Array.isArray(result.strengths) && result.strengths.length ? result.strengths.map(x => `<li>${x}</li>`).join("") : "<li>No strengths listed.</li>"}
+              ${Array.isArray(result.strengths) && result.strengths.length ? result.strengths.map(x => `<li>${escapeHTML(x)}</li>`).join("") : "<li>No strengths listed.</li>"}
             </ul>
 
             <h3>Weaknesses</h3>
             <ul>
-              ${Array.isArray(result.weaknesses) && result.weaknesses.length ? result.weaknesses.map(x => `<li>${x}</li>`).join("") : "<li>No weaknesses listed.</li>"}
+              ${Array.isArray(result.weaknesses) && result.weaknesses.length ? result.weaknesses.map(x => `<li>${escapeHTML(x)}</li>`).join("") : "<li>No weaknesses listed.</li>"}
             </ul>
 
             <h3>Advice to Improve Resume</h3>
             <ul>
-              ${Array.isArray(result.improvements) && result.improvements.length ? result.improvements.map(x => `<li>${x}</li>`).join("") : "<li>Add role-specific keywords, measurable achievements, and clear project details.</li>"}
+              ${Array.isArray(result.improvements) && result.improvements.length ? result.improvements.map(x => `<li>${escapeHTML(x)}</li>`).join("") : "<li>Add role-specific keywords, measurable achievements, and clear project details.</li>"}
             </ul>
 
             ${Object.keys(sectionScores).length ? `
@@ -986,8 +998,8 @@ function setupAtsChecker() {
               <div class="grid">
                 ${Object.entries(sectionScores).map(([key, value]) => `
                   <div class="mini-card">
-                    <strong>${key.replaceAll("_", " ").toUpperCase()}</strong>
-                    <p>${value}%</p>
+                    <strong>${escapeHTML(key.replaceAll("_", " ").toUpperCase())}</strong>
+                    <p>${escapeHTML(value)}%</p>
                   </div>
                 `).join("")}
               </div>
@@ -1004,7 +1016,29 @@ function setupAtsChecker() {
   });
 }
 
+async function loadOnlyThisUserLatestATS() {
+  const user = getUser();
+  if (!user?.id || !getToken()) return;
+
+  try {
+    const latest = await api("/api/ats/latest");
+    if (!latest || !latest.id || String(latest.user_id) !== String(user.id)) return;
+
+    const result = latest.result || {};
+    const resume = latest.generated_resume || result.generated_resume || result.resume || latest.resume_text || "";
+
+    if (resume) {
+      lastGeneratedResume = resume;
+      localStorage.setItem(getATSUserKey(), resume);
+    }
+  } catch {
+    /* Latest ATS is optional. Do not block the page. */
+  }
+}
+
 function setupATS() {
+  clearOldSharedATSStorage();
+  resetATSFormsIfDifferentUser();
   setupAtsChecker();
 
   const generateForm = document.getElementById("atsGenerateForm");
@@ -1024,25 +1058,27 @@ function setupATS() {
           body: JSON.stringify(data)
         });
 
-        lastGeneratedResume = result.resume || "";
+        lastGeneratedResume = result.generated_resume || result.resume || "";
+        localStorage.setItem(getATSUserKey(), lastGeneratedResume);
+        localStorage.setItem(`sqr_ats_generate_user_${getUser()?.id || "guest"}`, JSON.stringify(result));
 
-        const currentUser = getUser();
-
-        if (currentUser?.id) {
-          localStorage.setItem("lastGeneratedResume_user_" + currentUser.id, lastGeneratedResume);
-        }
-
-        const box = document.getElementById("generatedResume") || document.getElementById("resumeOutput");
+        const box =
+          document.getElementById("generatedResume") ||
+          document.getElementById("resumeOutput") ||
+          document.getElementById("generatedResumeBox") ||
+          document.getElementById("atsOutput") ||
+          document.getElementById("atsResult");
 
         if (box) {
+          box.classList.remove("hidden");
           box.innerHTML = `
             <div class="card resume-preview">
               <h2>Generated ATS Resume</h2>
-              ${result.ats_score !== undefined ? `<p><b>ATS Score:</b> ${result.ats_score}%</p>` : ""}
-              ${result.enhanced_summary ? `<h3>Enhanced Summary</h3><p>${result.enhanced_summary}</p>` : ""}
-              ${result.matched_keywords ? `<h3>Matched Keywords</h3><p>${result.matched_keywords.join(", ")}</p>` : ""}
+              ${result.ats_score !== undefined ? `<p><b>ATS Score:</b> ${escapeHTML(result.ats_score)}%</p>` : ""}
+              ${result.enhanced_summary ? `<h3>Enhanced Summary</h3><p>${escapeHTML(result.enhanced_summary)}</p>` : ""}
+              ${result.matched_keywords ? `<h3>Matched Keywords</h3><p>${result.matched_keywords.map(escapeHTML).join(", ")}</p>` : ""}
               <h3>Resume</h3>
-              <pre class="resume-text">${lastGeneratedResume || "No resume returned from backend."}</pre>
+              <pre class="resume-text">${escapeHTML(lastGeneratedResume || "No resume returned from backend.")}</pre>
               <div class="actions">
                 <button type="button" onclick="copyGeneratedResume()">Copy Resume</button>
                 <button type="button" onclick="exportResumePdf()">Export PDF</button>
@@ -1058,16 +1094,13 @@ function setupATS() {
       }
     });
   }
+
+  loadOnlyThisUserLatestATS();
 }
 
 async function copyGeneratedResume() {
-  const user = getUser();
-
-  const saved = user?.id
-    ? localStorage.getItem("lastGeneratedResume_user_" + user.id)
-    : "";
-
-  lastGeneratedResume = lastGeneratedResume || saved || "";
+  const saved = localStorage.getItem(getATSUserKey()) || "";
+  lastGeneratedResume = lastGeneratedResume || saved;
 
   if (!lastGeneratedResume) return alert("Generate a resume first");
 
@@ -1076,13 +1109,8 @@ async function copyGeneratedResume() {
 }
 
 async function downloadBlob(path, filename) {
-  const user = getUser();
-
-  const saved = user?.id
-    ? localStorage.getItem("lastGeneratedResume_user_" + user.id)
-    : "";
-
-  lastGeneratedResume = lastGeneratedResume || saved || "";
+  const saved = localStorage.getItem(getATSUserKey()) || "";
+  lastGeneratedResume = lastGeneratedResume || saved;
 
   if (!lastGeneratedResume) return alert("Generate a resume first");
 
@@ -1090,7 +1118,7 @@ async function downloadBlob(path, filename) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      .....authHeaders()
+      ...authHeaders()
     },
     body: JSON.stringify({ resume: lastGeneratedResume })
   });
@@ -1131,26 +1159,18 @@ async function exportResumeDocx() {
   }
 }
 
-
 async function loadAdmin() {
   const adminBox = document.getElementById("adminBox");
   if (!adminBox) return;
 
   requireAdmin();
   setupAdminForms();
+  loadAdminUsers();
+  loadSpecializations();
+  loadAdminStats();
+  loadAdminLists();
+  loadCoursesIntoAdminSelects();
   showAdminSection("dashboardSection");
-
-  await loadAdminStats();
-
-  setTimeout(() => {
-    loadSpecializations();
-    loadCoursesIntoAdminSelects();
-  }, 200);
-
-  setTimeout(() => {
-    loadAdminUsers();
-    loadAdminLists();
-  }, 500);
 }
 
 function setupAdminForms() {
