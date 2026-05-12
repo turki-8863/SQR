@@ -1706,41 +1706,74 @@ def delete_question(question_id):
 @app.route("/api/quizzes/<int:quiz_id>/submit", methods=["POST"])
 @login_required
 def submit_quiz(quiz_id):
+    user_id = request.user["id"]
     data = get_json()
     answers = data.get("answers", {})
-    raw_questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s", (quiz_id,), fetchall=True)
-    questions = [normalize_question(q) for q in raw_questions]
+
+    quiz = query_db(
+        """
+        SELECT id, course_id
+        FROM quizzes
+        WHERE id=%s
+        """,
+        (quiz_id,),
+        fetchone=True
+    )
+
+    if not quiz:
+        return jsonify({"error": "Quiz not found"}), 404
+
+    questions = query_db(
+        """
+        SELECT id, correct_answer
+        FROM quiz_questions
+        WHERE quiz_id=%s
+        """,
+        (quiz_id,),
+        fetchall=True
+    )
+
     if not questions:
-        return jsonify({"error": "Quiz has no questions"}), 404
-    correct = 0
+        return jsonify({"error": "Quiz has no questions"}), 400
+
+    score = 0
+    total = len(questions)
+
     for q in questions:
-        qid = str(q.get("id") or q.get("question_id"))
-        selected = answers.get(qid)
-        if selected is None:
-            selected = answers.get(qid.lower(), "")
-        if str(selected).strip().lower() == str(q.get("answer") or q.get("correct_answer") or "").strip().lower():
-            correct += 1
-    score = int((correct / len(questions)) * 100)
-    quiz = normalize_quiz(query_db(f"SELECT * FROM quizzes WHERE `{quiz_pk_col()}`=%s", (quiz_id,), fetchone=True))
-    passed = 1 if score >= 60 else 0
-    course_progress = 0
-    specialization_progress = 0
-    if quiz:
-        query_db("INSERT INTO quiz_attempts (user_id,quiz_id,course_id,score,passed,answers_json) VALUES (%s,%s,%s,%s,%s,%s)", (request.current_user["id"], quiz_id, quiz.get("course_id"), score, passed, json.dumps(answers, ensure_ascii=False)), commit=True)
-        if quiz.get("course_id"):
-            course = normalize_course(query_db(f"SELECT * FROM courses WHERE `{course_pk_col()}`=%s", (quiz.get("course_id"),), fetchone=True))
-            if course:
-                query_db("INSERT IGNORE INTO specialization_enrollments (user_id,spec_id,progress,status) VALUES (%s,%s,0,'not_started')", (request.current_user["id"], course["spec_id"]), commit=True)
-                query_db("INSERT IGNORE INTO course_enrollments (user_id,course_id,progress,status) VALUES (%s,%s,0,'not_started')", (request.current_user["id"], quiz.get("course_id")), commit=True)
-                course_progress = recalculate_course_progress(request.current_user["id"], quiz.get("course_id"))
-                specialization_progress = recalculate_specialization_progress(request.current_user["id"], course["spec_id"])
-        elif quiz.get("spec_id"):
-            exec_db("INSERT INTO specialization_enrollments (user_id,spec_id,progress,status) VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE progress=GREATEST(progress,VALUES(progress)),status=%s", (request.current_user["id"], quiz["spec_id"], score, "completed" if score >= 100 else "in_progress", "completed" if score >= 100 else "in_progress"))
-            if table_exists("progress"):
-                exec_db("INSERT INTO progress (user_id,spec_id,progress) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE progress=GREATEST(progress,VALUES(progress))", (request.current_user["id"], quiz["spec_id"], score))
-    return jsonify({"score": score, "correct": correct, "total": len(questions), "passed": bool(passed), "course_progress": course_progress, "specialization_progress": specialization_progress})
+        qid = str(q["id"])
+        user_answer = str(answers.get(qid, "")).strip().lower()
+        correct_answer = str(q["correct_answer"]).strip().lower()
 
+        if user_answer == correct_answer:
+            score += 1
 
+    percentage = round((score / total) * 100, 2)
+    passed = 1 if percentage >= 60 else 0
+
+    query_db(
+        """
+        INSERT INTO quiz_attempts 
+        (user_id, quiz_id, course_id, score, total, percentage, passed)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            user_id,
+            quiz_id,
+            quiz["course_id"],
+            score,
+            total,
+            percentage,
+            passed
+        ),
+        commit=True
+    )
+
+    return jsonify({
+        "score": score,
+        "total": total,
+        "percentage": percentage,
+        "passed": bool(passed)
+    })
 @app.route("/api/profile", methods=["GET"])
 @login_required
 def profile():
@@ -1896,7 +1929,62 @@ def unenroll_course(course_id):
     )
 
     return jsonify({"message": "Unenrolled successfully"})
+@app.route("/api/progress", methods=["GET"])
+@login_required
+def get_progress():
+    user_id = request.user["id"]
 
+    rows = query_db(
+        """
+        SELECT 
+            s.id AS specialization_id,
+            s.name AS specialization_name,
+
+            COUNT(DISTINCT c.id) AS total_courses,
+
+            COUNT(DISTINCT e.course_id) AS opened_courses,
+
+            COUNT(DISTINCT CASE 
+                WHEN qa.passed = 1 THEN qa.course_id 
+            END) AS passed_quiz_courses
+
+        FROM specializations s
+        LEFT JOIN courses c ON c.specialization_id = s.id
+        LEFT JOIN enrollments e 
+            ON e.course_id = c.id 
+            AND e.user_id = %s
+        LEFT JOIN quiz_attempts qa 
+            ON qa.course_id = c.id 
+            AND qa.user_id = %s
+        GROUP BY s.id, s.name
+        ORDER BY s.name
+        """,
+        (user_id, user_id),
+        fetchall=True
+    )
+
+    result = []
+
+    for row in rows:
+        total = int(row["total_courses"] or 0)
+        opened = int(row["opened_courses"] or 0)
+        passed = int(row["passed_quiz_courses"] or 0)
+
+        if total == 0:
+            percent = 0
+        else:
+            percent = round((passed / total) * 100)
+
+        result.append({
+            "specialization_id": row["specialization_id"],
+            "specialization_name": row["specialization_name"],
+            "total_courses": total,
+            "opened_courses": opened,
+            "completed_courses": passed,
+            "progress": percent
+        })
+
+    return jsonify(result)
 @app.route("/api/jobs", methods=["GET"])
 def get_jobs():
     search = request.args.get("search", "")
