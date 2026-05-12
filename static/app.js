@@ -572,33 +572,100 @@ async function loadSpecializationDetails() {
   }
 }
 
-async function loadCourses() {
-  const box = document.getElementById("coursesBox");
+async function loadCourseDetails() {
+  const box = document.getElementById("courseDetailsBox");
   if (!box) return;
 
-  try {
-    const spec = document.getElementById("courseSpecFilter")?.value || "";
-    const level = document.getElementById("courseLevelFilter")?.value || "";
-    const params = new URLSearchParams();
+  const id = new URLSearchParams(location.search).get("id");
 
-    if (spec) {
-      params.append("spec_id", spec);
-      params.append("specialization_id", spec);
+  if (!id) {
+    box.innerHTML = `<div class="card">Course not found.</div>`;
+    return;
+  }
+
+  try {
+    let course = null;
+
+    try {
+      course = await api(`/api/courses/${id}`);
+    } catch {
+      const coursesRaw = await api("/api/courses");
+      const courses = asArray(coursesRaw, "courses");
+      course = courses.find(c => Number(getId(c)) === Number(id));
     }
 
-    if (level) params.append("level", level);
+    if (!course) {
+      box.innerHTML = `<div class="card">Course not found.</div>`;
+      return;
+    }
 
-    const raw = await api(`/api/courses${params.toString() ? "?" + params.toString() : ""}`);
-    const courses = asArray(raw, "courses");
+    await trackCourseOpened(getId(course));
 
-    box.innerHTML = courses.map(c => `
-      <div class="card card-mini" onclick="window.location.href='course-details.html?id=${getId(c)}'">
-        ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
-        <h3>${escapeHTML(c.title || "")}</h3>
-        <p>${escapeHTML(c.description || "")}</p>
-        <span class="badge">${escapeHTML(c.level_badge?.label || c.level || "Beginner")}</span>
+    let quizzes = [];
+
+    try {
+      const quizRaw = await api(`/api/quizzes?course_id=${id}`);
+      quizzes = asArray(quizRaw, "quizzes");
+    } catch {
+      quizzes = [];
+    }
+
+    window.loadedQuizzes = quizzes;
+
+    const courseLink = course.link || course.course_link || "";
+    const courseVideo = course.video || course.video_url || "";
+
+    box.innerHTML = `
+      <div class="detail-hero card">
+        ${course.image || course.image_url ? `
+          <img src="${fileUrl(course.image_url || course.image)}" class="card-img">
+        ` : ""}
+
+        <h1>${escapeHTML(course.title || "")}</h1>
+
+        <p>${escapeHTML(course.description || "")}</p>
+
+        <p>
+          <b>Level:</b>
+          ${escapeHTML(course.level_badge?.label || course.level || "Beginner")}
+        </p>
+
+        <div class="course-actions">
+          ${courseVideo ? `
+            <button onclick="openCourseContent(${getId(course)}, '${fileUrl(courseVideo)}')">
+              Open Course Video
+            </button>
+          ` : ""}
+
+          ${courseLink ? `
+            <button onclick="openCourseContent(${getId(course)}, '${escapeHTML(courseLink)}')">
+              Open Course Link
+            </button>
+          ` : ""}
+
+          <button class="danger-btn" onclick="unenrollCourse(${getId(course)})">
+            Unenroll
+          </button>
+        </div>
       </div>
-    `).join("") || `<p>No courses yet.</p>`;
+
+      <div class="quiz-inside-course">
+        <h2>Course Quizzes</h2>
+        <p>Quizzes are connected to this course. Your score will update your progress automatically.</p>
+
+        <div id="quizzesBox">
+          ${quizzes.map(q => `
+            <div class="card">
+              <h3>${escapeHTML(q.title || "Quiz")}</h3>
+              <p>${escapeHTML(q.description || "")}</p>
+              <button onclick="startQuiz(${getId(q)})">Start Quiz</button>
+            </div>
+          `).join("") || `<p>No quizzes for this course yet.</p>`}
+        </div>
+
+        <div id="quizResult"></div>
+      </div>
+    `;
   } catch (err) {
     showMessage(err.message);
   }
