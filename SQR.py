@@ -2201,20 +2201,51 @@ def generate_ats_resume():
     return jsonify(result)
 
 
+@app.route("/api/ats/save", methods=["POST"])
+@login_required
+def save_ats_result():
+    user_id = request.user["id"]
+    data = get_json()
+
+    resume_name = data.get("resume_name", "")
+    target_job = data.get("target_job", "")
+    score = int(data.get("score", 0))
+    result_json = json.dumps(data.get("result", {}))
+
+    query_db(
+        """
+        INSERT INTO ats_results (user_id, resume_name, target_job, score, result_json)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (user_id, resume_name, target_job, score, result_json),
+        commit=True
+    )
+
+    return jsonify({"message": "ATS result saved"})
+
+
 @app.route("/api/ats/history", methods=["GET"])
 @login_required
 def ats_history():
-    rows = query_db("""
-        SELECT *
+    user_id = request.user["id"]
+
+    rows = query_db(
+        """
+        SELECT id, resume_name, target_job, score, result_json, created_at
         FROM ats_results
         WHERE user_id=%s
-        ORDER BY id DESC
-    """, (user_id_value(request.current_user),), fetchall=True) or []
+        ORDER BY created_at DESC
+        """,
+        (user_id,),
+        fetchall=True
+    )
+
     for row in rows:
         try:
-            row["result"] = json.loads(row.get("result_json") or "{}")
-        except Exception:
-            row["result"] = {}
+            row["result_json"] = json.loads(row["result_json"]) if row["result_json"] else {}
+        except:
+            row["result_json"] = {}
+
     return jsonify(rows)
 
 
