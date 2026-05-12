@@ -396,20 +396,39 @@ async function loadProgress(profileData = null) {
   if (!box) return;
 
   try {
-    const data = profileData || await api("/api/profile");
-    const progress = data.progress || data.specialization_progress || [];
+    let progress = [];
 
-    box.innerHTML = progress.map(p => `
-      <div class="card">
-        <h3>${p.name || p.specialization || p.specialization_name || "Specialization"}</h3>
-        <div class="progress-box">
-          <div class="progress-bar" style="width:${p.progress || p.percentage || 0}%"></div>
+    try {
+      const raw = await api("/api/progress");
+      progress = asArray(raw, "progress");
+    } catch {
+      const data = profileData || await api("/api/profile");
+      progress = data.progress || data.specialization_progress || [];
+    }
+
+    box.innerHTML = progress.map(p => {
+      const percent = Number(p.progress ?? p.percentage ?? 0);
+      const totalCourses = Number(p.total_courses ?? p.total ?? 0);
+      const openedCourses = Number(p.opened_courses ?? p.opened ?? 0);
+      const completedCourses = Number(p.completed_courses ?? p.passed_quiz_courses ?? p.completed ?? 0);
+      const title = p.name || p.specialization || p.specialization_name || "Specialization";
+
+      return `
+        <div class="card progress-card">
+          <div class="progress-header">
+            <h3>${escapeHTML(title)}</h3>
+            <span>${percent}%</span>
+          </div>
+          <div class="progress-box">
+            <div class="progress-bar" style="width:${percent}%"></div>
+          </div>
+          <p>${percent}% completed</p>
+          ${totalCourses ? `<p>Opened courses: ${openedCourses}/${totalCourses}<br>Completed by quizzes: ${completedCourses}/${totalCourses}</p>` : ""}
         </div>
-        <p>${p.progress || p.percentage || 0}% completed</p>
-      </div>
-    `).join("") || `<p>No progress yet.</p>`;
+      `;
+    }).join("") || `<p>No progress yet.</p>`;
   } catch {
-    box.innerHTML = "";
+    box.innerHTML = `<p>No progress yet.</p>`;
   }
 }
 
@@ -612,12 +631,15 @@ async function loadCourseDetails() {
       return;
     }
 
+    await trackCourseOpened(getId(course));
+
     const quizRaw = await api(`/api/quizzes?course_id=${id}`);
     const quizzes = asArray(quizRaw, "quizzes");
     window.loadedQuizzes = quizzes;
 
     const courseLink = course.link || course.course_link || "";
     const courseVideo = course.video || course.video_url || "";
+    const courseId = getId(course);
 
     box.innerHTML = `
       <div class="detail-hero card">
@@ -626,6 +648,7 @@ async function loadCourseDetails() {
         <h1>${escapeHTML(course.title || "")}</h1>
         <p>${escapeHTML(course.description || "")}</p>
         <p><b>Level:</b> ${escapeHTML(course.level_badge?.label || course.level || "Beginner")}</p>
+        <p class="success-text"><b>Status:</b> Auto-enrolled when this course page opened.</p>
 
         ${courseVideo ? `
           <h3>Course Video</h3>
@@ -633,23 +656,21 @@ async function loadCourseDetails() {
             controls
             class="course-video"
             style="width:100%;max-height:460px;border-radius:18px;margin:15px 0;background:#000;"
-            onplay="trackCourseOpened(${getId(course)})"
+            onplay="trackCourseOpened(${courseId})"
           >
             <source src="${fileUrl(courseVideo)}">
             Your browser does not support the video tag.
           </video>
         ` : ""}
 
-        ${courseLink ? `
-          <a
-            href="${escapeHTML(courseLink)}"
-            target="_blank"
-            class="btn primary"
-            onclick="trackCourseOpened(${getId(course)})"
-          >
-            Open Course Link
-          </a>
-        ` : ""}
+        <div class="actions course-actions">
+          ${courseLink ? `
+            <button type="button" class="btn primary" onclick="openCourse(${courseId}, '${escapeHTML(courseLink)}')">
+              Open Course Link
+            </button>
+          ` : ""}
+          <button type="button" class="btn danger" onclick="unenrollCourse(${courseId})">Unenroll</button>
+        </div>
       </div>
 
       <div class="quiz-inside-course">
@@ -673,7 +694,7 @@ async function loadCourseDetails() {
 }
 
 async function trackCourseOpened(courseId) {
-  requireLogin();
+  if (!courseId || !getToken()) return;
 
   try {
     await api(`/api/courses/${courseId}/open`, { method: "POST" });
@@ -681,6 +702,60 @@ async function trackCourseOpened(courseId) {
   } catch (err) {
     console.warn("Course open tracking failed:", err.message);
   }
+}
+
+async function openCourse(courseId, courseUrl = "") {
+  requireLogin();
+
+  try {
+    await api(`/api/courses/${courseId}/open`, { method: "POST" });
+    showMessage("Course opened and enrolled automatically", "success");
+    loadProgress();
+
+    if (courseUrl) {
+      window.open(courseUrl, "_blank");
+    }
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+
+async function unenrollCourse(courseId) {
+  requireLogin();
+
+  if (!confirm("Unenroll from this course? Your quiz attempts may still remain saved.")) return;
+
+  try {
+    await api(`/api/courses/${courseId}/unenroll`, { method: "DELETE" });
+    showMessage("Unenrolled successfully", "success");
+    loadProgress();
+
+    if (document.getElementById("courseDetailsBox")) {
+      setTimeout(() => window.location.href = "Courses.html", 700);
+    } else {
+      loadCourses();
+    }
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+
+function quizResultCircle(result) {
+  const rawScore = Number(result.percentage ?? result.score ?? result.ats_score ?? 0);
+  const total = Number(result.total ?? result.total_questions ?? 100);
+  const score = Number(result.score ?? result.correct ?? 0);
+  const percent = result.percentage !== undefined ? Math.round(Number(result.percentage)) : total > 0 && score <= total ? Math.round((score / total) * 100) : Math.round(rawScore);
+  const passed = result.passed === true || result.passed === 1 || percent >= 60;
+
+  return `
+    <div class="card quiz-result-card">
+      <div class="quiz-circle" style="--value:${percent}">
+        <span>${percent}%</span>
+      </div>
+      <h3>${passed ? "Passed" : "Failed"}</h3>
+      <p>${score && total && score <= total ? `${score}/${total} correct answers` : `Score: ${percent}%`}</p>
+    </div>
+  `;
 }
 
 async function startQuiz(id) {
@@ -736,7 +811,9 @@ async function startQuiz(id) {
           body: JSON.stringify({ answers })
         });
 
-        showMessage(`Quiz completed. Score: ${result.score}%`, "success");
+        const percent = Math.round(Number(result.percentage ?? result.score ?? 0));
+        box.innerHTML = quizResultCircle(result);
+        showMessage(`Quiz completed. Score: ${percent}%`, "success");
         loadProgress();
       } catch (err) {
         showMessage(err.message);
@@ -997,8 +1074,6 @@ function setupAtsChecker() {
         body: formData
       });
 
-      localStorage.setItem(`sqr_ats_check_user_${getUser()?.id || "guest"}`, JSON.stringify(result));
-
       if (resultBox) {
         const sectionScores = result.section_scores || {};
 
@@ -1055,8 +1130,6 @@ function setupAtsChecker() {
 }
 
 async function loadOnlyThisUserLatestATS() {
-  // Privacy fix: do not reload ATS generator output from backend/localStorage.
-  // Generated resumes should only exist on the current page after the user clicks Generate.
   return;
 }
 
@@ -1083,8 +1156,6 @@ function setupATS() {
         });
 
         lastGeneratedResume = result.generated_resume || result.resume || "";
-        // Privacy fix: do not save generated resume or ATS generator result in localStorage/sessionStorage.
-
         const box =
           document.getElementById("generatedResume") ||
           document.getElementById("resumeOutput") ||
@@ -1118,8 +1189,6 @@ function setupATS() {
     });
   }
 
-  // Privacy fix: do not auto-load previously generated ATS resumes.
-  // loadOnlyThisUserLatestATS();
 }
 
 async function copyGeneratedResume() {
@@ -1482,6 +1551,9 @@ async function editQuiz(id) { const title = prompt("New quiz title:"); if (title
 async function editCertificate(id) { const name = prompt("New certificate name:"); if (name) await putJson(`/api/certificates/${id}`, { name }); }
 
 
+window.openCourse = openCourse;
+window.unenrollCourse = unenrollCourse;
+window.quizResultCircle = quizResultCircle;
 window.navbar = navbar;
 window.logout = logout;
 window.requireLogin = requireLogin;
