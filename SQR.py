@@ -1837,46 +1837,32 @@ def enroll_course(course_id):
 @app.route("/api/courses/<int:course_id>/open", methods=["POST"])
 @login_required
 def open_course(course_id):
-    course = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
+    user_id = request.user["id"]
+
+    course = query_db(
+        "SELECT id FROM courses WHERE id=%s",
+        (course_id,),
+        fetchone=True
+    )
+
     if not course:
         return jsonify({"error": "Course not found"}), 404
 
-    user_id = request.current_user["id"]
-
     query_db(
         """
-        INSERT IGNORE INTO specialization_enrollments (user_id, spec_id, progress, status)
-        VALUES (%s, %s, 0, 'not_started')
-        """,
-        (user_id, course["spec_id"]),
-        commit=True
-    )
-
-    query_db(
-        """
-        INSERT INTO course_enrollments (user_id, course_id, progress, status)
-        VALUES (%s, %s, 50, 'in_progress')
-        ON DUPLICATE KEY UPDATE
-            progress = GREATEST(progress, 50),
-            status = IF(GREATEST(progress, 50) >= 100, 'completed', 'in_progress')
+        INSERT IGNORE INTO enrollments (user_id, course_id)
+        VALUES (%s, %s)
         """,
         (user_id, course_id),
         commit=True
     )
 
-    progress = recalculate_course_progress(user_id, course_id)
-
-    return jsonify({
-        "message": "Course activity tracked",
-        "course_id": course_id,
-        "course_progress": progress
-    })
+    return jsonify({"message": "User enrolled automatically", "course_id": course_id})
 
 @app.route("/api/courses/<int:course_id>/complete", methods=["POST"])
 @login_required
 def complete_course(course_id):
-    # Kept only for backward compatibility. The user UI no longer shows "Mark Completed".
-    # Opening the video or course link records course activity; quizzes finish the remaining progress.
+   
     return open_course(course_id)
 
 
@@ -1897,7 +1883,21 @@ def enrolled_courses():
         add_course_level_meta(row)
     return jsonify(rows)
 
+@app.route("/api/courses/<int:course_id>/unenroll", methods=["DELETE"])
+@login_required
+def unenroll_course(course_id):
+    user_id = request.user["id"]
 
+    query_db(
+        """
+        DELETE FROM enrollments
+        WHERE user_id=%s AND course_id=%s
+        """,
+        (user_id, course_id),
+        commit=True
+    )
+
+    return jsonify({"message": "Unenrolled successfully"})
 
 @app.route("/api/jobs", methods=["GET"])
 def get_jobs():
@@ -2196,8 +2196,7 @@ def generate_ats_resume():
         "target_job": target_job
     }
 
-    # Privacy fix: ATS generator returns the generated resume only in the response.
-    # It does NOT save generated resumes or user-entered generator data in ats_results.
+  
     return jsonify(result)
 
 
