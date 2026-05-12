@@ -141,6 +141,99 @@ function normalizeFormData(form) {
   return data;
 }
 
+
+function toNumberId(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : value;
+}
+
+function sameId(a, b) {
+  return String(a ?? "") === String(b ?? "");
+}
+
+function idListHas(list, id) {
+  if (!Array.isArray(list)) return false;
+  return list.some(item => {
+    if (typeof item === "object" && item !== null) return sameId(getId(item), id) || sameId(item.course_id, id);
+    return sameId(item, id);
+  });
+}
+
+function clampPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function tinyDoneMark(active, title = "Opened") {
+  return active ? `<span class="mini-check" title="${escapeHTML(title)}">✓</span>` : "";
+}
+
+function progressBarHTML(percent) {
+  const safe = clampPercent(percent);
+  return `
+    <div class="progress-wrap">
+      <div class="progress-label">
+        <span>Progress</span>
+        <strong>${safe}%</strong>
+      </div>
+      <div class="progress-box progress-track">
+        <div class="progress-bar progress-fill" style="width:${safe}%"></div>
+      </div>
+    </div>
+  `;
+}
+
+function ensureProgressStyles() {
+  if (document.getElementById("sqr-progress-fix-styles")) return;
+  const style = document.createElement("style");
+  style.id = "sqr-progress-fix-styles";
+  style.textContent = `
+    .mini-check{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:6px;border-radius:50%;background:#16a34a;color:#fff;font-size:12px;font-weight:900;vertical-align:middle;box-shadow:0 4px 10px rgba(22,163,74,.25)}
+    .progress-wrap{margin-top:12px;width:100%}
+    .progress-label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;margin-bottom:6px}
+    .progress-track,.progress-box{width:100%;height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden}
+    .progress-fill,.progress-box .progress-bar{height:100%;background:#2563eb;border-radius:999px;transition:width .3s ease;display:block}
+    .course-status-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;color:#16a34a;font-weight:700}
+  `;
+  document.head.appendChild(style);
+}
+
+async function getUserProgress() {
+  try {
+    const raw = await apiTry(["/api/my/progress", "/api/progress", "/api/profile"]);
+    const profileProgress = raw.progress || raw.specialization_progress || [];
+    return {
+      raw,
+      progress: asArray(raw, "progress").length ? asArray(raw, "progress") : Array.isArray(profileProgress) ? profileProgress : [],
+      opened_courses: raw.opened_courses || raw.opened || raw.openedCourses || [],
+      watched_courses: raw.watched_courses || raw.watched || raw.watchedCourses || [],
+      enrolled_courses: raw.enrolled_courses || raw.enrollments || raw.courses || [],
+      course_progress: raw.course_progress || raw.courses_progress || {},
+      specialization_progress: raw.specialization_progress || raw.spec_progress || {}
+    };
+  } catch {
+    return {
+      raw: {},
+      progress: [],
+      opened_courses: [],
+      watched_courses: [],
+      enrolled_courses: [],
+      course_progress: {},
+      specialization_progress: {}
+    };
+  }
+}
+
+function coursePercentFromProgress(course, progress) {
+  const id = getId(course);
+  const direct = course?.progress ?? course?.percentage ?? progress.course_progress?.[id] ?? progress.course_progress?.[String(id)];
+  if (direct !== undefined && direct !== null && direct !== "") return clampPercent(direct);
+  if (idListHas(progress.watched_courses, id)) return 100;
+  if (idListHas(progress.opened_courses, id) || idListHas(progress.enrolled_courses, id) || course?.opened || course?.enrolled) return 50;
+  return 0;
+}
+
 function navbar() {
   const user = getUser();
 
@@ -217,6 +310,7 @@ function blockAdminFromStudentPages() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  ensureProgressStyles();
   blockAdminFromStudentPages();
 
   setupSignup();
@@ -396,20 +490,18 @@ async function loadProgress(profileData = null) {
   if (!box) return;
 
   try {
-    let progress = [];
+    const progressData = await getUserProgress();
+    let progress = progressData.progress;
 
-    try {
-      const raw = await api("/api/progress");
-      progress = asArray(raw, "progress");
-    } catch {
-      const data = profileData || await api("/api/profile");
-      progress = data.progress || data.specialization_progress || [];
+    if (!progress.length && profileData) {
+      progress = profileData.progress || profileData.specialization_progress || [];
     }
 
     box.innerHTML = progress.map(p => {
-      const percent = Number(p.progress ?? p.percentage ?? 0);
+      const percent = clampPercent(p.progress ?? p.percentage ?? 0);
       const totalCourses = Number(p.total_courses ?? p.total ?? 0);
       const openedCourses = Number(p.opened_courses ?? p.opened ?? 0);
+      const watchedCourses = Number(p.watched_courses ?? p.watched ?? 0);
       const completedCourses = Number(p.completed_courses ?? p.passed_quiz_courses ?? p.completed ?? 0);
       const title = p.name || p.specialization || p.specialization_name || "Specialization";
 
@@ -419,16 +511,14 @@ async function loadProgress(profileData = null) {
             <h3>${escapeHTML(title)}</h3>
             <span>${percent}%</span>
           </div>
-          <div class="progress-box">
-            <div class="progress-bar" style="width:${percent}%"></div>
-          </div>
+          ${progressBarHTML(percent)}
           <p>${percent}% completed</p>
-          ${totalCourses ? `<p>Opened courses: ${openedCourses}/${totalCourses}<br>Completed by quizzes: ${completedCourses}/${totalCourses}</p>` : ""}
+          ${totalCourses ? `<p>Opened/watched courses: ${Math.max(openedCourses, watchedCourses)}/${totalCourses}<br>Completed by quizzes: ${completedCourses}/${totalCourses}</p>` : ""}
         </div>
       `;
-    }).join("") || `<p>No progress yet.</p>`;
+    }).join("") || `<p>No progress yet. Open a course to start tracking.</p>`;
   } catch {
-    box.innerHTML = `<p>No progress yet.</p>`;
+    box.innerHTML = `<p>No progress yet. Open a course to start tracking.</p>`;
   }
 }
 
@@ -619,37 +709,48 @@ async function loadSpecializationDetails() {
 
   try {
     const s = await api(`/api/specializations/${id}`);
+    const userProgress = await getUserProgress();
+    const specProgressValue = s.progress ?? s.percentage ?? userProgress.specialization_progress?.[id] ?? userProgress.specialization_progress?.[String(id)] ?? 0;
 
     box.innerHTML = `
       <div class="detail-hero card">
         ${s.image || s.image_url ? `<img src="${fileUrl(s.image_url || s.image)}" class="card-img">` : ""}
-        <h1>${s.name || ""}</h1>
-        <p>${s.description || ""}</p>
+        <h1>${escapeHTML(s.name || "")}</h1>
+        <p>${escapeHTML(s.description || "")}</p>
+        ${progressBarHTML(specProgressValue)}
 
         <h3>Skills</h3>
-        <p>${s.skills || "No skills added yet."}</p>
+        <p>${escapeHTML(s.skills || "No skills added yet.")}</p>
 
         <h3>Roadmap</h3>
-        <p>${s.roadmap || "No roadmap added yet."}</p>
+        <p>${escapeHTML(s.roadmap || "No roadmap added yet.")}</p>
 
         <h3>Job Titles</h3>
-        <p>${s.job_titles || s.career_paths || "No job titles added yet."}</p>
+        <p>${escapeHTML(s.job_titles || s.career_paths || "No job titles added yet.")}</p>
       </div>
 
       <h2>Courses</h2>
       <div class="grid">
-        ${(s.courses || []).map(c => `
-          <div class="card card-mini" onclick="window.location.href='course-details.html?id=${getId(c)}'">
-            ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
-            <h3>${c.title || ""}</h3>
-          </div>
-        `).join("") || `<p>No courses yet.</p>`}
+        ${(s.courses || []).map(c => {
+          const courseId = getId(c);
+          const watched = idListHas(userProgress.watched_courses, courseId);
+          const opened = watched || idListHas(userProgress.opened_courses, courseId) || idListHas(userProgress.enrolled_courses, courseId) || c.opened || c.enrolled;
+          const percent = coursePercentFromProgress(c, userProgress);
+          return `
+            <div class="card card-mini" onclick="window.location.href='course-details.html?id=${courseId}'">
+              ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
+              <h3>${escapeHTML(c.title || "")} ${tinyDoneMark(opened, watched ? "Watched" : "Opened")}</h3>
+              ${progressBarHTML(percent)}
+            </div>
+          `;
+        }).join("") || `<p>No courses yet.</p>`}
       </div>
     `;
   } catch (err) {
     showMessage(err.message);
   }
 }
+
 
 async function loadCourseDetails() {
   const box = document.getElementById("courseDetailsBox");
@@ -678,8 +779,8 @@ async function loadCourseDetails() {
       return;
     }
 
-
     await trackCourseOpened(getId(course));
+    const userProgress = await getUserProgress();
 
     let quizzes = [];
 
@@ -692,8 +793,12 @@ async function loadCourseDetails() {
 
     window.loadedQuizzes = quizzes;
 
-    const courseLink = course.link || course.course_link || "";
+    const courseLink = course.link || course.course_link || course.content_url || "";
     const courseVideo = course.video || course.video_url || "";
+    const courseId = getId(course);
+    const watched = idListHas(userProgress.watched_courses, courseId);
+    const opened = watched || idListHas(userProgress.opened_courses, courseId) || idListHas(userProgress.enrolled_courses, courseId) || course.opened || course.enrolled;
+    const percent = coursePercentFromProgress(course, userProgress);
 
     box.innerHTML = `
       <div class="detail-hero card">
@@ -701,7 +806,7 @@ async function loadCourseDetails() {
           <img src="${fileUrl(course.image_url || course.image)}" class="card-img">
         ` : ""}
 
-        <h1>${escapeHTML(course.title || "")}</h1>
+        <h1>${escapeHTML(course.title || "")} ${tinyDoneMark(opened, watched ? "Watched" : "Opened")}</h1>
 
         <p>${escapeHTML(course.description || "")}</p>
 
@@ -710,20 +815,27 @@ async function loadCourseDetails() {
           ${escapeHTML(course.level_badge?.label || course.level || "Beginner")}
         </p>
 
+        <div class="course-status-line">
+          ${tinyDoneMark(opened, watched ? "Watched" : "Opened")}
+          <span>${watched ? "Watched" : opened ? "Opened and enrolled" : "Not opened yet"}</span>
+        </div>
+
+        ${progressBarHTML(percent)}
+
         <div class="course-actions">
           ${courseVideo ? `
-            <button onclick="openCourseContent(${getId(course)}, '${fileUrl(courseVideo)}')">
+            <button onclick="openCourseContent(${courseId}, '${fileUrl(courseVideo)}')">
               Open Course Video
             </button>
           ` : ""}
 
           ${courseLink ? `
-            <button onclick="openCourseContent(${getId(course)}, '${escapeHTML(courseLink)}')">
+            <button onclick="openCourseContent(${courseId}, '${escapeHTML(courseLink)}')">
               Open Course Link
             </button>
           ` : ""}
 
-          <button class="danger-btn" onclick="unenrollCourse(${getId(course)})">
+          <button class="danger-btn" onclick="unenrollCourse(${courseId})">
             Unenroll
           </button>
         </div>
@@ -751,6 +863,7 @@ async function loadCourseDetails() {
   }
 }
 
+
 async function loadCourses() {
   const box = document.getElementById("coursesBox");
   if (!box) return;
@@ -769,39 +882,87 @@ async function loadCourses() {
 
     const raw = await api(`/api/courses${params.toString() ? "?" + params.toString() : ""}`);
     const courses = asArray(raw, "courses");
+    const userProgress = await getUserProgress();
 
-    box.innerHTML = courses.map(c => `
-      <div class="card card-mini" onclick="window.location.href='course-details.html?id=${getId(c)}'">
-        ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
+    box.innerHTML = courses.map(c => {
+      const courseId = getId(c);
+      const watched = idListHas(userProgress.watched_courses, courseId);
+      const opened = watched || idListHas(userProgress.opened_courses, courseId) || idListHas(userProgress.enrolled_courses, courseId) || c.opened || c.enrolled;
+      const percent = coursePercentFromProgress(c, userProgress);
 
-        <h3>${escapeHTML(c.title || "")}</h3>
+      return `
+        <div class="card card-mini" onclick="window.location.href='course-details.html?id=${courseId}'">
+          ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
 
-        <p>${escapeHTML(c.description || "")}</p>
+          <h3>${escapeHTML(c.title || "")} ${tinyDoneMark(opened, watched ? "Watched" : "Opened")}</h3>
 
-        <span class="badge">
-          ${escapeHTML(c.level_badge?.label || c.level || "Beginner")}
-        </span>
+          <p>${escapeHTML(c.description || "")}</p>
 
-        <div class="course-actions">
-          <button onclick="event.stopPropagation(); window.location.href='course-details.html?id=${getId(c)}'">
-            Open Course
-          </button>
+          <span class="badge">
+            ${escapeHTML(c.level_badge?.label || c.level || "Beginner")}
+          </span>
+
+          ${progressBarHTML(percent)}
+
+          <div class="course-actions">
+            <button onclick="event.stopPropagation(); window.location.href='course-details.html?id=${courseId}'">
+              Open Course
+            </button>
+          </div>
         </div>
-      </div>
-    `).join("") || `<p>No courses yet.</p>`;
+      `;
+    }).join("") || `<p>No courses yet.</p>`;
   } catch (err) {
     showMessage(err.message);
   }
 }
 
+
 async function trackCourseOpened(courseId) {
   if (!courseId || !getToken()) return;
 
   try {
-    await api(`/api/courses/${courseId}/open`, { method: "POST" });
+    await apiTry([
+      `/api/courses/${courseId}/open`,
+      `/api/courses/${courseId}/enroll`,
+      `/api/enroll-course/${courseId}`,
+      `/api/user/courses/${courseId}/open`
+    ], { method: "POST" });
     loadProgress();
   } catch (err) {
     console.warn("Course open tracking failed:", err.message);
+  }
+}
+
+async function trackCourseWatched(courseId) {
+  if (!courseId || !getToken()) return;
+
+  try {
+    await apiTry([
+      `/api/courses/${courseId}/watch`,
+      `/api/courses/${courseId}/open`,
+      `/api/user/courses/${courseId}/watch`
+    ], { method: "POST" });
+    loadProgress();
+  } catch (err) {
+    console.warn("Course watch tracking failed:", err.message);
+  }
+}
+
+async function openCourseContent(courseId, courseUrl = "") {
+  requireLogin();
+
+  try {
+    await trackCourseWatched(courseId);
+    showMessage("Course opened and progress updated", "success");
+    if (courseUrl) window.open(courseUrl, "_blank");
+    setTimeout(() => {
+      if (document.getElementById("courseDetailsBox")) loadCourseDetails();
+      loadCourses();
+      loadProgress();
+    }, 300);
+  } catch (err) {
+    showMessage(err.message);
   }
 }
 
@@ -809,7 +970,7 @@ async function openCourse(courseId, courseUrl = "") {
   requireLogin();
 
   try {
-    await api(`/api/courses/${courseId}/open`, { method: "POST" });
+    await trackCourseOpened(courseId);
     showMessage("Course opened and enrolled automatically", "success");
     loadProgress();
 
@@ -821,13 +982,22 @@ async function openCourse(courseId, courseUrl = "") {
   }
 }
 
+
 async function unenrollCourse(courseId) {
   requireLogin();
 
   if (!confirm("Unenroll from this course? Your quiz attempts may still remain saved.")) return;
 
   try {
-    await api(`/api/courses/${courseId}/unenroll`, { method: "DELETE" });
+    try {
+      await api(`/api/courses/${courseId}/unenroll`, { method: "DELETE" });
+    } catch {
+      await apiTry([
+        `/api/courses/${courseId}/unenroll`,
+        `/api/unenroll-course/${courseId}`,
+        `/api/user/courses/${courseId}/unenroll`
+      ], { method: "POST" });
+    }
     showMessage("Unenrolled successfully", "success");
     loadProgress();
 
@@ -840,6 +1010,7 @@ async function unenrollCourse(courseId) {
     showMessage(err.message);
   }
 }
+
 
 function quizResultCircle(result) {
   const rawScore = Number(result.percentage ?? result.score ?? result.ats_score ?? 0);
@@ -1661,6 +1832,9 @@ window.requireLogin = requireLogin;
 window.requireAdmin = requireAdmin;
 window.blockAdminFromStudentPages = blockAdminFromStudentPages;
 window.trackCourseOpened = trackCourseOpened;
+window.trackCourseWatched = trackCourseWatched;
+window.openCourseContent = openCourseContent;
+window.ensureProgressStyles = ensureProgressStyles;
 window.startQuiz = startQuiz;
 window.makeAdmin = makeAdmin;
 window.makeStudent = makeStudent;
