@@ -825,9 +825,7 @@ def insert_dynamic(table_name, values):
 
 
 def ensure_runtime_schema():
-    try:
-        # This keeps the backend compatible with the clean 11-table Railway schema.
-        # It does not recreate old tables like progress, admins, assessments, or recommendation tables.
+    try:      
         if table_exists("users"):
             add_column_if_missing("users", "username", "username VARCHAR(100) NULL AFTER name")
             add_column_if_missing("users", "current_mode", "current_mode ENUM('student','admin') DEFAULT 'student'")
