@@ -454,18 +454,56 @@ async function loadSpecializations() {
     const raw = await api("/api/specializations");
     const specs = asArray(raw, "specializations");
 
+    let enrolledSpecs = [];
+
+    try {
+      const enrolledRaw = await apiTry([
+        "/api/my-specializations",
+        "/api/user/specializations",
+        "/api/enrollments/specializations"
+      ]);
+
+      enrolledSpecs = asArray(enrolledRaw, "specializations")
+        .map(s => Number(getId(s)));
+    } catch {
+      enrolledSpecs = [];
+    }
+
     if (box) {
-      box.innerHTML = specs.map(s => `
-        <div class="card card-mini" onclick="window.location.href='specialization-details.html?id=${getId(s)}'">
-          ${s.image || s.image_url ? `<img src="${fileUrl(s.image_url || s.image)}" class="card-img">` : ""}
-          <h3>${s.name || ""}</h3>
-          <p>${s.description || ""}</p>
-        </div>
-      `).join("") || `<p>No specializations yet.</p>`;
+      box.innerHTML = specs.map(s => {
+        const id = getId(s);
+        const enrolled = enrolledSpecs.includes(Number(id));
+
+        return `
+          <div class="card card-mini">
+            <div onclick="window.location.href='specialization-details.html?id=${id}'">
+              ${s.image || s.image_url ? `<img src="${fileUrl(s.image_url || s.image)}" class="card-img">` : ""}
+              <h3>${escapeHTML(s.name || "")}</h3>
+              <p>${escapeHTML(s.description || "")}</p>
+            </div>
+
+            <div class="course-actions">
+              ${enrolled ? `
+                <button class="danger-btn" onclick="event.stopPropagation(); unenrollSpecialization(${id})">
+                  Unenroll
+                </button>
+              ` : `
+                <button onclick="event.stopPropagation(); enrollSpecialization(${id})">
+                  Enroll
+                </button>
+              `}
+
+              <button onclick="event.stopPropagation(); window.location.href='specialization-details.html?id=${id}'">
+                View
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("") || `<p>No specializations yet.</p>`;
     }
 
     const options = `<option value="">All Specializations</option>` + specs.map(s => `
-      <option value="${getId(s)}">${s.name}</option>
+      <option value="${getId(s)}">${escapeHTML(s.name || "")}</option>
     `).join("");
 
     selects.forEach(el => {
@@ -475,6 +513,47 @@ async function loadSpecializations() {
     setupSelectSearch("courseSpecializationSearch", "courseSpecialization");
     setupSelectSearch("jobSpecializationSearch", "jobSpecialization");
     setupSelectSearch("certSpecializationSearch", "certSpecialization");
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+async function enrollSpecialization(specializationId) {
+  requireLogin();
+
+  try {
+    await apiTry([
+      `/api/specializations/${specializationId}/enroll`,
+      `/api/enroll-specialization/${specializationId}`,
+      `/api/user/specializations/${specializationId}/enroll`
+    ], {
+      method: "POST"
+    });
+
+    showMessage("Specialization enrolled successfully", "success");
+    loadSpecializations();
+    loadProgress();
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+
+async function unenrollSpecialization(specializationId) {
+  requireLogin();
+
+  if (!confirm("Unenroll from this specialization?")) return;
+
+  try {
+    await apiTry([
+      `/api/specializations/${specializationId}/unenroll`,
+      `/api/unenroll-specialization/${specializationId}`,
+      `/api/user/specializations/${specializationId}/unenroll`
+    ], {
+      method: "DELETE"
+    });
+
+    showMessage("Specialization unenrolled successfully", "success");
+    loadSpecializations();
+    loadProgress();
   } catch (err) {
     showMessage(err.message);
   }
