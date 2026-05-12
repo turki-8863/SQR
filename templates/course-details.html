@@ -5,15 +5,28 @@
   <title>SQR | Course Details</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles-additions.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='sqr-fixes.css') }}">
 </head>
 <body>
+
 <script src="{{ url_for('static', filename='app.js') }}"></script>
-<script>navbar();</script>
+<script>
+  navbar();
+  requireLogin();
+</script>
+
 <div class="container">
   <div id="message"></div>
-  <a href="Courses.html" class="btn ghost">Back to Courses</a>
+
+  <section class="hero">
+    <h1>Course Details</h1>
+    <p class="subtitle">
+      Opening the course video or link automatically enrolls you. You can unenroll from this course if needed.
+    </p>
+  </section>
+
   <div id="courseDetailsBox"></div>
 </div>
+
 </body>
 </html>
