@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SQR | Recommendation</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <div id="message"></div>
+  <main class="container">
+    <section class="page-hero">
+      <span class="eyebrow">AI Guidance</span>
+      <h1>Career Recommendation</h1>
+      <p>Take the quiz and add your interests. SQR recommends specializations and jobs separately.</p>
+    </section>
+    <form id="recForm" class="card">
+      <h2>Specialization Test</h2>
+      <div id="recommendationQuiz"></div>
+      <div class="form-grid">
+        <div class="full"><label for="interests">Interests</label><textarea id="interests" name="interests" placeholder="security, AI, data, cloud..."></textarea></div>
+        <div class="full"><label for="skills">Skills</label><textarea id="skills" name="skills" placeholder="Python, SQL, Linux..."></textarea></div>
+        <div class="full"><label for="goal">Goal</label><textarea id="goal" name="goal" placeholder="I want to become a SOC analyst..."></textarea></div>
+      </div>
+      <button type="submit" class="btn btn-primary">Get Recommendation</button>
+    </form>
+    <section id="recommendationResult" class="mt-3"></section>
+  </main>
+</body>
+</html>

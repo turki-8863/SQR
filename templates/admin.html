@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SQR | Admin Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <div id="message"></div>
+  <main id="adminRoot" class="admin-page">
+    <section class="page-hero">
+      <span class="eyebrow">Admin Dashboard</span>
+      <h1>Manage SQR</h1>
+      <p>Manage users, specializations, courses, quizzes, jobs, and certificates.</p>
+    </section>
+    <div class="admin-layout">
+      <nav class="admin-tabs">
+        <a href="#dashboard" class="active">Dashboard</a>
+        <a href="#specializationsAdmin">Specializations</a>
+        <a href="#coursesAdmin">Courses</a>
+        <a href="#quizzesAdmin">Quizzes</a>
+        <a href="#jobsAdmin">Jobs</a>
+        <a href="#certificatesAdmin">Certificates</a>
+        <a href="#usersAdmin">Users</a>
+      </nav>
+      <div class="admin-content">
+        <section id="dashboard" class="admin-section active">
+          <h2>Website Statistics</h2>
+          <div id="adminStats" class="admin-stats"></div>
+        </section>
+
+        <section id="specializationsAdmin" class="admin-section">
+          <form id="addSpecializationForm" class="admin-form" enctype="multipart/form-data">
+            <h2>Add Specialization</h2>
+            <div class="form-grid">
+              <div><label class="required">Name</label><input name="name" required></div>
+              <div><label>Image</label><input name="image" type="file" accept="image/*"></div>
+              <div class="full"><label>Description</label><textarea name="description"></textarea></div>
+              <div class="full"><label>Skills</label><textarea name="skills" placeholder="Python, SQL, Security..."></textarea></div>
+              <div class="full"><label>Roadmap</label><textarea name="roadmap" placeholder="One step per line"></textarea></div>
+              <div class="full"><label>Job Titles</label><textarea name="job_titles"></textarea></div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Specialization</button>
+          </form>
+          <div id="adminSpecializations"></div>
+        </section>
+
+        <section id="coursesAdmin" class="admin-section">
+          <form id="addCourseForm" class="admin-form" enctype="multipart/form-data">
+            <h2>Add Course</h2>
+            <div class="form-grid">
+              <div><label class="required">Course Title</label><input name="title" required></div>
+              <div><label class="required">Specialization</label><select name="specialization_id" id="courseSpecialization" required></select></div>
+              <div><label>Level</label><select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></div>
+              <div><label>Course Link</label><input name="link" type="url"></div>
+              <div><label>Course Image</label><input name="image" type="file" accept="image/*"></div>
+              <div><label>Course Video</label><input name="video" type="file" accept="video/*"></div>
+              <div class="full"><label>Description</label><textarea name="description"></textarea></div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Course</button>
+          </form>
+          <div id="adminCourses"></div>
+        </section>
+
+        <section id="quizzesAdmin" class="admin-section">
+          <form id="addQuizForm" class="admin-form">
+            <div class="section-head"><h2>Add Quiz</h2><button type="button" id="addQuestionBtn" class="btn btn-soft">Add Question</button></div>
+            <div class="form-grid">
+              <div><label class="required">Quiz Title</label><input name="title" required></div>
+              <div><label class="required">Course</label><select name="course_id" id="quizCourse" required></select></div>
+              <div class="full"><label>Description</label><textarea name="description"></textarea></div>
+            </div>
+            <div id="quizQuestions"></div>
+            <button type="submit" class="btn btn-primary">Add Quiz</button>
+          </form>
+          <div id="adminQuizzes"></div>
+        </section>
+
+        <section id="jobsAdmin" class="admin-section">
+          <form id="addJobForm" class="admin-form">
+            <h2>Add Job</h2>
+            <div class="form-grid">
+              <div><label class="required">Job Title</label><input name="title" required></div>
+              <div><label>Specialization</label><select name="specialization_id" id="jobSpecialization"></select></div>
+              <div><label>Average Salary</label><input name="salary"></div>
+              <div><label>Job Link</label><input name="link" type="url"></div>
+              <div class="full"><label>Description</label><textarea name="description"></textarea></div>
+              <div class="full"><label>Required Skills</label><textarea name="skills"></textarea></div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Job</button>
+          </form>
+          <div id="adminJobs"></div>
+        </section>
+
+        <section id="certificatesAdmin" class="admin-section">
+          <form id="addCertificationForm" class="admin-form">
+            <h2>Add Certificate</h2>
+            <div class="form-grid">
+              <div><label class="required">Certificate Name</label><input name="name" required></div>
+              <div><label>Specialization</label><select name="specialization_id" id="certificationSpecialization"></select></div>
+              <div><label>Price</label><input name="price"></div>
+              <div><label>Type</label><select name="type"><option value="both">Both</option><option value="practical">Practical</option><option value="theoretical">Theoretical</option></select></div>
+              <div><label>Certificate Link</label><input name="link" type="url"></div>
+              <div class="full"><label>Description</label><textarea name="description"></textarea></div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Certificate</button>
+          </form>
+          <div id="adminCertifications"></div>
+        </section>
+
+        <section id="usersAdmin" class="admin-section">
+          <h2>Users</h2>
+          <div id="adminUsers"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
