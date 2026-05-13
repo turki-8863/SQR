@@ -1,68 +1,61 @@
-const API = location.hostname === "localhost" || location.hostname === "127.0.0.1"
-  ? "http://127.0.0.1:5000"
-  : "https://sqr-ba83.onrender.com";
+const API = (() => {
+  if (window.SQR_API_OVERRIDE) return window.SQR_API_OVERRIDE;
+  const host = location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") return "http://127.0.0.1:5000";
+  if (host.includes("github.io") || host.includes("netlify") || host.includes("vercel")) return "https://sqr-ba83.onrender.com";
+  return location.origin || "https://sqr-ba83.onrender.com";
+})();
 
-let lastGeneratedResume = "";
-
-function getToken() {
-  return localStorage.getItem("sqr_token") || localStorage.getItem("token");
-}
-
-function getUser() {
-  try {
-    return JSON.parse(localStorage.getItem("sqr_user") || "null");
-  } catch {
-    return null;
+const SQR = {
+  pages: {
+    home: "gp.html",
+    specializations: "Specialization.html",
+    courses: "Courses.html",
+    ats: "ATS.html",
+    jobs: "jobs.html",
+    recommendation: "recommendation.html",
+    profile: "profile.html",
+    admin: "admin.html",
+    signin: "signin.html",
+    signup: "signup.html"
+  },
+  publicPages: new Set(["", "index.html", "gp.html", "signin.html", "signup.html"]),
+  state: {
+    specializations: [],
+    courses: [],
+    jobs: [],
+    quizzes: [],
+    certifications: [],
+    users: []
   }
+};
+
+function pageName() {
+  return location.pathname.split("/").pop() || "index.html";
 }
 
-function setAuth(token, user) {
-  localStorage.setItem("sqr_token", token);
-  localStorage.setItem("sqr_user", JSON.stringify(user));
-  localStorage.removeItem("token");
-  lastGeneratedResume = "";
+function isPublicPage() {
+  return SQR.publicPages.has(pageName());
 }
 
-function authHeaders() {
-  const token = getToken();
-  return token ? { Authorization: "Bearer " + token } : {};
+function route(name) {
+  return SQR.pages[name] || "#";
 }
 
-function logout() {
-  const user = getUser();
-
-  if (user?.id) {
-    localStorage.removeItem("lastGeneratedResume_user_" + user.id);
-  }
-
-  localStorage.removeItem("sqr_token");
-  localStorage.removeItem("sqr_user");
-  localStorage.removeItem("token");
-  localStorage.removeItem("lastGeneratedResume");
-  localStorage.removeItem("ats_data");
-  localStorage.removeItem("ats_resume");
-  localStorage.removeItem("ats_result");
-  localStorage.removeItem("ats_latest");
-  localStorage.removeItem("generated_resume");
-  sessionStorage.removeItem("ats_data");
-  sessionStorage.removeItem("ats_resume");
-  sessionStorage.removeItem("ats_result");
-  sessionStorage.removeItem("ats_latest");
-  sessionStorage.removeItem("generated_resume");
-
-  lastGeneratedResume = "";
-  window.location.href = "signin.html";
+function qs(selector, root = document) {
+  return root.querySelector(selector);
 }
 
-function showMessage(text, type = "error") {
-  const box = document.getElementById("message");
-  if (!box) return;
-  box.innerHTML = text;
-  box.className = type === "success" ? "alert success" : "alert error";
+function qsa(selector, root = document) {
+  return Array.from(root.querySelectorAll(selector));
 }
 
-function escapeHTML(value) {
-  return String(value || "")
+function id(name) {
+  return document.getElementById(name);
+}
+
+function html(value) {
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -70,251 +63,1082 @@ function escapeHTML(value) {
     .replaceAll("'", "&#039;");
 }
 
-async function api(path, options = {}) {
-  const headers = {
-    ...(options.headers || {}),
-    ...authHeaders()
-  };
-
-  if (!(options.body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
-  }
-
-  const res = await fetch(API + path, {
-    ...options,
-    headers
-  });
-
-  let data = {};
-  try {
-    data = await res.json();
-  } catch {}
-
-  if (!res.ok) {
-    throw new Error(data.error || data.message || data.details || `Request failed (${res.status})`);
-  }
-
-  return data;
+function clean(value) {
+  return String(value ?? "").trim();
 }
 
-async function apiTry(paths, options = {}) {
-  let lastError;
+function num(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
-  for (const path of paths) {
+function objId(item) {
+  if (!item) return null;
+  return item.id ?? item.user_id ?? item.specialization_id ?? item.course_id ?? item.job_id ?? item.quiz_id ?? item.certification_id ?? item.attempt_id ?? null;
+}
+
+function pick(obj, keys, fallback = "") {
+  for (const key of keys) {
+    if (obj && obj[key] !== undefined && obj[key] !== null && obj[key] !== "") return obj[key];
+  }
+  return fallback;
+}
+
+function asArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
     try {
-      return await api(path, options);
-    } catch (err) {
-      lastError = err;
-      if (!String(err.message).includes("404")) throw err;
-    }
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+    return value.split(/[\n,|]+/).map((x) => x.trim()).filter(Boolean);
   }
-
-  throw lastError || new Error("Request failed");
-}
-
-function asArray(data, key) {
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray(data[key])) return data[key];
   return [];
 }
 
-function getId(row) {
-  return row?.id || row?.specialization_id || row?.course_id || row?.quiz_id || row?.job_id || row?.user_id;
+function param(name) {
+  return new URLSearchParams(location.search).get(name);
 }
 
-function fileUrl(filename) {
-  if (!filename) return "";
-  if (String(filename).startsWith("http")) return filename;
-  if (String(filename).startsWith("/uploads/")) return API + filename;
-  return `${API}/uploads/${filename}`;
+function getToken() {
+  return localStorage.getItem("sqr_token") || localStorage.getItem("token") || "";
 }
 
-function normalizeFormData(form) {
-  const data = Object.fromEntries(new FormData(form).entries());
+function getUser() {
+  try {
+    return JSON.parse(localStorage.getItem("sqr_user") || localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+}
 
-  if (data.spec_id && !data.specialization_id) data.specialization_id = data.spec_id;
-  if (data.specialization && !data.specialization_id) data.specialization_id = data.specialization;
-  if (data.course_id && !data.course) data.course = data.course_id;
-  if (data.required_skills && !data.skills) data.skills = data.required_skills;
-  if (data.skills && !data.required_skills) data.required_skills = data.skills;
+function setAuth(token, user) {
+  if (token) localStorage.setItem("sqr_token", token);
+  if (user) localStorage.setItem("sqr_user", JSON.stringify(user));
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+}
 
+function clearAuth() {
+  localStorage.removeItem("sqr_token");
+  localStorage.removeItem("sqr_user");
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+}
+
+function authHeaders() {
+  const token = getToken();
+  return token ? { Authorization: "Bearer " + token } : {};
+}
+
+function jsonHeaders(extra = {}) {
+  return { "Content-Type": "application/json", ...authHeaders(), ...extra };
+}
+
+function hasFile(form) {
+  return qsa("input[type='file']", form).some((input) => input.files && input.files.length > 0);
+}
+
+function bodyFromForm(form) {
+  if (hasFile(form)) return new FormData(form);
+  const fd = new FormData(form);
+  const data = {};
+  for (const [key, value] of fd.entries()) data[key] = typeof value === "string" ? value.trim() : value;
+  qsa("input[id], textarea[id], select[id]", form).forEach((el) => {
+    const key = el.name || el.id;
+    if (!key || data[key] !== undefined) return;
+    if (el.type === "checkbox") data[key] = el.checked;
+    else data[key] = clean(el.value);
+  });
+  return JSON.stringify(data);
+}
+
+function values(form) {
+  const fd = new FormData(form);
+  const data = {};
+  for (const [key, value] of fd.entries()) {
+    if (value instanceof File) {
+      if (value.name) data[key] = value;
+    } else data[key] = clean(value);
+  }
+  qsa("input[id], textarea[id], select[id]", form).forEach((el) => {
+    const key = el.name || el.id;
+    if (!key || data[key] !== undefined) return;
+    if (el.type === "file") {
+      if (el.files && el.files[0]) data[key] = el.files[0];
+    } else if (el.type === "checkbox") data[key] = el.checked;
+    else data[key] = clean(el.value);
+  });
   return data;
 }
 
-
-function toNumberId(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : value;
-}
-
-function sameId(a, b) {
-  return String(a ?? "") === String(b ?? "");
-}
-
-function idListHas(list, id) {
-  if (!Array.isArray(list)) return false;
-  return list.some(item => {
-    if (typeof item === "object" && item !== null) return sameId(getId(item), id) || sameId(item.course_id, id);
-    return sameId(item, id);
+function fill(form, data = {}) {
+  if (!form || !data) return;
+  qsa("input, textarea, select", form).forEach((el) => {
+    const key = el.name || el.id;
+    if (!key || data[key] === undefined || el.type === "file") return;
+    if (el.type === "checkbox") el.checked = Boolean(data[key]);
+    else el.value = data[key] ?? "";
   });
 }
 
-function clampPercent(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
+function showMessage(message, type = "info") {
+  const box = id("message") || id("msg") || id("alert");
+  if (!box) return;
+  box.textContent = message || "";
+  box.className = `message ${type}`;
+  box.style.display = message ? "block" : "none";
+  clearTimeout(showMessage.timer);
+  if (message) showMessage.timer = setTimeout(() => (box.style.display = "none"), 4500);
 }
 
-function tinyDoneMark(active, title = "Opened") {
-  return active ? `<span class="mini-check" title="${escapeHTML(title)}">✓</span>` : "";
-}
-
-function progressBarHTML(percent) {
-  const safe = clampPercent(percent);
-  return `
-    <div class="progress-wrap">
-      <div class="progress-label">
-        <span>Progress</span>
-        <strong>${safe}%</strong>
-      </div>
-      <div class="progress-box progress-track">
-        <div class="progress-bar progress-fill" style="width:${safe}%"></div>
-      </div>
-    </div>
-  `;
-}
-
-function ensureProgressStyles() {
-  if (document.getElementById("sqr-progress-fix-styles")) return;
-  const style = document.createElement("style");
-  style.id = "sqr-progress-fix-styles";
-  style.textContent = `
-    .mini-check{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:6px;border-radius:50%;background:#16a34a;color:#fff;font-size:12px;font-weight:900;vertical-align:middle;box-shadow:0 4px 10px rgba(22,163,74,.25)}
-    .progress-wrap{margin-top:12px;width:100%}
-    .progress-label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;margin-bottom:6px}
-    .progress-track,.progress-box{width:100%;height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden}
-    .progress-fill,.progress-box .progress-bar{height:100%;background:#2563eb;border-radius:999px;transition:width .3s ease;display:block}
-    .course-status-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;color:#16a34a;font-weight:700}
-  `;
-  document.head.appendChild(style);
-}
-
-async function getUserProgress() {
-  try {
-    const raw = await apiTry(["/api/my/progress", "/api/progress", "/api/profile"]);
-    const profileProgress = raw.progress || raw.specialization_progress || [];
-    return {
-      raw,
-      progress: asArray(raw, "progress").length ? asArray(raw, "progress") : Array.isArray(profileProgress) ? profileProgress : [],
-      opened_courses: raw.opened_courses || raw.opened || raw.openedCourses || [],
-      watched_courses: raw.watched_courses || raw.watched || raw.watchedCourses || [],
-      enrolled_courses: raw.enrolled_courses || raw.enrollments || raw.courses || [],
-      course_progress: raw.course_progress || raw.courses_progress || {},
-      specialization_progress: raw.specialization_progress || raw.spec_progress || {}
-    };
-  } catch {
-    return {
-      raw: {},
-      progress: [],
-      opened_courses: [],
-      watched_courses: [],
-      enrolled_courses: [],
-      course_progress: {},
-      specialization_progress: {}
-    };
+function setLoading(btn, active, label = "Loading...") {
+  if (!btn) return;
+  if (active) {
+    btn.dataset.oldText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span>${html(label)}`;
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.oldText) btn.innerHTML = btn.dataset.oldText;
   }
 }
 
-function coursePercentFromProgress(course, progress) {
-  const id = getId(course);
-  const direct = course?.progress ?? course?.percentage ?? progress.course_progress?.[id] ?? progress.course_progress?.[String(id)];
-  if (direct !== undefined && direct !== null && direct !== "") return clampPercent(direct);
-  if (idListHas(progress.watched_courses, id)) return 100;
-  if (idListHas(progress.opened_courses, id) || idListHas(progress.enrolled_courses, id) || course?.opened || course?.enrolled) return 50;
-  return 0;
+async function readJson(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
+function silenceUnauthorized(options = {}) {
+  if (options.action) return false;
+  if (options.silentUnauthorized === false) return false;
+  if (options.silentUnauthorized === true) return true;
+  return isPublicPage() || !getToken();
+}
+
+async function api(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
+  const res = await fetch(API + path, {
+    ...options,
+    headers: isFormData ? { ...authHeaders(), ...(options.headers || {}) } : jsonHeaders(options.headers || {})
+  });
+  const data = await readJson(res);
+  if (res.status === 401 || res.status === 403) {
+    if (!silenceUnauthorized(options)) showMessage(data.error || data.message || "Unauthorized. Please sign in again.", "error");
+    if (res.status === 401 && !isPublicPage() && options.redirectOnUnauthorized !== false) {
+      clearAuth();
+      setTimeout(() => (location.href = route("signin")), 700);
+    }
+    throw Object.assign(new Error(data.error || data.message || "Unauthorized"), { status: res.status, data });
+  }
+  if (!res.ok) throw Object.assign(new Error(data.error || data.message || "Request failed"), { status: res.status, data });
+  return data;
+}
+
+async function apiAny(paths, options = {}) {
+  const list = Array.isArray(paths) ? paths : [paths];
+  let last = null;
+  for (const path of list) {
+    try {
+      return await api(path, options);
+    } catch (err) {
+      last = err;
+      if (![404, 405].includes(err.status)) break;
+    }
+  }
+  throw last || new Error("Request failed");
+}
+
+function asset(value) {
+  if (!value) return "";
+  const v = String(value);
+  if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("data:")) return v;
+  if (v.startsWith("/")) return API + v;
+  if (v.startsWith("uploads/") || v.startsWith("static/")) return API + "/" + v;
+  return v;
+}
+
+function media(item, cls = "card-media") {
+  const video = pick(item, ["video_url", "video", "video_path", "media_url"], "");
+  const image = pick(item, ["image_url", "image", "image_path", "photo", "thumbnail", "picture", "cover"], "");
+  if (video && /\.(mp4|webm|ogg)$/i.test(String(video))) return `<video class="${cls}" src="${html(asset(video))}" controls preload="metadata"></video>`;
+  if (image) return `<img class="${cls}" src="${html(asset(image))}" alt="">`;
+  return `<div class="${cls} placeholder-media"><span>SQR</span></div>`;
+}
+
+function btn(label, cls = "btn btn-primary", attrs = "") {
+  return `<button type="button" class="${cls}" ${attrs}>${label}</button>`;
+}
+
+function a(label, href, cls = "btn btn-primary", attrs = "") {
+  return `<a class="${cls}" href="${html(href)}" ${attrs}>${label}</a>`;
+}
+
+function percent(value) {
+  return Math.max(0, Math.min(100, Math.round(num(value))));
+}
+
+function progress(value, label = "Progress") {
+  const p = percent(value);
+  return `
+    <div class="progress-wrap">
+      <div class="progress-top"><span>${html(label)}</span><strong>${p}%</strong></div>
+      <div class="progress-bar"><span style="width:${p}%"></span></div>
+    </div>`;
+}
+
+function circle(value, label = "Score") {
+  const p = percent(value);
+  return `
+    <div class="circle-stat" style="--value:${p}">
+      <div class="circle-stat-inner"><strong>${p}%</strong><span>${html(label)}</span></div>
+    </div>`;
+}
+
+function doneIcon(done) {
+  return done ? `<span class="mini-check" title="Completed">✓</span>` : `<span class="mini-dot" title="Not completed"></span>`;
 }
 
 function navbar() {
+  qs(".navbar")?.remove();
   const user = getUser();
-
-if (user && user.role === "admin") {
-  document.body.insertAdjacentHTML("afterbegin", `
-    <header class="navbar">
-      <a href="admin.html" class="logo">
-        <span>SQR</span>
-        <small>Admin Panel</small>
+  const logged = Boolean(getToken());
+  const role = String(user?.role || "").toLowerCase();
+  const mode = String(user?.current_mode || user?.mode || role || "student").toLowerCase();
+  const adminMode = role === "admin" && mode !== "student";
+  const links = adminMode
+    ? [["Admin", route("admin")], ["Profile", route("profile")]]
+    : [["Home", route("home")], ["Specializations", route("specializations")], ["Courses", route("courses")], ["ATS", route("ats")], ["Jobs", route("jobs")], ["Recommendation", route("recommendation")], ["Profile", route("profile")]];
+  const current = pageName().toLowerCase();
+  const nav = document.createElement("header");
+  nav.className = "navbar";
+  nav.innerHTML = `
+    <div class="nav-shell">
+      <a class="brand" href="${adminMode ? route("admin") : route("home")}">
+        <span class="brand-mark">SQR</span>
+        <span class="brand-copy">Skill Quest Road</span>
       </a>
-
+      <button type="button" class="nav-toggle" aria-label="Menu">☰</button>
       <nav class="nav-links">
-        <a href="admin.html">Admin</a>
+        ${links.map(([label, href]) => `<a class="${current === href.toLowerCase() || (current === "index.html" && label === "Home") ? "active" : ""}" href="${html(href)}">${html(label)}</a>`).join("")}
       </nav>
-
-      <div class="auth-buttons">
-        <button onclick="logout()" class="btn danger">Logout</button>
+      <div class="nav-actions">
+        ${logged ? `<button class="btn btn-soft btn-small" type="button" onclick="logout()">Logout</button>` : `<a class="btn btn-ghost btn-small" href="${route("signin")}">Sign In</a><a class="btn btn-primary btn-small" href="${route("signup")}">Sign Up</a>`}
       </div>
-    </header>
-  `);
-  return;
+    </div>`;
+  document.body.prepend(nav);
+  qs(".nav-toggle", nav)?.addEventListener("click", () => nav.classList.toggle("open"));
 }
 
-  document.body.insertAdjacentHTML("afterbegin", `
-    <header class="navbar">
-      <a href="gp.html" class="logo">
-        <span>SQR</span>
-        <small>Skill Quest Road</small>
-      </a>
-
-      <nav class="nav-links">
-        <a href="gp.html">Home</a>
-        <a href="Specialization.html">Specializations</a>
-        <a href="Courses.html">Courses</a>
-        <a href="ATS.html">ATS</a>
-        <a href="jobs.html">Jobs</a>
-        <a href="recommendation.html">Recommendation</a>
-        ${user ? `<a href="profile.html">Profile</a>` : ""}
-      </nav>
-
-      <div class="auth-buttons">
-        ${user
-          ? `<button onclick="logout()" class="btn danger">Logout</button>`
-          : `<a href="signin.html" class="btn ghost">Sign In</a><a href="signup.html" class="btn primary">Sign Up</a>`
-        }
-      </div>
-    </header>
-  `);
+function logout() {
+  clearAuth();
+  showMessage("Signed out successfully.", "success");
+  setTimeout(() => (location.href = route("signin")), 450);
 }
 
 function requireLogin() {
-  if (!getToken()) window.location.href = "signin.html";
+  if (getToken()) return true;
+  showMessage("Please sign in first.", "error");
+  setTimeout(() => (location.href = route("signin")), 700);
+  return false;
 }
 
 function requireAdmin() {
+  if (!requireLogin()) return false;
   const user = getUser();
-
-  if (!user || user.role !== "admin") {
-    alert("Admin access only");
-    window.location.href = "gp.html";
+  if (String(user?.role || "").toLowerCase() !== "admin") {
+    showMessage("Admin access only.", "error");
+    setTimeout(() => (location.href = route("home")), 700);
+    return false;
   }
+  return true;
 }
 
 function blockAdminFromStudentPages() {
   const user = getUser();
+  if (!user) return;
+  const role = String(user.role || "").toLowerCase();
+  const mode = String(user.current_mode || user.mode || role || "").toLowerCase();
+  if (role !== "admin" || mode === "student") return;
+  const allowed = new Set(["admin.html", "profile.html", "signin.html", "signup.html"]);
+  if (!allowed.has(pageName().toLowerCase())) location.href = route("admin");
+}
 
-  if (!user || user.role !== "admin") return;
+function setupSignup() {
+  const form = id("signupForm") || qs("form[data-form='signup']");
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = "1";
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const submit = qs("button[type='submit']", form);
+    const data = values(form);
+    data.role = "student";
+    delete data.confirm_password;
+    delete data.confirmPassword;
+    setLoading(submit, true, "Creating...");
+    try {
+      const result = await apiAny(["/api/signup", "/signup"], { method: "POST", body: JSON.stringify(data), action: true, redirectOnUnauthorized: false });
+      const token = result.token || result.access_token;
+      const user = result.user || result.profile || result;
+      if (token) setAuth(token, user);
+      showMessage("Account created successfully.", "success");
+      setTimeout(() => (location.href = route("profile")), 650);
+    } catch (err) {
+      showMessage(err.data?.error || err.message || "Signup failed.", "error");
+    } finally {
+      setLoading(submit, false);
+    }
+  });
+}
 
-  const currentPage = location.pathname.split("/").pop() || "gp.html";
+function setupSignin() {
+  const form = id("signinForm") || id("loginForm") || qs("form[data-form='signin']");
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = "1";
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const submit = qs("button[type='submit']", form);
+    setLoading(submit, true, "Signing in...");
+    try {
+      const result = await apiAny(["/api/signin", "/api/login", "/signin", "/login"], { method: "POST", body: JSON.stringify(values(form)), action: true, redirectOnUnauthorized: false });
+      const token = result.token || result.access_token;
+      const user = result.user || result.profile || result;
+      if (!token) throw new Error("No token returned from backend.");
+      setAuth(token, user);
+      showMessage("Signed in successfully.", "success");
+      const role = String(user?.role || "").toLowerCase();
+      const mode = String(user?.current_mode || user?.mode || role || "student").toLowerCase();
+      setTimeout(() => (location.href = role === "admin" && mode !== "student" ? route("admin") : route("profile")), 650);
+    } catch (err) {
+      showMessage(err.data?.error || err.message || "Signin failed.", "error");
+    } finally {
+      setLoading(submit, false);
+    }
+  });
+}
 
-  if (currentPage !== "admin.html") {
-    window.location.href = "admin.html";
+async function loadProfile() {
+  const box = id("profileBox") || id("profile");
+  const form = id("profileForm");
+  if (!box && !form) return;
+  if (!requireLogin()) return;
+  try {
+    const result = await apiAny(["/api/profile", "/api/me"], { silentUnauthorized: false });
+    const user = result.user || result.profile || result;
+    setAuth(getToken(), { ...getUser(), ...user });
+    if (box) {
+      box.innerHTML = `
+        <section class="profile-hero card glass">
+          <div>
+            <span class="eyebrow">My Dashboard</span>
+            <h1>${html(user.name || "Student")}</h1>
+            <p>${html(user.email || "")}</p>
+            <div class="pill-row"><span class="pill">Role: ${html(user.role || "student")}</span><span class="pill">Mode: ${html(user.current_mode || user.mode || user.role || "student")}</span></div>
+          </div>
+          ${circle(user.overall_progress || user.progress || 0, "Progress")}
+        </section>
+        ${renderProfileProgress(result)}`;
+    }
+    fill(form, user);
+  } catch (err) {
+    showMessage(err.data?.error || err.message || "Could not load profile.", "error");
+  }
+  if (form && !form.dataset.bound) {
+    form.dataset.bound = "1";
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const submit = qs("button[type='submit']", form);
+      setLoading(submit, true, "Saving...");
+      try {
+        const result = await apiAny(["/api/profile", "/api/me"], { method: "PUT", body: JSON.stringify(values(form)), action: true });
+        const user = result.user || result.profile || result;
+        setAuth(getToken(), { ...getUser(), ...user });
+        showMessage("Profile updated.", "success");
+        await loadProfile();
+      } catch (err) {
+        showMessage(err.data?.error || err.message || "Could not update profile.", "error");
+      } finally {
+        setLoading(submit, false);
+      }
+    });
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  ensureProgressStyles();
-  blockAdminFromStudentPages();
+function renderProfileProgress(result) {
+  const items = result.progress || result.specialization_progress || result.enrollments || [];
+  if (!Array.isArray(items) || !items.length) return "";
+  return `
+    <section class="section-block">
+      <div class="section-head"><h2>Progress by Specialization</h2></div>
+      <div class="grid cards-3">
+        ${items.map((x) => `<article class="card compact"><h3>${html(pick(x, ["name", "title", "specialization_name"], "Specialization"))}</h3>${progress(pick(x, ["progress", "percentage", "completed_percent"], 0), "Completed")}</article>`).join("")}
+      </div>
+    </section>`;
+}
 
+function setupModeSwitch() {
+  const btnEl = id("modeSwitch") || id("switchModeBtn");
+  if (!btnEl || btnEl.dataset.bound) return;
+  btnEl.dataset.bound = "1";
+  btnEl.addEventListener("click", async () => {
+    if (!requireLogin()) return;
+    try {
+      const result = await apiAny(["/api/profile/switch-mode", "/api/switch-mode"], { method: "POST", body: "{}", action: true });
+      const user = result.user || result.profile || result;
+      setAuth(getToken(), { ...getUser(), ...user });
+      showMessage("Mode switched.", "success");
+      setTimeout(() => location.reload(), 650);
+    } catch (err) {
+      showMessage(err.data?.error || err.message || "Could not switch mode.", "error");
+    }
+  });
+}
+
+function renderHomeCards() {
+  const box = id("homeCards") || id("dashboardCards") || id("features");
+  if (!box) return;
+  box.classList.add("grid", "cards-4");
+  box.innerHTML = `
+    <a class="feature-card" href="${route("specializations")}"><span class="feature-icon">▣</span><h2>Specializations</h2><p>Choose your CS path and follow a structured roadmap.</p><strong>View Specializations</strong></a>
+    <a class="feature-card" href="${route("courses")}"><span class="feature-icon">▶</span><h2>Courses</h2><p>Learn through courses connected to each specialization.</p><strong>View Courses</strong></a>
+    <a class="feature-card" href="${route("ats")}"><span class="feature-icon">◎</span><h2>ATS Resume</h2><p>Generate and check ATS-friendly resumes.</p><strong>Open ATS</strong></a>
+    <a class="feature-card" href="${route("recommendation")}"><span class="feature-icon">✦</span><h2>Recommendation</h2><p>Get specialization and job recommendations based on your profile.</p><strong>Get Recommendation</strong></a>`;
+}
+
+async function getSpecializations() {
+  const result = await apiAny(["/api/specializations", "/api/specialization"], { redirectOnUnauthorized: false, silentUnauthorized: true });
+  return result.specializations || result.items || result.data || (Array.isArray(result) ? result : []);
+}
+
+async function getCourses(query = "") {
+  const q = query ? "?" + query : "";
+  const result = await apiAny([`/api/courses${q}`, `/api/course${q}`], { redirectOnUnauthorized: false, silentUnauthorized: true });
+  return result.courses || result.items || result.data || (Array.isArray(result) ? result : []);
+}
+
+async function getJobs() {
+  const result = await apiAny(["/api/jobs", "/api/job"], { redirectOnUnauthorized: false, silentUnauthorized: true });
+  return result.jobs || result.items || result.data || (Array.isArray(result) ? result : []);
+}
+
+async function loadSpecializations() {
+  const box = id("specializationsBox") || id("specializationBox") || id("specializationsList") || id("specializations");
+  if (!box) return;
+  try {
+    box.innerHTML = `<div class="loading-card"><span class="spinner"></span>Loading specializations...</div>`;
+    const specs = await getSpecializations();
+    SQR.state.specializations = specs;
+    if (!specs.length) {
+      box.innerHTML = `<div class="empty-state">No specializations were added yet.</div>`;
+      return;
+    }
+    box.classList.add("grid", "cards-3");
+    box.innerHTML = specs.map(renderSpecializationCard).join("");
+  } catch {
+    box.innerHTML = `<div class="empty-state error-soft">Could not load specializations.</div>`;
+  }
+}
+
+function renderSpecializationCard(spec) {
+  const sid = objId(spec);
+  const title = pick(spec, ["name", "title", "specialization_name"], "Specialization");
+  const desc = pick(spec, ["description", "overview", "details"], "View roadmap, skills, job titles, courses, and certificates.");
+  const skills = asArray(pick(spec, ["skills", "skill_list"], []));
+  const p = pick(spec, ["progress", "percentage", "completed_percent"], 0);
+  return `
+    <article class="card spec-card">
+      ${media(spec)}
+      <div class="card-body">
+        <div class="card-title-row"><h2>${html(title)}</h2>${getToken() ? doneIcon(num(p) >= 100) : ""}</div>
+        <p>${html(desc)}</p>
+        ${getToken() ? progress(p, "Progress") : ""}
+        ${skills.length ? `<div class="tag-row">${skills.slice(0, 8).map((s) => `<span>${html(s)}</span>`).join("")}</div>` : ""}
+        <div class="card-actions">${a("View Details", `${route("specializations")}?id=${encodeURIComponent(sid || "")}`)}${a("Courses", `${route("courses")}?specialization_id=${encodeURIComponent(sid || "")}`, "btn btn-soft")}</div>
+      </div>
+    </article>`;
+}
+
+async function loadSpecializationDetails() {
+  const sid = param("id") || param("specialization_id");
+  const box = id("specializationDetails") || id("specializationDetail") || id("detailsBox");
+  if (!box || !sid) return;
+  try {
+    box.innerHTML = `<div class="loading-card"><span class="spinner"></span>Loading details...</div>`;
+    const result = await apiAny([`/api/specializations/${sid}`, `/api/specialization/${sid}`], { redirectOnUnauthorized: false, silentUnauthorized: true });
+    const spec = result.specialization || result.item || result;
+    const courses = result.courses || await getCourses(`specialization_id=${encodeURIComponent(sid)}`);
+    box.innerHTML = `
+      <section class="detail-hero card glass">
+        ${media(spec, "detail-media")}
+        <div><span class="eyebrow">Specialization</span><h1>${html(pick(spec, ["name", "title"], "Specialization"))}</h1><p>${html(pick(spec, ["description", "overview"], ""))}</p>${getToken() ? progress(pick(spec, ["progress", "percentage"], 0), "Progress") : ""}</div>
+      </section>
+      ${renderRoadmap(spec)}${renderSkills(spec)}${renderRelatedCourses(courses)}${renderMiniList("Job Titles", result.jobs || [], ["title", "name", "job_title"])}${renderMiniList("Certificates", result.certifications || result.certificates || [], ["title", "name", "certificate_name"])}
+    `;
+  } catch {
+    box.innerHTML = `<div class="empty-state error-soft">Could not load specialization details.</div>`;
+  }
+}
+
+function renderRoadmap(spec) {
+  const items = asArray(pick(spec, ["roadmap", "steps", "learning_path"], []));
+  if (!items.length) return "";
+  return `<section class="section-block"><div class="section-head"><h2>Roadmap</h2></div><div class="timeline">${items.map((x, i) => `<div class="timeline-item"><span>${i + 1}</span><p>${html(x)}</p></div>`).join("")}</div></section>`;
+}
+
+function renderSkills(spec) {
+  const items = asArray(pick(spec, ["skills", "skill_list"], []));
+  if (!items.length) return "";
+  return `<section class="section-block"><div class="section-head"><h2>Skills</h2></div><div class="tag-row large">${items.map((x) => `<span>${html(x)}</span>`).join("")}</div></section>`;
+}
+
+function renderMiniList(title, items, keys) {
+  if (!Array.isArray(items) || !items.length) return "";
+  return `<section class="section-block"><div class="section-head"><h2>${html(title)}</h2></div><div class="grid cards-3">${items.map((x) => `<article class="card compact"><h3>${html(pick(x, keys, "Item"))}</h3><p>${html(pick(x, ["description", "summary"], ""))}</p></article>`).join("")}</div></section>`;
+}
+
+function renderRelatedCourses(courses) {
+  if (!Array.isArray(courses) || !courses.length) return "";
+  return `<section class="section-block"><div class="section-head"><h2>Courses</h2><a class="btn btn-soft btn-small" href="${route("courses")}">All Courses</a></div><div class="grid cards-3">${courses.map(renderCourseCard).join("")}</div></section>`;
+}
+
+async function loadCourses() {
+  const box = id("coursesBox") || id("coursesList") || id("courses");
+  if (!box) return;
+  const params = new URLSearchParams();
+  const sid = param("specialization_id") || param("spec_id");
+  if (sid) params.set("specialization_id", sid);
+  try {
+    box.innerHTML = `<div class="loading-card"><span class="spinner"></span>Loading courses...</div>`;
+    const courses = await getCourses(params.toString());
+    SQR.state.courses = courses;
+    if (!courses.length) {
+      box.innerHTML = `<div class="empty-state">No courses were added yet.</div>`;
+      return;
+    }
+    box.classList.add("grid", "cards-3");
+    box.innerHTML = courses.map(renderCourseCard).join("");
+  } catch {
+    box.innerHTML = `<div class="empty-state error-soft">Could not load courses.</div>`;
+  }
+}
+
+function renderCourseCard(course) {
+  const cid = objId(course);
+  const title = pick(course, ["title", "name", "course_name"], "Course");
+  const desc = pick(course, ["description", "summary"], "Open the course to auto-enroll and track your progress.");
+  const completed = Boolean(course.completed || course.is_completed || course.done);
+  const enrolled = Boolean(course.enrolled || course.is_enrolled || course.enrollment_id);
+  const p = pick(course, ["progress", "percentage", "completed_percent"], completed ? 100 : 0);
+  return `
+    <article class="card course-card" data-course-id="${html(cid || "")}">
+      ${media(course)}
+      <div class="card-body">
+        <div class="card-title-row"><h2>${html(title)}</h2>${getToken() ? doneIcon(completed) : ""}</div>
+        <p>${html(desc)}</p>
+        <div class="pill-row">${pick(course, ["difficulty", "level"], "") ? `<span class="pill">${html(pick(course, ["difficulty", "level"], ""))}</span>` : ""}${enrolled ? `<span class="pill success">Enrolled</span>` : ""}</div>
+        ${getToken() ? progress(p, "Progress") : ""}
+        <div class="card-actions">
+          ${a("Open Course", `${route("courses")}?id=${encodeURIComponent(cid || "")}`)}
+          ${getToken() ? enrolled ? btn("Unenroll", "btn btn-danger", `onclick="unenrollCourse('${html(cid)}')"`) : btn("Enroll", "btn btn-soft", `onclick="enrollCourse('${html(cid)}')"`) : a("Sign in to enroll", route("signin"), "btn btn-soft")}
+        </div>
+      </div>
+    </article>`;
+}
+
+async function loadCourseDetails() {
+  const cid = param("id") || param("course_id");
+  const box = id("courseDetails") || id("courseDetail") || id("courseBox");
+  if (!box || !cid) return;
+  try {
+    box.innerHTML = `<div class="loading-card"><span class="spinner"></span>Loading course...</div>`;
+    const result = await apiAny([`/api/courses/${cid}`, `/api/course/${cid}`], { redirectOnUnauthorized: false, silentUnauthorized: true });
+    const course = result.course || result.item || result;
+    if (!course) {
+      box.innerHTML = `<div class="empty-state">Course not found.</div>`;
+      return;
+    }
+    if (getToken()) await trackCourseOpened(cid, true);
+    const link = pick(course, ["url", "link", "course_url", "external_url"], "");
+    const video = pick(course, ["video_url", "video", "video_path"], "");
+    box.innerHTML = `
+      <section class="detail-hero card glass">
+        ${media(course, "detail-media")}
+        <div><span class="eyebrow">Course</span><h1>${html(pick(course, ["title", "name", "course_name"], "Course"))}</h1><p>${html(pick(course, ["description", "summary"], ""))}</p>${getToken() ? progress(pick(course, ["progress", "percentage"], 0), "Course Progress") : ""}<div class="card-actions">${link ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${html(link)}" onclick="trackCourseOpened('${html(cid)}', true)">Open Link</a>` : ""}${getToken() ? btn("Unenroll", "btn btn-danger", `onclick="unenrollCourse('${html(cid)}')"`) : a("Sign in to enroll", route("signin"), "btn btn-soft")}</div></div>
+      </section>
+      ${video ? `<section class="section-block"><video class="course-video" src="${html(asset(video))}" controls onplay="trackCourseOpened('${html(cid)}', true)"></video></section>` : ""}
+      ${renderQuizSection(result.quiz || result.quizzes || course.quiz || [], cid)}`;
+    bindQuizForms();
+  } catch {
+    box.innerHTML = `<div class="empty-state error-soft">Could not load course.</div>`;
+  }
+}
+
+async function enrollCourse(courseId) {
+  if (!courseId || !requireLogin()) return;
+  try {
+    await apiAny([`/api/courses/${courseId}/enroll`, `/api/enrollments/course/${courseId}`, `/api/enroll/${courseId}`], { method: "POST", body: JSON.stringify({ course_id: courseId }), action: true });
+    showMessage("Enrolled successfully.", "success");
+    await refreshCurrentData();
+  } catch (err) {
+    showMessage(err.data?.error || err.message || "Could not enroll.", "error");
+  }
+}
+
+async function unenrollCourse(courseId) {
+  if (!courseId || !requireLogin()) return;
+  try {
+    await apiAny([`/api/courses/${courseId}/enroll`, `/api/enrollments/course/${courseId}`, `/api/enroll/${courseId}`], { method: "DELETE", body: JSON.stringify({ course_id: courseId }), action: true });
+    showMessage("Unenrolled successfully.", "success");
+    await refreshCurrentData();
+  } catch (err) {
+    showMessage(err.data?.error || err.message || "Could not unenroll.", "error");
+  }
+}
+
+async function trackCourseOpened(courseId, silent = true) {
+  if (!courseId || !getToken()) return false;
+  try {
+    await apiAny([`/api/courses/${courseId}/open`, `/api/courses/${courseId}/track`, `/api/progress/course-opened`], { method: "POST", body: JSON.stringify({ course_id: courseId }), redirectOnUnauthorized: false, silentUnauthorized: silent });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function refreshCurrentData() {
+  const p = pageName().toLowerCase();
+  if (p.includes("course")) {
+    await loadCourses();
+    await loadCourseDetails();
+  }
+  if (p.includes("special")) {
+    await loadSpecializations();
+    await loadSpecializationDetails();
+  }
+  if (p.includes("profile")) await loadProfile();
+}
+
+function renderQuizSection(quizData, courseId) {
+  const quizzes = Array.isArray(quizData) ? quizData : quizData ? [quizData] : [];
+  if (!quizzes.length) return "";
+  return `<section class="section-block"><div class="section-head"><h2>Course Quiz</h2></div>${quizzes.map((q, i) => renderQuiz(q, courseId, i)).join("")}</section>`;
+}
+
+function renderQuiz(quiz, courseId, index) {
+  const questions = quiz.questions || quiz.items || [];
+  const quizId = objId(quiz) || `local-${index}`;
+  if (!Array.isArray(questions) || !questions.length) return `<article class="card compact"><h3>${html(quiz.title || "Quiz")}</h3><p>No questions were added yet.</p></article>`;
+  return `
+    <form class="card quiz-form" data-quiz-id="${html(quizId)}" data-course-id="${html(courseId)}">
+      <h3>${html(quiz.title || quiz.name || "Quiz")}</h3>
+      ${questions.map((question, qi) => {
+        const qid = objId(question) || qi;
+        const options = question.options || [question.option_a, question.option_b, question.option_c, question.option_d].filter(Boolean);
+        return `<div class="question-card" data-question-id="${html(qid)}"><p><strong>${qi + 1}. ${html(pick(question, ["question", "text", "title"], "Question"))}</strong></p>${options.map((op) => `<label class="choice"><input required type="radio" name="q_${html(qid)}" value="${html(op)}"><span>${html(op)}</span></label>`).join("")}</div>`;
+      }).join("")}
+      <button class="btn btn-primary" type="submit">Submit Quiz</button><div class="quiz-result"></div>
+    </form>`;
+}
+
+function bindQuizForms() {
+  qsa(".quiz-form").forEach((form) => {
+    if (form.dataset.bound) return;
+    form.dataset.bound = "1";
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!requireLogin()) return;
+      const submit = qs("button[type='submit']", form);
+      const resultBox = qs(".quiz-result", form);
+      const quizId = form.dataset.quizId;
+      const courseId = form.dataset.courseId;
+      const answers = qsa(".question-card", form).map((card) => ({ question_id: card.dataset.questionId, answer: qs("input:checked", card)?.value || "" })).filter((x) => x.answer);
+      setLoading(submit, true, "Submitting...");
+      try {
+        const result = await apiAny([`/api/quizzes/${quizId}/submit`, `/api/quiz/${quizId}/submit`, "/api/quiz-attempts"], { method: "POST", body: JSON.stringify({ quiz_id: quizId, course_id: courseId, answers }), action: true });
+        const score = result.score ?? result.percentage ?? result.result ?? 0;
+        resultBox.innerHTML = `<div class="result-card">${circle(score, "Quiz Score")}<div><h3>${html(result.message || "Quiz submitted")}</h3><p>${html(result.feedback || "Your quiz score was saved and added to progress.")}</p></div></div>`;
+        showMessage("Quiz submitted.", "success");
+        await trackCourseOpened(courseId, true);
+      } catch (err) {
+        showMessage(err.data?.error || err.message || "Could not submit quiz.", "error");
+      } finally {
+        setLoading(submit, false);
+      }
+    });
+  });
+}
+
+async function loadJobs() {
+  const box = id("jobsBox") || id("jobsList") || id("jobs");
+  if (!box) return;
+  try {
+    box.innerHTML = `<div class="loading-card"><span class="spinner"></span>Loading jobs...</div>`;
+    const jobs = await getJobs();
+    SQR.state.jobs = jobs;
+    if (!jobs.length) {
+      box.innerHTML = `<div class="empty-state">No jobs were added yet.</div>`;
+      return;
+    }
+    box.classList.add("grid", "cards-3");
+    box.innerHTML = jobs.map((job) => `<article class="card compact"><span class="eyebrow">${html(pick(job, ["specialization_name", "specialization", "path"], "Career"))}</span><h2>${html(pick(job, ["title", "name", "job_title"], "Job"))}</h2><p>${html(pick(job, ["description", "summary"], ""))}</p><div class="tag-row">${asArray(pick(job, ["skills", "requirements"], [])).slice(0, 8).map((s) => `<span>${html(s)}</span>`).join("")}</div></article>`).join("");
+  } catch {
+    box.innerHTML = `<div class="empty-state error-soft">Could not load jobs.</div>`;
+  }
+}
+
+function setupRecommendation() {
+  const form = id("recForm") || id("recommendationForm");
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = "1";
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!requireLogin()) return;
+    const submit = qs("button[type='submit']", form);
+    const box = id("recommendationResult") || id("recResult") || id("result");
+    setLoading(submit, true, "Analyzing...");
+    try {
+      const result = await apiAny(["/api/recommendation", "/api/recommendations", "/api/recommend"], { method: "POST", body: JSON.stringify(values(form)), action: true });
+      renderRecommendationResult(result, box);
+      showMessage("Recommendation generated.", "success");
+    } catch (err) {
+      showMessage(err.data?.error || err.message || "Recommendation failed.", "error");
+    } finally {
+      setLoading(submit, false);
+    }
+  });
+}
+
+function renderRecommendationResult(result, box) {
+  if (!box) return;
+  const spec = result.specialization || result.recommended_specialization || result.best_match || {};
+  const jobs = result.jobs || result.job_recommendations || [];
+  box.innerHTML = `<div class="result-card">${circle(result.score || result.match || result.percentage || 0, "Match")}<div><span class="eyebrow">Recommended Specialization</span><h2>${html(pick(spec, ["name", "title"], typeof spec === "string" ? spec : "Specialization"))}</h2><p>${html(result.reason || result.explanation || pick(spec, ["description"], ""))}</p></div></div>${Array.isArray(jobs) && jobs.length ? `<div class="grid cards-3">${jobs.map((j) => `<article class="card compact"><h3>${html(pick(j, ["title", "name"], "Job"))}</h3><p>${html(pick(j, ["description", "reason"], ""))}</p></article>`).join("")}</div>` : ""}`;
+}
+
+function setupATS() {
+  setupATSChecker();
+  setupATSGenerator();
+}
+
+function setupATSChecker() {
+  const form = id("atsCheckForm") || id("atsCheckerForm");
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = "1";
+  const file = qs("input[type='file']", form);
+  if (file) file.accept = ".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!requireLogin()) return;
+    const selected = file?.files?.[0];
+    if (!selected) return showMessage("Please upload a PDF or DOCX resume.", "error");
+    if (!/\.(pdf|docx)$/i.test(selected.name)) return showMessage("Only PDF or DOCX files are allowed.", "error");
+    const submit = qs("button[type='submit']", form);
+    const box = id("atsCheckResult") || id("atsResult") || id("checkerResult");
+    setLoading(submit, true, "Checking...");
+    try {
+      const result = await apiAny(["/api/ats/check", "/api/ats/checker", "/api/ats/upload"], { method: "POST", body: new FormData(form), action: true });
+      renderATSResult(result, box);
+      showMessage("ATS check completed.", "success");
+    } catch (err) {
+      showMessage(err.data?.error || err.message || "ATS checker failed.", "error");
+    } finally {
+      setLoading(submit, false);
+    }
+  });
+}
+
+function setupATSGenerator() {
+  const form = id("atsGenerateForm") || id("atsGeneratorForm");
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = "1";
+  form.autocomplete = "off";
+  qsa("[required]", form).forEach((el) => qs(`label[for='${el.id}']`)?.classList.add("required"));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!requireLogin()) return;
+    const submit = qs("button[type='submit']", form);
+    const box = id("atsGenerateResult") || id("generatorResult") || id("atsResult");
+    setLoading(submit, true, "Generating...");
+    try {
+      const result = await apiAny(["/api/ats/generate", "/api/ats/resume"], { method: "POST", body: JSON.stringify(values(form)), action: true });
+      renderATSGenerated(result, box);
+      showMessage("Resume generated.", "success");
+    } catch (err) {
+      showMessage(err.data?.error || err.message || "ATS generator failed.", "error");
+    } finally {
+      setLoading(submit, false);
+    }
+  });
+}
+
+function renderATSResult(result, box) {
+  if (!box) return;
+  const missing = result.missing_keywords || result.missing || [];
+  const found = result.found_keywords || result.found || result.skills || [];
+  box.innerHTML = `<div class="result-card">${circle(result.score || result.ats_score || result.percentage || 0, "ATS Score")}<div><h2>${html(result.title || "ATS Result")}</h2><p>${html(result.summary || result.feedback || result.message || "Resume analysis completed.")}</p></div></div><div class="grid cards-2"><article class="card compact"><h3>Found Keywords</h3><div class="tag-row">${asArray(found).map((x) => `<span>${html(x)}</span>`).join("") || "<p>No keywords detected.</p>"}</div></article><article class="card compact"><h3>Missing Keywords</h3><div class="tag-row warning">${asArray(missing).map((x) => `<span>${html(x)}</span>`).join("") || "<p>No major missing keywords.</p>"}</div></article></div>`;
+}
+
+function renderATSGenerated(result, box) {
+  if (!box) return;
+  const resume = result.resume || result.text || result.content || result.generated_resume || "";
+  box.innerHTML = `<article class="card resume-output"><div class="section-head"><h2>Generated ATS Resume</h2>${result.download_url ? `<a class="btn btn-primary btn-small" href="${html(asset(result.download_url))}" target="_blank">Download</a>` : ""}</div><pre>${html(resume || JSON.stringify(result, null, 2))}</pre></article>`;
+}
+
+async function loadAdmin() {
+  const adminRoot = id("adminRoot") || id("adminBox") || qs(".admin-page") || qs("main");
+  if (!adminRoot || !pageName().toLowerCase().includes("admin")) return;
+  document.body.classList.add("admin-body");
+  if (!requireAdmin()) return;
+  fixAdminLayout();
+  await Promise.allSettled([adminStats(), adminLoadLists()]);
+  bindAdminForms();
+  bindAdminActions();
+}
+
+function fixAdminLayout() {
+  document.body.classList.add("admin-page-fixed");
+  qsa("table").forEach((table) => {
+    if (!table.parentElement.classList.contains("table-wrap")) {
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      table.parentNode.insertBefore(wrap, table);
+      wrap.appendChild(table);
+    }
+  });
+  qsa("form").forEach((form) => {
+    if (!form.classList.contains("admin-form") && (form.closest(".admin-page") || pageName().toLowerCase().includes("admin"))) form.classList.add("admin-form");
+  });
+}
+
+async function adminStats() {
+  const box = id("adminStats") || id("statsBox") || id("dashboardStats");
+  if (!box) return;
+  try {
+    const result = await apiAny(["/api/admin/stats", "/api/stats", "/api/admin/dashboard"], { action: true });
+    const stats = result.stats || result;
+    const cards = [
+      ["Users", stats.users ?? stats.user_count ?? 0],
+      ["Specializations", stats.specializations ?? stats.specialization_count ?? 0],
+      ["Courses", stats.courses ?? stats.course_count ?? 0],
+      ["Jobs", stats.jobs ?? stats.job_count ?? 0],
+      ["Quizzes", stats.quizzes ?? stats.quiz_count ?? 0],
+      ["Certificates", stats.certifications ?? stats.certification_count ?? 0]
+    ];
+    box.classList.add("admin-stats");
+    box.innerHTML = cards.map(([label, value]) => `<article class="stat-card"><span>${html(label)}</span><strong>${html(value)}</strong></article>`).join("");
+  } catch {
+    box.innerHTML = `<div class="empty-state error-soft">Could not load admin statistics.</div>`;
+  }
+}
+
+async function adminLoadLists() {
+  await Promise.allSettled([adminLoadSpecializations(), adminLoadCourses(), adminLoadJobs(), adminLoadUsers(), adminLoadQuizzes(), adminLoadCertifications()]);
+  populateAdminSelects();
+}
+
+async function adminLoadSpecializations() {
+  try {
+    SQR.state.specializations = await getSpecializations();
+    const box = id("adminSpecializations") || id("specializationsTable") || id("adminSpecializationsList");
+    if (box) box.innerHTML = renderAdminTable(SQR.state.specializations, ["id", "name", "title", "description"], "specialization");
+  } catch {}
+}
+
+async function adminLoadCourses() {
+  try {
+    SQR.state.courses = await getCourses();
+    const box = id("adminCourses") || id("coursesTable") || id("adminCoursesList");
+    if (box) box.innerHTML = renderAdminTable(SQR.state.courses, ["id", "title", "name", "specialization_name", "difficulty"], "course");
+  } catch {}
+}
+
+async function adminLoadJobs() {
+  try {
+    SQR.state.jobs = await getJobs();
+    const box = id("adminJobs") || id("jobsTable") || id("adminJobsList");
+    if (box) box.innerHTML = renderAdminTable(SQR.state.jobs, ["id", "title", "name", "specialization_name"], "job");
+  } catch {}
+}
+
+async function adminLoadUsers() {
+  const box = id("adminUsers") || id("usersTable") || id("adminUsersList");
+  if (!box) return;
+  try {
+    const result = await apiAny(["/api/admin/users", "/api/users"], { action: true });
+    SQR.state.users = result.users || result.items || result.data || (Array.isArray(result) ? result : []);
+    box.innerHTML = renderAdminTable(SQR.state.users, ["id", "name", "email", "role", "banned"], "user");
+  } catch {
+    box.innerHTML = `<div class="empty-state error-soft">Could not load users.</div>`;
+  }
+}
+
+async function adminLoadQuizzes() {
+  const box = id("adminQuizzes") || id("quizzesTable") || id("adminQuizzesList");
+  try {
+    const result = await apiAny(["/api/admin/quizzes", "/api/quizzes"], { action: true });
+    SQR.state.quizzes = result.quizzes || result.items || result.data || (Array.isArray(result) ? result : []);
+    if (box) box.innerHTML = renderAdminTable(SQR.state.quizzes, ["id", "title", "name", "course_title", "course_id"], "quiz");
+  } catch {
+    if (box) box.innerHTML = `<div class="empty-state error-soft">Could not load quizzes.</div>`;
+  }
+}
+
+async function adminLoadCertifications() {
+  const box = id("adminCertifications") || id("certificationsTable") || id("adminCertificatesList");
+  try {
+    const result = await apiAny(["/api/admin/certifications", "/api/certifications", "/api/certificates"], { action: true });
+    SQR.state.certifications = result.certifications || result.certificates || result.items || result.data || (Array.isArray(result) ? result : []);
+    if (box) box.innerHTML = renderAdminTable(SQR.state.certifications, ["id", "title", "name", "specialization_name", "price"], "certification");
+  } catch {
+    if (box) box.innerHTML = `<div class="empty-state error-soft">Could not load certifications.</div>`;
+  }
+}
+
+function renderAdminTable(items, keys, type) {
+  if (!Array.isArray(items) || !items.length) return `<div class="empty-state">No ${html(type)} records yet.</div>`;
+  const usableKeys = keys.filter((key) => items.some((item) => item[key] !== undefined));
+  return `<div class="table-wrap"><table class="admin-table"><thead><tr>${usableKeys.map((key) => `<th>${html(key.replaceAll("_", " "))}</th>`).join("")}<th>Actions</th></tr></thead><tbody>${items.map((item) => `<tr>${usableKeys.map((key) => `<td>${html(item[key])}</td>`).join("")}<td class="table-actions">${renderAdminActions(item, type)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function renderAdminActions(item, type) {
+  const oid = objId(item);
+  if (!oid) return "";
+  if (type === "user") {
+    const banned = Boolean(item.banned);
+    return `${btn(banned ? "Unban" : "Ban", banned ? "btn btn-soft btn-mini" : "btn btn-danger btn-mini", `onclick="adminToggleBan('${html(oid)}', ${!banned})"`)}`;
+  }
+  return `${btn("Delete", "btn btn-danger btn-mini", `onclick="adminDelete('${html(type)}', '${html(oid)}')"`)}`;
+}
+
+function populateAdminSelects() {
+  const specOptions = `<option value="">Select specialization</option>` + SQR.state.specializations.map((s) => `<option value="${html(objId(s))}">${html(pick(s, ["name", "title", "specialization_name"], "Specialization"))}</option>`).join("");
+  const courseOptions = `<option value="">Select course</option>` + SQR.state.courses.map((c) => `<option value="${html(objId(c))}">${html(pick(c, ["title", "name", "course_name"], "Course"))}</option>`).join("");
+  qsa("select[name='specialization_id'], #specialization_id, #courseSpecialization, #jobSpecialization, #certificationSpecialization").forEach((select) => {
+    const old = select.value;
+    select.innerHTML = specOptions;
+    if (old) select.value = old;
+  });
+  qsa("select[name='course_id'], #course_id, #quizCourse, #questionCourse").forEach((select) => {
+    const old = select.value;
+    select.innerHTML = courseOptions;
+    if (old) select.value = old;
+  });
+}
+
+function bindAdminForms() {
+  bindAdminForm(["addSpecializationForm", "specializationForm"], ["/api/admin/specializations", "/api/specializations"], "Specialization saved.");
+  bindAdminForm(["addCourseForm", "courseForm"], ["/api/admin/courses", "/api/courses"], "Course saved.");
+  bindAdminForm(["addJobForm", "jobForm"], ["/api/admin/jobs", "/api/jobs"], "Job saved.");
+  bindAdminForm(["addCertificationForm", "certificationForm", "certificateForm"], ["/api/admin/certifications", "/api/certifications", "/api/certificates"], "Certification saved.");
+  bindAdminForm(["addQuizForm", "quizForm"], ["/api/admin/quizzes", "/api/quizzes"], "Quiz saved.", normalizeQuizForm);
+  bindAdminForm(["addQuestionForm", "questionForm"], ["/api/admin/questions", "/api/questions"], "Question saved.");
+}
+
+function bindAdminForm(ids, paths, successText, normalizer = null) {
+  const form = ids.map((x) => id(x)).find(Boolean);
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = "1";
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!requireAdmin()) return;
+    const submit = qs("button[type='submit']", form);
+    setLoading(submit, true, "Saving...");
+    try {
+      let body = hasFile(form) ? new FormData(form) : values(form);
+      if (normalizer) body = normalizer(body, form);
+      const finalBody = body instanceof FormData ? body : JSON.stringify(body);
+      await apiAny(paths, { method: "POST", body: finalBody, action: true });
+      showMessage(successText, "success");
+      form.reset();
+      await Promise.allSettled([adminStats(), adminLoadLists()]);
+    } catch (err) {
+      showMessage(err.data?.error || err.message || "Admin save failed.", "error");
+    } finally {
+      setLoading(submit, false);
+    }
+  });
+}
+
+function normalizeQuizForm(data, form) {
+  if (data instanceof FormData) return data;
+  const questions = [];
+  qsa(".quiz-question-row, .question-row", form).forEach((row) => {
+    const question = clean(qs("[name='question'], .question-text", row)?.value);
+    const options = qsa("[name='options'], .option-input", row).map((x) => clean(x.value)).filter(Boolean);
+    const answer = clean(qs("[name='answer'], .answer-input", row)?.value);
+    if (question) questions.push({ question, options, answer });
+  });
+  if (questions.length) data.questions = questions;
+  return data;
+}
+
+function bindAdminActions() {
+  const addQuestionBtn = id("addQuestionBtn") || id("addQuizQuestion");
+  const holder = id("quizQuestions") || id("questionsHolder");
+  if (addQuestionBtn && holder && !addQuestionBtn.dataset.bound) {
+    addQuestionBtn.dataset.bound = "1";
+    addQuestionBtn.addEventListener("click", () => {
+      const index = qsa(".quiz-question-row", holder).length + 1;
+      const row = document.createElement("div");
+      row.className = "quiz-question-row card compact";
+      row.innerHTML = `<h4>Question ${index}</h4><label>Question</label><textarea name="question" class="question-text" required></textarea><div class="form-grid"><div><label>Option A</label><input class="option-input" name="options" required></div><div><label>Option B</label><input class="option-input" name="options" required></div><div><label>Option C</label><input class="option-input" name="options"></div><div><label>Option D</label><input class="option-input" name="options"></div></div><label>Correct Answer</label><input class="answer-input" name="answer" required><button type="button" class="btn btn-danger btn-small" onclick="this.closest('.quiz-question-row').remove()">Remove Question</button>`;
+      holder.appendChild(row);
+    });
+  }
+}
+
+async function adminToggleBan(userId, banned) {
+  if (!requireAdmin()) return;
+  try {
+    await apiAny([`/api/admin/users/${userId}/ban`, `/api/users/${userId}/ban`], { method: "POST", body: JSON.stringify({ banned }), action: true });
+    showMessage(banned ? "User banned." : "User unbanned.", "success");
+    await adminLoadUsers();
+    await adminStats();
+  } catch (err) {
+    showMessage(err.data?.error || err.message || "Could not update user.", "error");
+  }
+}
+
+async function adminDelete(type, oid) {
+  if (!requireAdmin()) return;
+  if (!confirm("Delete this item?")) return;
+  const map = {
+    specialization: [`/api/admin/specializations/${oid}`, `/api/specializations/${oid}`],
+    course: [`/api/admin/courses/${oid}`, `/api/courses/${oid}`],
+    job: [`/api/admin/jobs/${oid}`, `/api/jobs/${oid}`],
+    quiz: [`/api/admin/quizzes/${oid}`, `/api/quizzes/${oid}`],
+    certification: [`/api/admin/certifications/${oid}`, `/api/certifications/${oid}`, `/api/certificates/${oid}`]
+  };
+  try {
+    await apiAny(map[type] || [], { method: "DELETE", action: true });
+    showMessage("Deleted successfully.", "success");
+    await Promise.allSettled([adminStats(), adminLoadLists()]);
+  } catch (err) {
+    showMessage(err.data?.error || err.message || "Could not delete item.", "error");
+  }
+}
+
+function initFoundation() {
+  document.documentElement.classList.add("sqr-ready");
+  document.body.classList.add("sqr-body");
+  const p = pageName().toLowerCase();
+  if (p.includes("admin")) document.body.classList.add("admin-body");
+  qsa(".container, main, .page").forEach((el) => el.classList.add("sqr-container"));
+}
+
+function init() {
+  initFoundation();
+  blockAdminFromStudentPages();
   setupSignup();
   setupSignin();
+  setupModeSwitch();
+  renderHomeCards();
   loadProfile();
   loadSpecializations();
   loadSpecializationDetails();
@@ -324,1538 +1148,31 @@ document.addEventListener("DOMContentLoaded", () => {
   setupRecommendation();
   setupATS();
   loadAdmin();
-});
-
-function setupSignup() {
-  const form = document.getElementById("signupForm");
-  if (!form || form.dataset.ready) return;
-  form.dataset.ready = "1";
-
-  const passwordInput = document.getElementById("password");
-  const passwordRules = {
-    lengthCheck: password => password.length >= 8,
-    upperCheck: password => /[A-Z]/.test(password),
-    lowerCheck: password => /[a-z]/.test(password),
-    numberCheck: password => /[0-9]/.test(password),
-    specialCheck: password => /[^A-Za-z0-9]/.test(password)
-  };
-
-  function updatePasswordChecklist() {
-    if (!passwordInput) return;
-    const password = passwordInput.value;
-
-    Object.keys(passwordRules).forEach(id => {
-      const item = document.getElementById(id);
-      if (!item) return;
-      const icon = item.querySelector("span");
-
-      if (passwordRules[id](password)) {
-        item.classList.add("valid");
-        if (icon) icon.textContent = "✓";
-      } else {
-        item.classList.remove("valid");
-        if (icon) icon.textContent = "✗";
-      }
-    });
-  }
-
-  function isPasswordStrong(password) {
-    return Object.values(passwordRules).every(rule => rule(password));
-  }
-
-  if (passwordInput) {
-    passwordInput.addEventListener("input", updatePasswordChecklist);
-    updatePasswordChecklist();
-  }
-
-  form.addEventListener("submit", async e => {
-    e.preventDefault();
-
-    const data = {
-      name: document.getElementById("name")?.value.trim() || "",
-      username: document.getElementById("username")?.value.trim().toLowerCase() || "",
-      email: document.getElementById("email")?.value.trim().toLowerCase() || "",
-      password: document.getElementById("password")?.value || ""
-    };
-
-    if (!data.name || !data.username || !data.email || !data.password) {
-      showMessage("Name, username, email, and password are required");
-      return;
-    }
-
-    if (!isPasswordStrong(data.password)) {
-      showMessage("Please complete all password requirements.");
-      return;
-    }
-
-    try {
-      const result = await api("/api/signup", {
-        method: "POST",
-        body: JSON.stringify(data)
-      });
-
-      setAuth(result.token, result.user);
-      showMessage("Account created successfully", "success");
-      setTimeout(() => window.location.href = "profile.html", 700);
-    } catch (err) {
-      showMessage(err.message);
-    }
-  });
+  bindQuizForms();
 }
 
-function setupSignin() {
-  const form = document.getElementById("signinForm");
-  if (!form) return;
-
-  form.addEventListener("submit", async e => {
-    e.preventDefault();
-
-    const data = {
-      email: document.getElementById("email")?.value.trim(),
-      password: document.getElementById("password")?.value
-    };
-
-    try {
-      const result = await apiTry(["/api/login", "/api/signin"], {
-        method: "POST",
-        body: JSON.stringify(data)
-      });
-
-      setAuth(result.token, result.user);
-      showMessage("Signed in successfully", "success");
-      setTimeout(() => window.location.href = "profile.html", 700);
-    } catch (err) {
-      showMessage(err.message);
-    }
-  });
-}
-
-async function loadProfile() {
-  const box = document.getElementById("profileBox");
-  if (!box) return;
-
-  requireLogin();
-
-  try {
-    const data = await api("/api/profile");
-    const user = data.user || data;
-
-    box.innerHTML = `
-      <div class="card">
-        <h2>${user.name || "User"}</h2>
-        <p><b>Email:</b> ${user.email || ""}</p>
-        <p><b>Role:</b> ${user.role || "student"}</p>
-      </div>
-    `;
-
-    const form = document.getElementById("profileForm");
-
-    if (form && !form.dataset.ready) {
-      form.dataset.ready = "1";
-
-      if (document.getElementById("name")) document.getElementById("name").value = user.name || "";
-      if (document.getElementById("skills")) document.getElementById("skills").value = user.skills || "";
-      if (document.getElementById("interests")) document.getElementById("interests").value = user.interests || "";
-      if (document.getElementById("goal")) document.getElementById("goal").value = user.goal || "";
-
-      form.addEventListener("submit", async e => {
-        e.preventDefault();
-
-        try {
-          await api("/api/profile", {
-            method: "PUT",
-            body: JSON.stringify({
-              name: document.getElementById("name")?.value || "",
-              skills: document.getElementById("skills")?.value || "",
-              interests: document.getElementById("interests")?.value || "",
-              goal: document.getElementById("goal")?.value || ""
-            })
-          });
-
-          showMessage("Profile updated", "success");
-        } catch (err) {
-          showMessage(err.message);
-        }
-      });
-    }
-
-    loadProgress(data);
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-async function loadProgress(profileData = null) {
-  const box = document.getElementById("progressBox");
-  if (!box) return;
-
-  try {
-    const progressData = await getUserProgress();
-    let progress = progressData.progress;
-
-    if (!progress.length && profileData) {
-      progress = profileData.progress || profileData.specialization_progress || [];
-    }
-
-    box.innerHTML = progress.map(p => {
-      const percent = clampPercent(p.progress ?? p.percentage ?? 0);
-      const totalCourses = Number(p.total_courses ?? p.total ?? 0);
-      const openedCourses = Number(p.opened_courses ?? p.opened ?? 0);
-      const watchedCourses = Number(p.watched_courses ?? p.watched ?? 0);
-      const completedCourses = Number(p.completed_courses ?? p.passed_quiz_courses ?? p.completed ?? 0);
-      const title = p.name || p.specialization || p.specialization_name || "Specialization";
-
-      return `
-        <div class="card progress-card">
-          <div class="progress-header">
-            <h3>${escapeHTML(title)}</h3>
-            <span>${percent}%</span>
-          </div>
-          ${progressBarHTML(percent)}
-          <p>${percent}% completed</p>
-          ${totalCourses ? `<p>Opened/watched courses: ${Math.max(openedCourses, watchedCourses)}/${totalCourses}<br>Completed by quizzes: ${completedCourses}/${totalCourses}</p>` : ""}
-        </div>
-      `;
-    }).join("") || `<p>No progress yet. Open a course to start tracking.</p>`;
-  } catch {
-    box.innerHTML = `<p>No progress yet. Open a course to start tracking.</p>`;
-  }
-}
-
-
-async function loadSpecializations() {
-  const box = document.getElementById("specializationsBox");
-  const selects = [
-    document.getElementById("specSelect"),
-    document.getElementById("courseSpecFilter"),
-    document.getElementById("jobSpecFilter"),
-    document.getElementById("courseSpecialization"),
-    document.getElementById("courseSpec"),
-    document.getElementById("courseSpecSelect"),
-    document.getElementById("jobSpecialization"),
-    document.getElementById("jobSpec"),
-    document.getElementById("jobSpecSelect"),
-    document.getElementById("certSpecialization")
-  ].filter(Boolean);
-
-  if (!box && !selects.length) return;
-
-  try {
-    const raw = await api("/api/specializations");
-    const specs = asArray(raw, "specializations");
-
-    let enrolledSpecs = [];
-
-    try {
-      const enrolledRaw = await apiTry([
-        "/api/my-specializations",
-        "/api/user/specializations",
-        "/api/enrollments/specializations"
-      ]);
-
-      enrolledSpecs = asArray(enrolledRaw, "specializations")
-        .map(s => Number(getId(s)));
-    } catch {
-      enrolledSpecs = [];
-    }
-
-    if (box) {
-      box.innerHTML = specs.map(s => {
-        const id = getId(s);
-        const enrolled = enrolledSpecs.includes(Number(id));
-
-        return `
-          <div class="card card-mini">
-            <div onclick="window.location.href='specialization-details.html?id=${id}'">
-              ${s.image || s.image_url ? `<img src="${fileUrl(s.image_url || s.image)}" class="card-img">` : ""}
-              <h3>${escapeHTML(s.name || "")}</h3>
-              <p>${escapeHTML(s.description || "")}</p>
-            </div>
-
-            <div class="course-actions">
-              ${enrolled ? `
-                <button class="danger-btn" onclick="event.stopPropagation(); unenrollSpecialization(${id})">
-                  Unenroll
-                </button>
-              ` : `
-                <button onclick="event.stopPropagation(); enrollSpecialization(${id})">
-                  Enroll
-                </button>
-              `}
-
-              <button onclick="event.stopPropagation(); window.location.href='specialization-details.html?id=${id}'">
-                View
-              </button>
-            </div>
-          </div>
-        `;
-      }).join("") || `<p>No specializations yet.</p>`;
-    }
-
-    const options = `<option value="">All Specializations</option>` + specs.map(s => `
-      <option value="${getId(s)}">${escapeHTML(s.name || "")}</option>
-    `).join("");
-
-    selects.forEach(el => {
-      el.innerHTML = options;
-    });
-
-    setupSelectSearch("courseSpecializationSearch", "courseSpecialization");
-    setupSelectSearch("jobSpecializationSearch", "jobSpecialization");
-    setupSelectSearch("certSpecializationSearch", "certSpecialization");
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-async function enrollSpecialization(specializationId) {
-  requireLogin();
-
-  try {
-    await apiTry([
-      `/api/specializations/${specializationId}/enroll`,
-      `/api/enroll-specialization/${specializationId}`,
-      `/api/user/specializations/${specializationId}/enroll`
-    ], {
-      method: "POST"
-    });
-
-    showMessage("Specialization enrolled successfully", "success");
-    loadSpecializations();
-    loadProgress();
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-async function unenrollSpecialization(specializationId) {
-  requireLogin();
-
-  if (!confirm("Unenroll from this specialization?")) return;
-
-  try {
-    await apiTry([
-      `/api/specializations/${specializationId}/unenroll`,
-      `/api/unenroll-specialization/${specializationId}`,
-      `/api/user/specializations/${specializationId}/unenroll`
-    ], {
-      method: "DELETE"
-    });
-
-    showMessage("Specialization unenrolled successfully", "success");
-    loadSpecializations();
-    loadProgress();
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-function setupSelectSearch(inputId, selectId) {
-  const input = document.getElementById(inputId);
-  const select = document.getElementById(selectId);
-  if (!input || !select || input.dataset.ready) return;
-  input.dataset.ready = "1";
-
-  input.addEventListener("input", () => {
-    const term = input.value.trim().toLowerCase();
-    Array.from(select.options).forEach(option => {
-      if (!option.value) {
-        option.hidden = false;
-        return;
-      }
-      option.hidden = term && !option.textContent.toLowerCase().includes(term);
-    });
-  });
-}
-
-async function loadCoursesIntoAdminSelects() {
-  const selects = [
-    document.getElementById("quizCourseSelect"),
-    document.getElementById("quizCourse"),
-    document.getElementById("courseSelect")
-  ].filter(Boolean);
-
-  if (!selects.length) return;
-
-  try {
-    const raw = await api("/api/courses");
-    const courses = asArray(raw, "courses");
-    const options = `<option value="">Choose Course</option>` + courses.map(c => {
-      const specName = c.specialization_name || c.specialization || c.spec_name || "";
-      const label = `${c.title || "Course"}${specName ? " - " + specName : ""}`;
-      return `<option value="${getId(c)}">${label}</option>`;
-    }).join("");
-
-    selects.forEach(select => {
-      select.innerHTML = options;
-    });
-
-    setupSelectSearch("quizCourseSearch", "quizCourseSelect");
-    setupSelectSearch("quizCourseSearch", "quizCourse");
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-async function loadSpecializationDetails() {
-  const box = document.getElementById("specializationDetailsBox");
-  if (!box) return;
-
-  const id = new URLSearchParams(location.search).get("id");
-
-  if (!id) {
-    box.innerHTML = `<div class="card">Specialization not found.</div>`;
-    return;
-  }
-
-  try {
-    const s = await api(`/api/specializations/${id}`);
-    const userProgress = await getUserProgress();
-    const specProgressValue = s.progress ?? s.percentage ?? userProgress.specialization_progress?.[id] ?? userProgress.specialization_progress?.[String(id)] ?? 0;
-
-    box.innerHTML = `
-      <div class="detail-hero card">
-        ${s.image || s.image_url ? `<img src="${fileUrl(s.image_url || s.image)}" class="card-img">` : ""}
-        <h1>${escapeHTML(s.name || "")}</h1>
-        <p>${escapeHTML(s.description || "")}</p>
-        ${progressBarHTML(specProgressValue)}
-
-        <h3>Skills</h3>
-        <p>${escapeHTML(s.skills || "No skills added yet.")}</p>
-
-        <h3>Roadmap</h3>
-        <p>${escapeHTML(s.roadmap || "No roadmap added yet.")}</p>
-
-        <h3>Job Titles</h3>
-        <p>${escapeHTML(s.job_titles || s.career_paths || "No job titles added yet.")}</p>
-      </div>
-
-      <h2>Courses</h2>
-      <div class="grid">
-        ${(s.courses || []).map(c => {
-          const courseId = getId(c);
-          const watched = idListHas(userProgress.watched_courses, courseId);
-          const opened = watched || idListHas(userProgress.opened_courses, courseId) || idListHas(userProgress.enrolled_courses, courseId) || c.opened || c.enrolled;
-          const percent = coursePercentFromProgress(c, userProgress);
-          return `
-            <div class="card card-mini" onclick="window.location.href='course-details.html?id=${courseId}'">
-              ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
-              <h3>${escapeHTML(c.title || "")} ${tinyDoneMark(opened, watched ? "Watched" : "Opened")}</h3>
-              ${progressBarHTML(percent)}
-            </div>
-          `;
-        }).join("") || `<p>No courses yet.</p>`}
-      </div>
-    `;
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-
-async function loadCourseDetails() {
-  const box = document.getElementById("courseDetailsBox");
-  if (!box) return;
-
-  const id = new URLSearchParams(location.search).get("id");
-
-  if (!id) {
-    box.innerHTML = `<div class="card">Course not found.</div>`;
-    return;
-  }
-
-  try {
-    let course = null;
-
-    try {
-      course = await api(`/api/courses/${id}`);
-    } catch {
-      const coursesRaw = await api("/api/courses");
-      const courses = asArray(coursesRaw, "courses");
-      course = courses.find(c => Number(getId(c)) === Number(id));
-    }
-
-    if (!course) {
-      box.innerHTML = `<div class="card">Course not found.</div>`;
-      return;
-    }
-
-    await trackCourseOpened(getId(course));
-    const userProgress = await getUserProgress();
-
-    let quizzes = [];
-
-    try {
-      const quizRaw = await api(`/api/quizzes?course_id=${id}`);
-      quizzes = asArray(quizRaw, "quizzes");
-    } catch {
-      quizzes = [];
-    }
-
-    window.loadedQuizzes = quizzes;
-
-    const courseLink = course.link || course.course_link || course.content_url || "";
-    const courseVideo = course.video || course.video_url || "";
-    const courseId = getId(course);
-    const watched = idListHas(userProgress.watched_courses, courseId);
-    const opened = watched || idListHas(userProgress.opened_courses, courseId) || idListHas(userProgress.enrolled_courses, courseId) || course.opened || course.enrolled;
-    const percent = coursePercentFromProgress(course, userProgress);
-
-    box.innerHTML = `
-      <div class="detail-hero card">
-        ${course.image || course.image_url ? `
-          <img src="${fileUrl(course.image_url || course.image)}" class="card-img">
-        ` : ""}
-
-        <h1>${escapeHTML(course.title || "")} ${tinyDoneMark(opened, watched ? "Watched" : "Opened")}</h1>
-
-        <p>${escapeHTML(course.description || "")}</p>
-
-        <p>
-          <b>Level:</b>
-          ${escapeHTML(course.level_badge?.label || course.level || "Beginner")}
-        </p>
-
-        <div class="course-status-line">
-          ${tinyDoneMark(opened, watched ? "Watched" : "Opened")}
-          <span>${watched ? "Watched" : opened ? "Opened and enrolled" : "Not opened yet"}</span>
-        </div>
-
-        ${progressBarHTML(percent)}
-
-        <div class="course-actions">
-          ${courseVideo ? `
-            <button onclick="openCourseContent(${courseId}, '${fileUrl(courseVideo)}')">
-              Open Course Video
-            </button>
-          ` : ""}
-
-          ${courseLink ? `
-            <button onclick="openCourseContent(${courseId}, '${escapeHTML(courseLink)}')">
-              Open Course Link
-            </button>
-          ` : ""}
-
-          <button class="danger-btn" onclick="unenrollCourse(${courseId})">
-            Unenroll
-          </button>
-        </div>
-      </div>
-
-      <div class="quiz-inside-course">
-        <h2>Course Quizzes</h2>
-        <p>Quizzes are connected to this course. Your score will update your progress automatically.</p>
-
-        <div id="quizzesBox">
-          ${quizzes.map(q => `
-            <div class="card">
-              <h3>${escapeHTML(q.title || "Quiz")}</h3>
-              <p>${escapeHTML(q.description || "")}</p>
-              <button onclick="startQuiz(${getId(q)})">Start Quiz</button>
-            </div>
-          `).join("") || `<p>No quizzes for this course yet.</p>`}
-        </div>
-
-        <div id="quizResult"></div>
-      </div>
-    `;
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-
-async function loadCourses() {
-  const box = document.getElementById("coursesBox");
-  if (!box) return;
-
-  try {
-    const spec = document.getElementById("courseSpecFilter")?.value || "";
-    const level = document.getElementById("courseLevelFilter")?.value || "";
-    const params = new URLSearchParams();
-
-    if (spec) {
-      params.append("spec_id", spec);
-      params.append("specialization_id", spec);
-    }
-
-    if (level) params.append("level", level);
-
-    const raw = await api(`/api/courses${params.toString() ? "?" + params.toString() : ""}`);
-    const courses = asArray(raw, "courses");
-    const userProgress = await getUserProgress();
-
-    box.innerHTML = courses.map(c => {
-      const courseId = getId(c);
-      const watched = idListHas(userProgress.watched_courses, courseId);
-      const opened = watched || idListHas(userProgress.opened_courses, courseId) || idListHas(userProgress.enrolled_courses, courseId) || c.opened || c.enrolled;
-      const percent = coursePercentFromProgress(c, userProgress);
-
-      return `
-        <div class="card card-mini" onclick="window.location.href='course-details.html?id=${courseId}'">
-          ${c.image || c.image_url ? `<img src="${fileUrl(c.image_url || c.image)}" class="card-img">` : ""}
-
-          <h3>${escapeHTML(c.title || "")} ${tinyDoneMark(opened, watched ? "Watched" : "Opened")}</h3>
-
-          <p>${escapeHTML(c.description || "")}</p>
-
-          <span class="badge">
-            ${escapeHTML(c.level_badge?.label || c.level || "Beginner")}
-          </span>
-
-          ${progressBarHTML(percent)}
-
-          <div class="course-actions">
-            <button onclick="event.stopPropagation(); window.location.href='course-details.html?id=${courseId}'">
-              Open Course
-            </button>
-          </div>
-        </div>
-      `;
-    }).join("") || `<p>No courses yet.</p>`;
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-
-async function trackCourseOpened(courseId) {
-  if (!courseId || !getToken()) return;
-
-  try {
-    await apiTry([
-      `/api/courses/${courseId}/open`,
-      `/api/courses/${courseId}/enroll`,
-      `/api/enroll-course/${courseId}`,
-      `/api/user/courses/${courseId}/open`
-    ], { method: "POST" });
-    loadProgress();
-  } catch (err) {
-    console.warn("Course open tracking failed:", err.message);
-  }
-}
-
-async function trackCourseWatched(courseId) {
-  if (!courseId || !getToken()) return;
-
-  try {
-    await apiTry([
-      `/api/courses/${courseId}/watch`,
-      `/api/courses/${courseId}/open`,
-      `/api/user/courses/${courseId}/watch`
-    ], { method: "POST" });
-    loadProgress();
-  } catch (err) {
-    console.warn("Course watch tracking failed:", err.message);
-  }
-}
-
-async function openCourseContent(courseId, courseUrl = "") {
-  requireLogin();
-
-  try {
-    await trackCourseWatched(courseId);
-    showMessage("Course opened and progress updated", "success");
-    if (courseUrl) window.open(courseUrl, "_blank");
-    setTimeout(() => {
-      if (document.getElementById("courseDetailsBox")) loadCourseDetails();
-      loadCourses();
-      loadProgress();
-    }, 300);
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-async function openCourse(courseId, courseUrl = "") {
-  requireLogin();
-
-  try {
-    await trackCourseOpened(courseId);
-    showMessage("Course opened and enrolled automatically", "success");
-    loadProgress();
-
-    if (courseUrl) {
-      window.open(courseUrl, "_blank");
-    }
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-
-async function unenrollCourse(courseId) {
-  requireLogin();
-
-  if (!confirm("Unenroll from this course? Your quiz attempts may still remain saved.")) return;
-
-  try {
-    try {
-      await api(`/api/courses/${courseId}/unenroll`, { method: "DELETE" });
-    } catch {
-      await apiTry([
-        `/api/courses/${courseId}/unenroll`,
-        `/api/unenroll-course/${courseId}`,
-        `/api/user/courses/${courseId}/unenroll`
-      ], { method: "POST" });
-    }
-    showMessage("Unenrolled successfully", "success");
-    loadProgress();
-
-    if (document.getElementById("courseDetailsBox")) {
-      setTimeout(() => window.location.href = "Courses.html", 700);
-    } else {
-      loadCourses();
-    }
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-
-function quizResultCircle(result) {
-  const rawScore = Number(result.percentage ?? result.score ?? result.ats_score ?? 0);
-  const total = Number(result.total ?? result.total_questions ?? 100);
-  const score = Number(result.score ?? result.correct ?? 0);
-  const percent = result.percentage !== undefined ? Math.round(Number(result.percentage)) : total > 0 && score <= total ? Math.round((score / total) * 100) : Math.round(rawScore);
-  const passed = result.passed === true || result.passed === 1 || percent >= 60;
-
-  return `
-    <div class="card quiz-result-card">
-      <div class="quiz-circle" style="--value:${percent}">
-        <span>${percent}%</span>
-      </div>
-      <h3>${passed ? "Passed" : "Failed"}</h3>
-      <p>${score && total && score <= total ? `${score}/${total} correct answers` : `Score: ${percent}%`}</p>
-    </div>
-  `;
-}
-
-async function startQuiz(id) {
-  const box = document.getElementById("quizBox") || document.getElementById("quizzesBox");
-  if (!box) return;
-
-  try {
-    let quiz = (window.loadedQuizzes || []).find(q => Number(getId(q)) === Number(id));
-
-    if (!quiz) {
-      const raw = await api("/api/quizzes");
-      quiz = asArray(raw, "quizzes").find(q => Number(getId(q)) === Number(id));
-    }
-
-    if (!quiz) throw new Error("Quiz not found");
-
-    const questions = quiz.questions || [];
-    if (!questions.length) throw new Error("This quiz has no questions yet");
-
-    box.innerHTML = `
-      <div class="card">
-        <h2>${quiz.title || "Quiz"}</h2>
-
-        <form id="takeQuizForm">
-          ${questions.map((q, i) => `
-            <div class="quiz-question">
-              <h4>${i + 1}. ${q.question || q.question_text || ""}</h4>
-              ${["a", "b", "c", "d"].map((letter, index) => {
-                const value = q[`option_${letter}`] || q[`option${index + 1}`] || "";
-                return `<label><input type="radio" name="q${getId(q)}" value="${letter.toUpperCase()}"> ${value}</label>`;
-              }).join("")}
-            </div>
-          `).join("")}
-          <button type="submit">Submit Quiz</button>
-        </form>
-      </div>
-    `;
-
-    document.getElementById("takeQuizForm").addEventListener("submit", async e => {
-      e.preventDefault();
-
-      const answers = {};
-
-      questions.forEach(q => {
-        const qid = getId(q);
-        const selected = document.querySelector(`input[name="q${qid}"]:checked`);
-        answers[qid] = selected ? selected.value : "";
-      });
-
-      try {
-        const result = await api(`/api/quizzes/${id}/submit`, {
-          method: "POST",
-          body: JSON.stringify({ answers })
-        });
-
-        const percent = Math.round(Number(result.percentage ?? result.score ?? 0));
-        box.innerHTML = quizResultCircle(result);
-        showMessage(`Quiz completed. Score: ${percent}%`, "success");
-        loadProgress();
-      } catch (err) {
-        showMessage(err.message);
-      }
-    });
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-async function loadJobs() {
-  const box = document.getElementById("jobsBox");
-  if (!box) return;
-
-  try {
-    const spec = document.getElementById("jobSpecFilter")?.value || "";
-    const params = new URLSearchParams();
-
-    if (spec) {
-      params.append("specialization", spec);
-      params.append("specialization_id", spec);
-      params.append("spec_id", spec);
-    }
-
-    const raw = await api(`/api/jobs${params.toString() ? "?" + params.toString() : ""}`);
-    const jobs = asArray(raw, "jobs");
-
-    box.innerHTML = jobs.map(j => `
-      <div class="card">
-        <h3>${j.title || ""}</h3>
-        <p>${j.description || ""}</p>
-        <p><b>Specialization:</b> ${j.specialization || j.specialization_name || ""}</p>
-        <p><b>Required Skills:</b> ${j.required_skills || j.skills || ""}</p>
-        ${j.salary ? `<p><b>Salary:</b> ${j.salary}</p>` : ""}
-        ${j.link ? `<a href="${j.link}" target="_blank" class="btn">Apply / Details</a>` : ""}
-        ${j.match_percentage !== undefined ? `<p><b>Match:</b> ${j.match_percentage}%</p>` : ""}
-      </div>
-    `).join("") || `<p>No jobs yet.</p>`;
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-
-function setupRecommendation() {
-  const form = document.getElementById("recommendationForm") || document.getElementById("recForm");
-  const box = document.getElementById("recommendationResult") || document.getElementById("resultBox") || document.getElementById("recOutput");
-
-  if (!form || !box || form.dataset.ready) return;
-
-  form.dataset.ready = "1";
-
-  form.addEventListener("submit", async e => {
-    e.preventDefault();
-    requireLogin();
-
-    const data = Object.fromEntries(new FormData(form).entries());
-
-    data.interests = data.interests || document.getElementById("interests")?.value || "";
-    data.skills = data.skills || document.getElementById("skills")?.value || "";
-    data.goal = data.goal || document.getElementById("goal")?.value || "";
-    data.preferred_work = data.preferred_work || document.getElementById("preferred_work")?.value || "";
-    data.experience = data.experience || document.getElementById("experience")?.value || "";
-
-    if (!data.answers) {
-      const profileText = [data.interests, data.skills, data.goal, data.preferred_work, data.experience].filter(Boolean).join(" ");
-      data.answers = profileText ? [{ question: "Student profile", answer: profileText }] : [];
-    }
-
-    try {
-      const result = await apiTry(["/api/recommendation", "/api/recommendation/submit", "/api/recommendations"], {
-        method: "POST",
-        body: JSON.stringify(data)
-      });
-
-      const specs = result.recommended_specializations || [];
-      const jobs = result.recommended_jobs || [];
-      const best = specs[0] || result.best || result.recommendation || result;
-
-      box.classList.remove("hidden");
-      box.innerHTML = `
-        <div class="card">
-          <h2>Recommended Specialization</h2>
-          <h3>${best.name || best.specialization || result.best_match || "Recommended Path"}</h3>
-          <p>${best.reason || result.reason || result.summary || "This recommendation is based on your answers."}</p>
-          <p><b>Match:</b> ${best.match_percentage || best.match_score || best.score || result.match_score || 0}%</p>
-
-          ${Array.isArray(best.skills_to_learn) && best.skills_to_learn.length ? `
-            <h3>Skills to Learn</h3>
-            <ul>${best.skills_to_learn.map(x => `<li>${x}</li>`).join("")}</ul>
-          ` : ""}
-
-          ${Array.isArray(specs) && specs.length > 1 ? `
-            <h3>Other Good Specializations</h3>
-            <div class="grid">
-              ${specs.slice(1, 5).map(s => `
-                <div class="mini-card">
-                  <strong>${s.name || "Specialization"}</strong>
-                  <p>${s.match_percentage || s.match_score || 0}% match</p>
-                  <small>${s.reason || "Matched with your answers."}</small>
-                </div>
-              `).join("")}
-            </div>
-          ` : ""}
-
-          ${Array.isArray(jobs) && jobs.length ? `
-            <h3>Recommended Jobs</h3>
-            <div class="grid">
-              ${jobs.slice(0, 6).map(j => `
-                <div class="mini-card">
-                  <strong>${j.title || "Job"}</strong>
-                  <p>${j.match_percentage || j.score || 0}% match</p>
-                </div>
-              `).join("")}
-            </div>
-          ` : ""}
-
-          ${Array.isArray(result.roadmap) && result.roadmap.length ? `
-            <h3>Roadmap</h3>
-            <ol>${result.roadmap.map(x => `<li>${x}</li>`).join("")}</ol>
-          ` : ""}
-        </div>
-      `;
-
-      showMessage("Recommendation generated successfully", "success");
-    } catch (err) {
-      showMessage(err.message);
-    }
-  });
-}
-
-function getATSUserKey() {
-  const user = getUser();
-  return user?.id ? `lastGeneratedResume_user_${user.id}` : "lastGeneratedResume_guest";
-}
-
-function clearOldSharedATSStorage() {
-  const user = getUser();
-  if (user?.id) {
-    localStorage.removeItem(`lastGeneratedResume_user_${user.id}`);
-    localStorage.removeItem(`sqr_ats_generate_user_${user.id}`);
-  }
-  [
-    "ats_data",
-    "ats_resume",
-    "ats_result",
-    "ats_latest",
-    "generated_resume",
-    "resume_data",
-    "lastGeneratedResume"
-  ].forEach(key => {
-    localStorage.removeItem(key);
-    sessionStorage.removeItem(key);
-  });
-}
-
-function resetATSFormsIfDifferentUser() {
-  const user = getUser();
-  const currentUserId = user?.id ? String(user.id) : "guest";
-  const previousUserId = sessionStorage.getItem("sqr_active_ats_user");
-
-  if (previousUserId && previousUserId !== currentUserId) {
-    document.getElementById("atsGenerateForm")?.reset();
-    document.getElementById("atsCheckForm")?.reset();
-
-    [
-      "generatedResume",
-      "resumeOutput",
-      "atsResult",
-      "atsResults",
-      "atsOutput",
-      "atsCheckResult",
-      "generatedResumeBox"
-    ].forEach(id => {
-      const box = document.getElementById(id);
-      if (box) box.innerHTML = "";
-    });
-
-    lastGeneratedResume = "";
-  }
-
-  sessionStorage.setItem("sqr_active_ats_user", currentUserId);
-}
-
-function setupAtsChecker() {
-  const checkForm = document.getElementById("atsCheckForm");
-  if (!checkForm || checkForm.dataset.ready) return;
-
-  checkForm.dataset.ready = "1";
-
-  const textArea = document.getElementById("resume_text");
-  if (textArea) {
-    textArea.closest("div")?.remove();
-    textArea.remove();
-  }
-
-  checkForm.addEventListener("submit", async e => {
-    e.preventDefault();
-    requireLogin();
-
-    const resultBox =
-      document.getElementById("atsCheckResult") ||
-      document.getElementById("atsResult") ||
-      document.getElementById("atsResults") ||
-      document.getElementById("atsOutput");
-
-    const resumeFile =
-      document.getElementById("resume")?.files?.[0] ||
-      document.getElementById("resume_file")?.files?.[0] ||
-      document.querySelector('input[type="file"][name="resume"]')?.files?.[0] ||
-      document.querySelector('input[type="file"][name="resume_file"]')?.files?.[0];
-
-    const targetJob =
-      document.getElementById("target_job_check")?.value?.trim() ||
-      document.getElementById("target_job")?.value?.trim() ||
-      document.getElementById("job_description")?.value?.trim() ||
-      checkForm.querySelector('[name="target_job"]')?.value?.trim() ||
-      checkForm.querySelector('[name="job_description"]')?.value?.trim() ||
-      "";
-
-    if (!targetJob) {
-      showMessage("Target job or job description is required");
-      return;
-    }
-
-    if (!resumeFile) {
-      showMessage("Please upload your resume as PDF, DOCX, or TXT");
-      return;
-    }
-
-    const allowed = [".pdf", ".docx", ".txt"];
-    const fileName = resumeFile.name.toLowerCase();
-
-    if (!allowed.some(ext => fileName.endsWith(ext))) {
-      showMessage("Only PDF, DOCX, or TXT files are allowed");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("target_job", targetJob);
-    formData.append("job_description", targetJob);
-    formData.append("resume", resumeFile);
-    formData.append("resume_file", resumeFile);
-
-    if (resultBox) {
-      resultBox.classList.remove("hidden");
-      resultBox.innerHTML = `
-        <div class="card">
-          <h2>Checking Resume...</h2>
-          <p>SQR is analyzing your uploaded resume.</p>
-        </div>
-      `;
-    }
-
-    try {
-      const result = await api("/api/ats/check", {
-        method: "POST",
-        body: formData
-      });
-
-      if (resultBox) {
-        const sectionScores = result.section_scores || {};
-
-        resultBox.classList.remove("hidden");
-        resultBox.innerHTML = `
-          <div class="card">
-            <h2>ATS Score: ${escapeHTML(result.ats_score ?? result.score ?? 0)}%</h2>
-
-            <h3>Summary</h3>
-            <p>${escapeHTML(result.summary || result.feedback || "ATS analysis completed.")}</p>
-
-            <h3>Matched Keywords</h3>
-            <p>${Array.isArray(result.matched_keywords) && result.matched_keywords.length ? result.matched_keywords.map(escapeHTML).join(", ") : "No matched keywords found."}</p>
-
-            <h3>Missing Keywords</h3>
-            <p>${Array.isArray(result.missing_keywords) && result.missing_keywords.length ? result.missing_keywords.map(escapeHTML).join(", ") : "No missing keywords found."}</p>
-
-            <h3>Strengths</h3>
-            <ul>
-              ${Array.isArray(result.strengths) && result.strengths.length ? result.strengths.map(x => `<li>${escapeHTML(x)}</li>`).join("") : "<li>No strengths listed.</li>"}
-            </ul>
-
-            <h3>Weaknesses</h3>
-            <ul>
-              ${Array.isArray(result.weaknesses) && result.weaknesses.length ? result.weaknesses.map(x => `<li>${escapeHTML(x)}</li>`).join("") : "<li>No weaknesses listed.</li>"}
-            </ul>
-
-            <h3>Advice to Improve Resume</h3>
-            <ul>
-              ${Array.isArray(result.improvements) && result.improvements.length ? result.improvements.map(x => `<li>${escapeHTML(x)}</li>`).join("") : "<li>Add role-specific keywords, measurable achievements, and clear project details.</li>"}
-            </ul>
-
-            ${Object.keys(sectionScores).length ? `
-              <h3>Section Scores</h3>
-              <div class="grid">
-                ${Object.entries(sectionScores).map(([key, value]) => `
-                  <div class="mini-card">
-                    <strong>${escapeHTML(key.replaceAll("_", " ").toUpperCase())}</strong>
-                    <p>${escapeHTML(value)}%</p>
-                  </div>
-                `).join("")}
-              </div>
-            ` : ""}
-          </div>
-        `;
-      }
-
-      showMessage("ATS check completed successfully", "success");
-    } catch (err) {
-      if (resultBox) resultBox.innerHTML = "";
-      showMessage(err.message);
-    }
-  });
-}
-
-async function loadOnlyThisUserLatestATS() {
-  return;
-}
-
-function setupATS() {
-  clearOldSharedATSStorage();
-  resetATSFormsIfDifferentUser();
-  setupAtsChecker();
-
-  const generateForm = document.getElementById("atsGenerateForm");
-
-  if (generateForm && !generateForm.dataset.ready) {
-    generateForm.dataset.ready = "1";
-
-    generateForm.addEventListener("submit", async e => {
-      e.preventDefault();
-      requireLogin();
-
-      const data = Object.fromEntries(new FormData(generateForm).entries());
-
-      try {
-        const result = await api("/api/ats/generate", {
-          method: "POST",
-          body: JSON.stringify(data)
-        });
-
-        lastGeneratedResume = result.generated_resume || result.resume || "";
-        const box =
-          document.getElementById("generatedResume") ||
-          document.getElementById("resumeOutput") ||
-          document.getElementById("generatedResumeBox") ||
-          document.getElementById("atsOutput") ||
-          document.getElementById("atsResult");
-
-        if (box) {
-          box.classList.remove("hidden");
-          box.innerHTML = `
-            <div class="card resume-preview">
-              <h2>Generated ATS Resume</h2>
-              ${result.ats_score !== undefined ? `<p><b>ATS Score:</b> ${escapeHTML(result.ats_score)}%</p>` : ""}
-              ${result.enhanced_summary ? `<h3>Enhanced Summary</h3><p>${escapeHTML(result.enhanced_summary)}</p>` : ""}
-              ${result.matched_keywords ? `<h3>Matched Keywords</h3><p>${result.matched_keywords.map(escapeHTML).join(", ")}</p>` : ""}
-              <h3>Resume</h3>
-              <pre class="resume-text">${escapeHTML(lastGeneratedResume || "No resume returned from backend.")}</pre>
-              <div class="actions">
-                <button type="button" onclick="copyGeneratedResume()">Copy Resume</button>
-                <button type="button" onclick="exportResumePdf()">Export PDF</button>
-                <button type="button" onclick="exportResumeDocx()">Export DOCX</button>
-              </div>
-            </div>
-          `;
-        }
-
-        showMessage("ATS resume generated successfully", "success");
-      } catch (err) {
-        showMessage(err.message);
-      }
-    });
-  }
-
-}
-
-async function copyGeneratedResume() {
-  const visibleResume = document.querySelector(".resume-text")?.textContent || "";
-  lastGeneratedResume = lastGeneratedResume || visibleResume;
-
-  if (!lastGeneratedResume) return alert("Generate a resume first");
-
-  await navigator.clipboard.writeText(lastGeneratedResume);
-  alert("Resume copied");
-}
-
-async function downloadBlob(path, filename) {
-  const visibleResume = document.querySelector(".resume-text")?.textContent || "";
-  lastGeneratedResume = lastGeneratedResume || visibleResume;
-
-  if (!lastGeneratedResume) return alert("Generate a resume first");
-
-  const res = await fetch(API + path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders()
-    },
-    body: JSON.stringify({ resume: lastGeneratedResume })
-  });
-
-  if (!res.ok) {
-    let data = {};
-    try { data = await res.json(); } catch {}
-    throw new Error(data.error || "Export failed");
-  }
-
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-
-  a.href = url;
-  a.download = filename;
-
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  URL.revokeObjectURL(url);
-}
-
-async function exportResumePdf() {
-  try {
-    await downloadBlob("/api/ats/export/pdf", "SQR_ATS_Resume.pdf");
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-async function exportResumeDocx() {
-  try {
-    await downloadBlob("/api/ats/export/docx", "SQR_ATS_Resume.docx");
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-async function loadAdmin() {
-  const adminBox = document.getElementById("adminBox");
-  if (!adminBox) return;
-
-  requireAdmin();
-  setupAdminForms();
-  loadAdminUsers();
-  loadSpecializations();
-  loadAdminStats();
-  loadAdminLists();
-  loadCoursesIntoAdminSelects();
-  showAdminSection("dashboardSection");
-}
-
-function setupAdminForms() {
-  const specForm = document.getElementById("addSpecForm");
-  const courseForm = document.getElementById("addCourseForm");
-  const quizForm = document.getElementById("addQuizForm");
-  const jobForm = document.getElementById("addJobForm");
-  const certForm = document.getElementById("addCertForm");
-
-  if (specForm && !specForm.dataset.ready) {
-    specForm.dataset.ready = "1";
-    specForm.addEventListener("submit", async e => {
-      e.preventDefault();
-      try {
-        await api("/api/specializations", { method: "POST", body: new FormData(specForm) });
-        showMessage("Specialization added", "success");
-        specForm.reset();
-        loadSpecializations();
-        loadAdminStats();
-        loadAdminLists();
-      } catch (err) { showMessage(err.message); }
-    });
-  }
-
-  if (courseForm && !courseForm.dataset.ready) {
-    courseForm.dataset.ready = "1";
-    courseForm.addEventListener("submit", async e => {
-      e.preventDefault();
-      const formData = new FormData(courseForm);
-      const specValue = formData.get("specialization_id") || formData.get("spec_id") || document.getElementById("courseSpecialization")?.value || document.getElementById("courseSpec")?.value || "";
-      const titleValue = formData.get("title") || formData.get("course_title") || document.getElementById("courseTitle")?.value || "";
-      if (!specValue) return showMessage("Please choose a specialization for this course");
-      if (!titleValue.trim()) return showMessage("Course title is required");
-      formData.set("specialization_id", specValue);
-      formData.set("spec_id", specValue);
-      formData.set("title", titleValue.trim());
-      formData.set("link", formData.get("link") || formData.get("course_link") || document.getElementById("courseLink")?.value || "");
-      formData.set("course_link", formData.get("course_link") || formData.get("link") || "");
-      try {
-        await apiTry(["/api/courses", "/api/admin/courses"], { method: "POST", body: formData });
-        showMessage("Course added", "success");
-        courseForm.reset();
-        loadCourses();
-        loadSpecializations();
-        loadCoursesIntoAdminSelects();
-        loadAdminStats();
-        loadAdminLists();
-      } catch (err) { showMessage(err.message); }
-    });
-  }
-
-  if (quizForm && !quizForm.dataset.ready) {
-    quizForm.dataset.ready = "1";
-    quizForm.addEventListener("submit", async e => {
-      e.preventDefault();
-      const data = normalizeFormData(quizForm);
-      data.questions = [{
-        question_text: data.question_text || data.question || "Question",
-        option_a: data.option_a || data.option1 || "A",
-        option_b: data.option_b || data.option2 || "B",
-        option_c: data.option_c || data.option3 || "C",
-        option_d: data.option_d || data.option4 || "D",
-        correct_answer: data.correct_answer || data.answer || "A"
-      }];
-      try {
-        await apiTry(["/api/admin/quizzes", "/api/quizzes"], { method: "POST", body: JSON.stringify(data) });
-        showMessage("Quiz added", "success");
-        quizForm.reset();
-        loadAdminStats();
-        loadAdminLists();
-      } catch (err) { showMessage(err.message); }
-    });
-  }
-
-  if (jobForm && !jobForm.dataset.ready) {
-    jobForm.dataset.ready = "1";
-    jobForm.addEventListener("submit", async e => {
-      e.preventDefault();
-      const data = normalizeFormData(jobForm);
-      const specValue = data.specialization_id || data.spec_id || document.getElementById("jobSpecialization")?.value || document.getElementById("jobSpec")?.value || "";
-      data.title = data.title || data.job_title || document.getElementById("jobTitle")?.value || "";
-      if (!specValue) return showMessage("Please choose a specialization for this job");
-      if (!data.title.trim()) return showMessage("Job title is required");
-      data.specialization_id = specValue;
-      data.spec_id = specValue;
-      data.specialization = specValue;
-      data.required_skills = data.required_skills || data.skills || document.getElementById("jobSkills")?.value || "";
-      data.skills = data.required_skills;
-      data.average_salary = data.average_salary || data.salary || document.getElementById("jobSalary")?.value || "";
-      data.salary = data.average_salary;
-      data.job_link = data.job_link || data.link || document.getElementById("jobLink")?.value || "";
-      data.link = data.job_link;
-      try {
-        await apiTry(["/api/jobs", "/api/admin/jobs"], { method: "POST", body: JSON.stringify(data) });
-        showMessage("Job added", "success");
-        jobForm.reset();
-        loadJobs();
-        loadAdminStats();
-        loadAdminLists();
-      } catch (err) { showMessage(err.message); }
-    });
-  }
-
-  if (certForm && !certForm.dataset.ready) {
-    certForm.dataset.ready = "1";
-    certForm.addEventListener("submit", async e => {
-      e.preventDefault();
-      const data = normalizeFormData(certForm);
-      data.spec_id = data.spec_id || data.specialization_id;
-      try {
-        await apiTry(["/api/certificates", "/api/admin/certificates"], { method: "POST", body: JSON.stringify(data) });
-        showMessage("Certificate added", "success");
-        certForm.reset();
-        loadAdminStats();
-        loadAdminLists();
-      } catch (err) { showMessage(err.message); }
-    });
-  }
-}
-
-async function loadAdminUsers() {
-  const box = document.getElementById("usersBox");
-  if (!box) return;
-
-  try {
-    const raw = await api("/api/admin/users");
-    const users = asArray(raw, "users");
-
-    box.innerHTML = users.map(u => `
-      <div class="card">
-        <h3>${u.name || ""}</h3>
-        <p>${u.email || ""}</p>
-        <p><b>Role:</b> ${u.role || "student"}</p>
-        <p><b>Status:</b> ${(u.banned || u.is_banned) ? `<span class="status-banned">Banned</span>` : `<span class="status-active">Active</span>`}</p>
-
-        ${u.role === "admin"
-          ? `<button onclick="makeStudent(${getId(u)})">Make Student</button>`
-          : `<button onclick="makeAdmin(${getId(u)})">Make Admin</button>`
-        }
-
-        ${(u.banned || u.is_banned)
-          ? `<button onclick="unbanUser(${getId(u)})">Unban</button>`
-          : `<button onclick="banUser(${getId(u)})" class="danger">Ban</button>`
-        }
-      </div>
-    `).join("");
-  } catch (err) {
-    showMessage(err.message);
-  }
-}
-
-async function makeAdmin(id) {
-  try {
-    await api(`/api/admin/users/${id}/make-admin`, { method: "PUT" });
-    loadAdminUsers();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-async function makeStudent(id) {
-  try {
-    await api(`/api/admin/users/${id}/make-student`, { method: "PUT" });
-    loadAdminUsers();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-async function banUser(id) {
-  if (!confirm("Ban this user?")) return;
-
-  try {
-    await api(`/api/admin/users/${id}/ban`, { method: "PUT" });
-    loadAdminUsers();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-async function unbanUser(id) {
-  try {
-    await api(`/api/admin/users/${id}/unban`, { method: "PUT" });
-    loadAdminUsers();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-
-function showAdminSection(sectionId) {
-  document.querySelectorAll(".admin-section").forEach(section => section.classList.remove("active"));
-  document.getElementById(sectionId)?.classList.add("active");
-  document.querySelectorAll(".admin-menu button").forEach(btn => btn.classList.remove("active"));
-  document.querySelector(`[data-section="${sectionId}"]`)?.classList.add("active");
-}
-
-async function loadAdminStats() {
-  const box = document.getElementById("adminStatsBox");
-  if (!box) return;
-  try {
-    const data = await api("/api/admin/stats");
-    box.innerHTML = `
-      <div class="stat-grid">
-        <div class="stat-card"><h3>Users</h3><p>${data.users || 0}</p></div>
-        <div class="stat-card"><h3>Specializations</h3><p>${data.specializations || 0}</p></div>
-        <div class="stat-card"><h3>Courses</h3><p>${data.courses || 0}</p></div>
-        <div class="stat-card"><h3>Jobs</h3><p>${data.jobs || 0}</p></div>
-        <div class="stat-card"><h3>Quizzes</h3><p>${data.quizzes || 0}</p></div>
-        <div class="stat-card"><h3>Certificates</h3><p>${data.certificates || 0}</p></div>
-      </div>`;
-  } catch (err) { showMessage(err.message); }
-}
-
-async function loadAdminLists() {
-  await Promise.allSettled([
-    loadAdminSpecializationsList(),
-    loadAdminCoursesList(),
-    loadAdminJobsList(),
-    loadAdminQuizzesList(),
-    loadAdminCertificatesList()
-  ]);
-}
-
-async function loadAdminSpecializationsList() {
-  const box = document.getElementById("adminSpecializationsList");
-  if (!box) return;
-  const specs = asArray(await api("/api/specializations"), "specializations");
-  box.innerHTML = specs.map(s => `<div class="card"><h3>${s.name || ""}</h3><p>${s.description || ""}</p><div class="admin-actions"><button onclick="editSpecialization(${getId(s)})">Edit</button><button class="danger" onclick="deleteItem('/api/specializations/${getId(s)}')">Delete</button></div></div>`).join("") || "<p>No specializations.</p>";
-}
-
-async function loadAdminCoursesList() {
-  const box = document.getElementById("adminCoursesList");
-  if (!box) return;
-  const courses = asArray(await api("/api/courses"), "courses");
-  box.innerHTML = courses.map(c => `<div class="card"><h3>${c.title || ""}</h3><p>${c.description || ""}</p><p><b>Level:</b> ${c.level_badge?.label || c.level || "Beginner"}</p><div class="admin-actions"><button onclick="editCourse(${getId(c)})">Edit</button><button class="danger" onclick="deleteItem('/api/courses/${getId(c)}')">Delete</button></div></div>`).join("") || "<p>No courses.</p>";
-}
-
-async function loadAdminJobsList() {
-  const box = document.getElementById("adminJobsList");
-  if (!box) return;
-  const jobs = asArray(await api("/api/jobs"), "jobs");
-  box.innerHTML = jobs.map(j => `<div class="card"><h3>${j.title || ""}</h3><p>${j.description || ""}</p><p><b>Skills:</b> ${j.required_skills || j.skills || ""}</p><p><b>Salary:</b> ${j.average_salary || j.salary || ""}</p><div class="admin-actions"><button onclick="editJob(${getId(j)})">Edit</button><button class="danger" onclick="deleteItem('/api/jobs/${getId(j)}')">Delete</button></div></div>`).join("") || "<p>No jobs.</p>";
-}
-
-async function loadAdminQuizzesList() {
-  const box = document.getElementById("adminQuizzesList");
-  if (!box) return;
-  const quizzes = asArray(await api("/api/quizzes"), "quizzes");
-  box.innerHTML = quizzes.map(q => `<div class="card"><h3>${q.title || ""}</h3><p>${q.description || ""}</p><p><b>Course ID:</b> ${q.course_id || ""}</p><div class="admin-actions"><button onclick="editQuiz(${getId(q)})">Edit</button><button class="danger" onclick="deleteItem('/api/quizzes/${getId(q)}')">Delete</button></div></div>`).join("") || "<p>No quizzes.</p>";
-}
-
-async function loadAdminCertificatesList() {
-  const box = document.getElementById("adminCertificatesList");
-  if (!box) return;
-  try {
-    const certs = asArray(await api("/api/certificates"), "certificates");
-    box.innerHTML = certs.map(c => `<div class="card"><h3>${c.name || ""}</h3><p>${c.description || ""}</p><p><b>Price:</b> ${c.price || ""}</p><div class="admin-actions"><button onclick="editCertificate(${getId(c)})">Edit</button><button class="danger" onclick="deleteItem('/api/certificates/${getId(c)}')">Delete</button></div></div>`).join("") || "<p>No certificates.</p>";
-  } catch { box.innerHTML = "<p>No certificates.</p>"; }
-}
-
-async function deleteItem(path) {
-  if (!confirm("Delete this item?")) return;
-  try {
-    await api(path, { method: "DELETE" });
-    showMessage("Deleted successfully", "success");
-    loadAdminStats();
-    loadAdminLists();
-    loadSpecializations();
-  } catch (err) { showMessage(err.message); }
-}
-
-async function putJson(path, data) {
-  await api(path, { method: "PUT", body: JSON.stringify(data) });
-  showMessage("Updated successfully", "success");
-  loadAdminStats();
-  loadAdminLists();
-  loadSpecializations();
-}
-
-async function editSpecialization(id) { const name = prompt("New specialization name:"); if (name) await putJson(`/api/specializations/${id}`, { name }); }
-async function editCourse(id) { const title = prompt("New course title:"); if (title) await putJson(`/api/courses/${id}`, { title }); }
-async function editJob(id) { const title = prompt("New job title:"); if (title) await putJson(`/api/jobs/${id}`, { title }); }
-async function editQuiz(id) { const title = prompt("New quiz title:"); if (title) await putJson(`/api/quizzes/${id}`, { title }); }
-async function editCertificate(id) { const name = prompt("New certificate name:"); if (name) await putJson(`/api/certificates/${id}`, { name }); }
-
-
-window.openCourse = openCourse;
-window.unenrollCourse = unenrollCourse;
-window.quizResultCircle = quizResultCircle;
+window.SQR_API = API;
 window.navbar = navbar;
 window.logout = logout;
 window.requireLogin = requireLogin;
 window.requireAdmin = requireAdmin;
 window.blockAdminFromStudentPages = blockAdminFromStudentPages;
+window.setupSignup = setupSignup;
+window.setupSignin = setupSignin;
+window.loadProfile = loadProfile;
+window.loadSpecializations = loadSpecializations;
+window.loadSpecializationDetails = loadSpecializationDetails;
+window.loadCourses = loadCourses;
+window.loadCourseDetails = loadCourseDetails;
+window.loadJobs = loadJobs;
+window.setupRecommendation = setupRecommendation;
+window.setupATS = setupATS;
+window.loadAdmin = loadAdmin;
+window.enrollCourse = enrollCourse;
+window.unenrollCourse = unenrollCourse;
 window.trackCourseOpened = trackCourseOpened;
-window.trackCourseWatched = trackCourseWatched;
-window.openCourseContent = openCourseContent;
-window.ensureProgressStyles = ensureProgressStyles;
-window.startQuiz = startQuiz;
-window.makeAdmin = makeAdmin;
-window.makeStudent = makeStudent;
-window.banUser = banUser;
-window.unbanUser = unbanUser;
-window.copyGeneratedResume = copyGeneratedResume;
-window.exportResumePdf = exportResumePdf;
-window.exportResumeDocx = exportResumeDocx;
-window.setupAtsChecker = setupAtsChecker;
-window.blockAdminFromStudentPages = blockAdminFromStudentPages;
+window.adminToggleBan = adminToggleBan;
+window.adminDelete = adminDelete;
 
-window.showAdminSection = showAdminSection;
-window.loadAdminStats = loadAdminStats;
-window.loadAdminLists = loadAdminLists;
-window.loadCoursesIntoAdminSelects = loadCoursesIntoAdminSelects;
-window.setupSelectSearch = setupSelectSearch;
-window.deleteItem = deleteItem;
-window.editSpecialization = editSpecialization;
-window.editCourse = editCourse;
-window.editJob = editJob;
-window.editQuiz = editQuiz;
-window.editCertificate = editCertificate;
-window.enrollSpecialization = enrollSpecialization;
-window.unenrollSpecialization = unenrollSpecialization;
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+else init();
