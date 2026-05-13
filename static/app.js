@@ -1,4 +1,4 @@
-(function () { "use strict"; const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0"]); const API = (() => { if (window.SQR_API_OVERRIDE) return String(window.SQR_API_OVERRIDE).replace(/\/$/, ""); const host = window.location.hostname; if (LOCAL_HOSTS.has(host)) return "http://127.0.0.1:5000"; if (host.includes("github.io") || host.includes("netlify") || host.includes("vercel")) { return "https://sqr-ba83.onrender.com"; } return window.location.origin || "https://sqr-ba83.onrender.com"; })(); const PAGES = { home: "gp.html", index: "gp.html", specializations: "Specialization.html", specialization: "Specialization.html", specializationDetails: "Specialization.html", courses: "Courses.html", course: "Courses.html", courseDetails: "Courses.html", quiz: "Quiz.html", quizzes: "Quiz.html", ats: "ATS.html", jobs: "jobs.html", recommendation: "recommendation.html", profile: "profile.html", admin: "admin.html", signin: "signin.html", login: "signin.html", signup: "signup.html", register: "signup.html" }; const PUBLIC_PAGES = new Set([ "", "index.html", "gp.html", "signin.html", "signup.html" ]); const STATE = { specializations: [], courses: [], jobs: [], certificates: [], quizzes: [], users: [], stats: {}, recommendationQuiz: null, busy: false }; function pageName() { return window.location.pathname.split("/").pop() || "index.html"; } function pageKey() { return pageName().toLowerCase(); } function isPublicPage() { return PUBLIC_PAGES.has(pageKey()); } function route(name, params) { const base = PAGES[name] || name || "#"; const query = new URLSearchParams(); Object.entries(params || {}).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") query.set(key, value); }); const qs = query.toString(); return qs ? base + "?" + qs : base; } function go(url) { if (!url || url === "#") return; window.location.href = url; } function qs(selector, root) { return (root || document).querySelector(selector); } function qsa(selector, root) { return Array.from((root || document).querySelectorAll(selector)); } function byId(name) { return document.getElementById(name); } function firstElement(selectors, root) { for (const selector of selectors) { const found = qs(selector, root); if (found) return found; } return null; } function clean(value) { return String(value === undefined || value === null ? "" : value).trim(); } function lower(value) { return clean(value).toLowerCase(); } function number(value, fallback) { const n = Number(value); return Number.isFinite(n) ? n : fallback || 0; } function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); } function percent(value) { return clamp(Math.round(number(value, 0)), 0, 100); } function escapeHtml(value) { return String(value === undefined || value === null ? "" : value) .replace(/&/g, "&amp;") .replace(/</g, "&lt;") .replace(/>/g, "&gt;") .replace(/\"/g, "&quot;") .replace(/'/g, "&#039;"); } function escapeAttr(value) { return escapeHtml(value).replace(/`/g, "&#096;"); } function pick(object, keys, fallback) { for (const key of keys) { if (object && object[key] !== undefined && object[key] !== null && object[key] !== "") { return object[key]; }
+(function () { "use strict"; const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0"]); const API = (() => { if (window.SQR_API_OVERRIDE) return String(window.SQR_API_OVERRIDE).replace(/\/$/, ""); const host = window.location.hostname; if (LOCAL_HOSTS.has(host)) return "http://127.0.0.1:5000"; if (host.includes("github.io") || host.includes("netlify") || host.includes("vercel")) { return "https://sqr-ba83.onrender.com"; } return window.location.origin || "https://sqr-ba83.onrender.com"; })(); const PAGES = { home: "gp.html", index: "gp.html", specializations: "Specialization.html", specialization: "Specialization.html", specializationDetails: "Specialization.html", courses: "Courses.html", course: "Courses.html", courseDetails: "Courses.html", quiz: "Quiz.html", quizzes: "Quiz.html", ats: "ATS.html", jobs: "jobs.html", jobDetails: "JobDetails.html", recommendation: "recommendation.html", profile: "profile.html", admin: "admin.html", signin: "signin.html", login: "signin.html", signup: "signup.html", register: "signup.html" }; const PUBLIC_PAGES = new Set([ "", "index.html", "gp.html", "signin.html", "signup.html" ]); const STATE = { specializations: [], courses: [], jobs: [], certificates: [], quizzes: [], users: [], stats: {}, recommendationQuiz: null, busy: false }; function pageName() { return window.location.pathname.split("/").pop() || "index.html"; } function pageKey() { return pageName().toLowerCase(); } function isPublicPage() { return PUBLIC_PAGES.has(pageKey()); } function route(name, params) { const base = PAGES[name] || name || "#"; const query = new URLSearchParams(); Object.entries(params || {}).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") query.set(key, value); }); const qs = query.toString(); return qs ? base + "?" + qs : base; } function go(url) { if (!url || url === "#") return; window.location.href = url; } function qs(selector, root) { return (root || document).querySelector(selector); } function qsa(selector, root) { return Array.from((root || document).querySelectorAll(selector)); } function byId(name) { return document.getElementById(name); } function firstElement(selectors, root) { for (const selector of selectors) { const found = qs(selector, root); if (found) return found; } return null; } function clean(value) { return String(value === undefined || value === null ? "" : value).trim(); } function lower(value) { return clean(value).toLowerCase(); } function number(value, fallback) { const n = Number(value); return Number.isFinite(n) ? n : fallback || 0; } function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); } function percent(value) { return clamp(Math.round(number(value, 0)), 0, 100); } function escapeHtml(value) { return String(value === undefined || value === null ? "" : value) .replace(/&/g, "&amp;") .replace(/</g, "&lt;") .replace(/>/g, "&gt;") .replace(/\"/g, "&quot;") .replace(/'/g, "&#039;"); } function escapeAttr(value) { return escapeHtml(value).replace(/`/g, "&#096;"); } function pick(object, keys, fallback) { for (const key of keys) { if (object && object[key] !== undefined && object[key] !== null && object[key] !== "") { return object[key]; }
     }
     return fallback === undefined ? "" : fallback;
   }
@@ -288,14 +288,54 @@
     const user = currentUser();
     return roleOf(user) === "admin" && modeOf(user) !== "student";
   }
+  function ensureNavbarFixStyles() {
+    if (byId("sqr-navbar-fix-styles")) return;
+    const style = document.createElement("style");
+    style.id = "sqr-navbar-fix-styles";
+    style.textContent = `
+      .sqr-navbar{position:sticky!important;top:0!important;z-index:9999!important;display:grid!important;grid-template-columns:180px minmax(420px,1fr) 280px!important;align-items:center!important;gap:18px!important;width:100%!important;min-height:72px!important;padding:12px 30px!important;margin:0!important;background:rgba(4,10,28,.96)!important;border-bottom:1px solid rgba(148,163,184,.16)!important;box-shadow:0 12px 34px rgba(0,0,0,.22)!important;box-sizing:border-box!important}
+      .sqr-navbar .brand{display:flex!important;align-items:center!important;justify-content:flex-start!important;width:auto!important;height:auto!important;min-height:0!important;padding:0!important;margin:0!important;text-decoration:none!important;font-size:28px!important;font-weight:900!important;letter-spacing:.08em!important;line-height:1!important;color:#f8fafc!important}
+      .sqr-navbar .brand strong{display:block!important;font-size:28px!important;line-height:1!important;margin:0!important;color:#f8fafc!important}
+      .sqr-navbar .brand span{display:none!important}
+      .sqr-navbar .nav-links{display:flex!important;align-items:center!important;justify-content:center!important;gap:10px!important;flex-wrap:wrap!important;margin:0!important;padding:0!important;width:auto!important}
+      .sqr-navbar .nav-links a{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:42px!important;padding:10px 17px!important;border-radius:999px!important;text-decoration:none!important;font-size:15px!important;font-weight:800!important;line-height:1!important;color:#cbd5e1!important;white-space:nowrap!important}
+      .sqr-navbar .nav-links a.active{background:rgba(148,163,184,.14)!important;color:#fff!important}
+      .sqr-navbar .nav-actions{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:10px!important;margin:0!important;padding:0!important;width:auto!important}
+      .sqr-navbar .nav-actions .btn,.sqr-navbar .nav-actions a.btn,.sqr-navbar .nav-actions button.btn{min-height:42px!important;padding:10px 18px!important;border-radius:999px!important;font-size:15px!important;font-weight:900!important;white-space:nowrap!important}
+      .sqr-navbar .nav-user{max-width:110px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;color:#e5e7eb!important;font-weight:800!important}
+      .sqr-navbar .nav-toggle{display:none!important}
+      @media(max-width:980px){.sqr-navbar{grid-template-columns:1fr auto!important;padding:12px 18px!important}.sqr-navbar .nav-toggle{display:inline-flex!important}.sqr-navbar .nav-links,.sqr-navbar .nav-actions{grid-column:1/-1!important;display:none!important;justify-content:flex-start!important}.sqr-navbar.open .nav-links,.sqr-navbar.open .nav-actions{display:flex!important}.sqr-navbar .nav-links a{font-size:14px!important;padding:10px 14px!important}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensurePageFixStyles() {
+    if (byId("sqr-page-fix-styles")) return;
+    const style = document.createElement("style");
+    style.id = "sqr-page-fix-styles";
+    style.textContent = `
+      .sqr-page-title{margin:36px auto 18px;max-width:1180px;padding:0 18px}.sqr-page-title h1{font-size:clamp(32px,4vw,56px);line-height:1.02;margin:0 0 10px;font-weight:950;color:#f8fafc}.sqr-page-title p{max-width:760px;color:#94a3b8;font-size:18px;line-height:1.7;margin:0}
+      .sqr-shell{max-width:1180px;margin:0 auto 50px;padding:0 18px}.sqr-grid{display:grid;gap:22px}.sqr-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.sqr-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+      .ats-layout{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:24px;align-items:start}.ats-panel,.admin-panel,.job-detail-card{background:rgba(15,23,42,.88);border:1px solid rgba(148,163,184,.18);border-radius:26px;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.22);backdrop-filter:blur(14px)}
+      .ats-panel h2,.admin-panel h2{margin:0 0 10px;font-size:26px;color:#f8fafc}.ats-panel p,.admin-panel p{color:#94a3b8;line-height:1.65}.ats-panel form,.admin-panel form{display:grid;gap:14px}.ats-panel label,.admin-panel label{display:grid;gap:8px;color:#e5e7eb;font-weight:800}.ats-panel input,.ats-panel textarea,.admin-panel input,.admin-panel textarea,.admin-panel select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);border-radius:16px;background:rgba(2,6,23,.82);color:#f8fafc;padding:13px 15px;outline:none}.ats-panel textarea,.admin-panel textarea{min-height:110px;resize:vertical}.ats-upload{border:1px dashed rgba(59,130,246,.55);border-radius:20px;padding:18px;background:rgba(37,99,235,.08)}
+      .ats-result,.result-card{margin-top:20px}.result-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.section-score-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.section-score{padding:13px;border-radius:16px;background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.14)}.resume-output{min-height:360px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap}.summary-box{padding:16px;border-radius:18px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);margin:14px 0}
+      .admin-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}.admin-tab-btn{border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.75);color:#dbeafe;border-radius:999px;padding:11px 16px;font-weight:900;cursor:pointer}.admin-tab-btn.active{background:#2563eb;color:#fff;border-color:#2563eb}.admin-section{display:none}.admin-section.active{display:block}.admin-main-grid{display:grid;grid-template-columns:1fr;gap:22px}.admin-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.admin-form-grid .full{grid-column:1/-1}.stats-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.stat-card{padding:20px;border-radius:22px;background:linear-gradient(135deg,rgba(37,99,235,.18),rgba(16,185,129,.1));border:1px solid rgba(148,163,184,.18)}.stat-card strong{display:block;font-size:34px;color:#fff}.stat-card span{color:#94a3b8;font-weight:800}
+      .job-card{cursor:pointer}.job-detail-hero{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;align-items:start}.detail-list{display:grid;gap:14px}.detail-list article{padding:16px;border-radius:18px;background:rgba(15,23,42,.65);border:1px solid rgba(148,163,184,.16)}
+      .course-video{width:100%;border-radius:22px;border:1px solid rgba(148,163,184,.2);background:#020617}.card-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn-danger{background:#ef4444!important;color:#fff!important;border-color:#ef4444!important}.btn-small{padding:8px 12px!important;font-size:13px!important}.error-card,.empty-state,.loading-card{grid-column:1/-1;padding:24px;border-radius:22px;background:rgba(15,23,42,.78);border:1px solid rgba(148,163,184,.16);color:#e5e7eb}.mini-card{padding:18px;border-radius:20px;background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.15)}
+      @media(max-width:900px){.ats-layout,.sqr-grid.two,.sqr-grid.three,.admin-form-grid,.stats-grid,.job-detail-hero{grid-template-columns:1fr!important}.ats-panel,.admin-panel{padding:18px}.sqr-page-title{margin-top:24px}.section-score-grid{grid-template-columns:1fr}}
+    `;
+    document.head.appendChild(style);
+  }
+
   function navbar() {
+    ensureNavbarFixStyles();
     const existing = qs(".navbar, .sqr-navbar");
     if (existing) existing.remove();
     const user = currentUser();
     const logged = Boolean(token());
     const adminMode = isAdminMode();
     const links = adminMode
-      ? [["Admin", route("admin")], ["Profile", route("profile")]]
+      ? [["Admin", route("admin")]]
       : [
           ["Home", route("home")],
           ["Specializations", route("specializations")],
@@ -308,7 +348,7 @@
     const nav = document.createElement("header");
     nav.className = "navbar sqr-navbar";
     nav.innerHTML = `
-      <a class="brand" href="${route("home")}"><strong>SQR</strong><span>Skill Quest Road</span></a>
+      <a class="brand" href="${route("home")}"><strong>SQR</strong></a>
       <button type="button" class="nav-toggle" aria-label="Menu">☰</button>
       <nav class="nav-links">
         ${links.map(([label, href]) => `<a class="${pageKey() === href.toLowerCase() ? "active" : ""}" href="${escapeAttr(href)}">${escapeHtml(label)}</a>`).join("")}
@@ -345,7 +385,7 @@
     const user = currentUser();
     if (!user) return;
     if (roleOf(user) !== "admin" || modeOf(user) === "student") return;
-    const allowed = new Set(["admin.html", "profile.html", "signin.html", "signup.html"]);
+    const allowed = new Set(["admin.html", "signin.html", "signup.html"]);
     if (!allowed.has(pageKey())) go(route("admin"));
   }
   function passwordRules(password, confirmValue) {
@@ -519,6 +559,7 @@
     `;
   }
   async function loadProfile() {
+    if (pageKey() === "profile.html" && isAdminMode()) { go(route("admin")); return; }
     const box = byId("profileBox") || byId("profile") || byId("profileCard");
     const form = byId("profileForm") || qs("form[data-form='profile']");
     if (!box && !form) return;
@@ -618,6 +659,28 @@
       </article>
     `;
   }
+
+  function localUserKey(type) {
+    const user = currentUser() || {};
+    return "sqr_" + type + "_" + (user.id || user.user_id || user.email || "guest");
+  }
+  function localSet(type) {
+    try { return new Set(JSON.parse(localStorage.getItem(localUserKey(type)) || "[]")); }
+    catch (_) { return new Set(); }
+  }
+  function saveLocalSet(type, set) {
+    localStorage.setItem(localUserKey(type), JSON.stringify(Array.from(set)));
+  }
+  function markLocal(type, id, value) {
+    if (!id) return;
+    const set = localSet(type);
+    if (value) set.add(String(id)); else set.delete(String(id));
+    saveLocalSet(type, set);
+  }
+  function hasLocal(type, id) {
+    return id ? localSet(type).has(String(id)) : false;
+  }
+
   async function getSpecializations() {
     const result = await apiAny(["/api/specializations", "/api/specialization", "/api/admin/specializations"], {
       redirectOnUnauthorized: false,
@@ -680,8 +743,15 @@
     `;
   }
   async function loadSpecializations() {
+    const selectedSid = param("id") || param("specialization_id") || param("spec_id");
+    const hasDetailsBox = Boolean(byId("specializationDetails") || byId("specializationDetail") || byId("detailsBox"));
     const box = byId("specializationsBox") || byId("specializationBox") || byId("specializationsList") || byId("specializations");
     if (!box) return;
+    if (selectedSid && !hasDetailsBox) {
+      box.classList.remove("grid", "cards-3");
+      box.innerHTML = `<div class="loading-card">Loading specialization details...</div>`;
+      return;
+    }
     try {
       box.classList.add("grid", "cards-3");
       box.innerHTML = `<div class="loading-card">Loading specializations...</div>`;
@@ -724,15 +794,29 @@
   }
   async function loadSpecializationDetails() {
     const sid = param("id") || param("specialization_id") || param("spec_id");
-    const box = byId("specializationDetails") || byId("specializationDetail") || byId("detailsBox");
+    const fallbackBox = byId("specializationsBox") || byId("specializationBox") || byId("specializationsList") || byId("specializations");
+    const box = byId("specializationDetails") || byId("specializationDetail") || byId("detailsBox") || fallbackBox;
     if (!box || !sid) return;
     try {
+      box.classList.remove("grid", "cards-3");
       box.innerHTML = `<div class="loading-card">Loading details...</div>`;
-      const result = await apiAny([`/api/specializations/${encodeURIComponent(sid)}`, `/api/specialization/${encodeURIComponent(sid)}`], {
-        redirectOnUnauthorized: false,
-        silentUnauthorized: true
-      });
-      const spec = result.specialization || result.item || result.data || result;
+      let result = {};
+      let spec = null;
+      try {
+        result = await apiAny([`/api/specializations/${encodeURIComponent(sid)}`, `/api/specialization/${encodeURIComponent(sid)}`], {
+          redirectOnUnauthorized: false,
+          silentUnauthorized: true
+        });
+        spec = result.specialization || result.item || result.data || result;
+      } catch (_) {
+        result = {};
+      }
+      if (!spec || !itemId(spec)) {
+        const allSpecs = STATE.specializations.length ? STATE.specializations : await getSpecializations();
+        STATE.specializations = allSpecs;
+        spec = allSpecs.find((item) => String(itemId(item)) === String(sid)) || null;
+      }
+      if (!spec) throw new Error("Specialization not found");
       const courses = result.courses || await getCourses("specialization_id=" + encodeURIComponent(sid));
       const jobs = result.jobs || [];
       const certs = result.certificates || result.certifications || [];
@@ -766,7 +850,7 @@
     const desc = pick(course, ["description", "summary"], "Open this course to auto-enroll and track progress.");
     const level = pick(course, ["level", "difficulty"], "");
     const completed = Boolean(course.completed || course.is_completed || course.done || percent(course.progress) >= 100);
-    const enrolled = Boolean(course.enrolled || course.is_enrolled || course.enrollment_id);
+    const enrolled = Boolean(course.enrolled || course.is_enrolled || course.enrollment_id || hasLocal("course_enrollments", cid));
     const p = pick(course, ["progress", "percentage", "completed_percent"], completed ? 100 : 0);
     return `
       <article class="card course-card clickable" data-link="${route("courses", { id: cid })}">
@@ -785,8 +869,15 @@
     `;
   }
   async function loadCourses() {
+    const selectedCid = param("id") || param("course_id");
+    const hasDetailsBox = Boolean(byId("courseDetails") || byId("courseDetail") || byId("courseBox") || byId("selectedCourse"));
     const box = byId("coursesBox") || byId("coursesList") || byId("courses");
     if (!box) return;
+    if (selectedCid && !hasDetailsBox) {
+      box.classList.remove("grid", "cards-3");
+      box.innerHTML = `<div class="loading-card">Loading course details...</div>`;
+      return;
+    }
     const query = new URLSearchParams();
     const sid = param("specialization_id") || param("spec_id");
     if (sid) query.set("specialization_id", sid);
@@ -801,39 +892,73 @@
       }
       box.innerHTML = list.map(courseCard).join("");
     } catch (err) {
-      box.innerHTML = `<div class="error-card">Could not load courses.</div>`;
+      box.innerHTML = `<div class="error-card">Could not load courses. ${escapeHtml(err.message || "")}</div>`;
+    }
+  }
+  async function getCourseById(courseId) {
+    let result = {};
+    let course = null;
+    try {
+      result = await apiAny([
+        `/api/courses/${encodeURIComponent(courseId)}`,
+        `/api/course/${encodeURIComponent(courseId)}`,
+        `/api/course-details/${encodeURIComponent(courseId)}`
+      ], { redirectOnUnauthorized: false, silentUnauthorized: true });
+      course = result.course || result.item || result.data || result;
+    } catch (_) {
+      result = {};
+    }
+    if (!course || !itemId(course)) {
+      const allCourses = STATE.courses.length ? STATE.courses : await getCourses("");
+      STATE.courses = allCourses;
+      course = allCourses.find((item) => String(itemId(item)) === String(courseId)) || null;
+    }
+    return { result, course };
+  }
+  async function getCourseQuizzes(courseId, result, course) {
+    let quizzes = result.quizzes || result.quiz || course.quizzes || course.quiz || [];
+    if (Array.isArray(quizzes) && quizzes.length) return quizzes;
+    try {
+      quizzes = await getQuizzes("course_id=" + encodeURIComponent(courseId));
+      return quizzes.filter((q) => !pick(q, ["course_id"], "") || String(pick(q, ["course_id"], "")) === String(courseId));
+    } catch (_) {
+      return [];
     }
   }
   async function loadCourseDetails() {
     const cid = param("id") || param("course_id");
-    const box = byId("courseDetails") || byId("courseDetail") || byId("courseBox") || byId("selectedCourse");
+    const fallbackBox = byId("coursesBox") || byId("coursesList") || byId("courses");
+    const box = byId("courseDetails") || byId("courseDetail") || byId("courseBox") || byId("selectedCourse") || fallbackBox;
     if (!box || !cid) return;
     try {
+      box.classList.remove("grid", "cards-3");
       box.innerHTML = `<div class="loading-card">Loading course...</div>`;
-      const result = await apiAny([`/api/courses/${encodeURIComponent(cid)}`, `/api/course/${encodeURIComponent(cid)}`], {
-        redirectOnUnauthorized: false,
-        silentUnauthorized: true
-      });
-      const course = result.course || result.item || result.data || result;
-      if (!course || !Object.keys(course).length) {
+      const found = await getCourseById(cid);
+      const result = found.result || {};
+      const course = found.course;
+      if (!course || !itemId(course)) {
         box.innerHTML = `<div class="empty-state">Course not found.</div>`;
         return;
       }
       if (token()) await autoEnrollCourse(cid);
-      const linkUrl = asset(pick(course, ["link", "url", "course_url", "external_url"], ""));
+      const linkUrl = asset(pick(course, ["link", "url", "course_url", "external_url", "course_link"], ""));
       const videoUrl = asset(pick(course, ["video", "video_url", "video_path"], ""));
-      const quizzes = result.quizzes || result.quiz || course.quizzes || course.quiz || [];
+      const quizzes = await getCourseQuizzes(cid, result, course);
+      const enrolled = Boolean(course.enrolled || course.is_enrolled || course.enrollment_id || hasLocal("course_enrollments", cid));
       box.innerHTML = `
         <section class="detail-hero card">
           ${media(course, "detail-media")}
           <div class="detail-content">
             <span class="eyebrow">Course</span>
             <h1>${escapeHtml(pick(course, ["title", "name", "course_name"], "Course"))}</h1>
+            <div class="chip-row">${badge(pick(course, ["level", "difficulty"], ""), "badge level-badge")} ${enrolled ? badge("Enrolled", "badge badge-success") : ""}</div>
             <p>${escapeHtml(pick(course, ["description", "summary"], ""))}</p>
-            ${token() ? progressBar(pick(course, ["progress", "percentage", "completed_percent"], 0), "Course Progress") : ""}
+            ${token() ? progressBar(pick(course, ["progress", "percentage", "completed_percent"], hasLocal("course_opened", cid) ? 50 : 0), "Course Progress") : ""}
             <div class="card-actions">
               ${linkUrl ? link("Open Link", linkUrl, "btn btn-primary", `target="_blank" rel="noopener" data-track-course="${escapeAttr(cid)}"`) : ""}
-              ${token() ? button("Unenroll", "btn btn-danger", `data-unenroll-course="${escapeAttr(cid)}"`) : link("Sign in to enroll", route("signin"), "btn btn-soft")}
+              ${!linkUrl && !videoUrl ? `<span class="badge badge-soft">No course media/link added yet</span>` : ""}
+              ${token() ? enrolled ? button("Unenroll", "btn btn-danger", `data-unenroll-course="${escapeAttr(cid)}"`) : button("Enroll", "btn btn-primary", `data-enroll-course="${escapeAttr(cid)}"`) : link("Sign in to enroll", route("signin"), "btn btn-soft")}
+              ${link("Back to Courses", route("courses"), "btn btn-soft")}
             </div>
           </div>
         </section>
@@ -841,8 +966,9 @@
         ${renderQuizSection(quizzes, cid)}
       `;
       bindQuizForms();
+      bindCourseMediaTracking();
     } catch (err) {
-      box.innerHTML = `<div class="error-card">Could not load course.</div>`;
+      box.innerHTML = `<div class="error-card">Could not load course. ${escapeHtml(err.message || "")}</div>`;
     }
   }
   async function enrollCourse(courseId, silent) {
@@ -850,19 +976,35 @@
     try {
       await apiAny([
         `/api/courses/${encodeURIComponent(courseId)}/enroll`,
+        `/api/course/${encodeURIComponent(courseId)}/enroll`,
+        `/api/courses/${encodeURIComponent(courseId)}/enrollment`,
+        `/api/course/${encodeURIComponent(courseId)}/enrollment`,
+        `/api/enroll/course/${encodeURIComponent(courseId)}`,
         `/api/enrollments/course/${encodeURIComponent(courseId)}`,
         `/api/enroll/${encodeURIComponent(courseId)}`,
-        "/api/course-enrollments"
+        "/api/course-enrollments",
+        "/api/course_enrollments",
+        "/api/enroll-course"
       ], {
         method: "POST",
-        body: JSON.stringify({ course_id: courseId }),
+        body: JSON.stringify({ course_id: courseId, id: courseId }),
         action: !silent,
-        silentUnauthorized: Boolean(silent)
+        silentUnauthorized: Boolean(silent),
+        redirectOnUnauthorized: !silent
       });
+      markLocal("course_enrollments", courseId, true);
       if (!silent) showMessage("Enrolled successfully.", "success");
       if (!silent) await refreshCurrentPage();
       return true;
     } catch (err) {
+      if (err && [404, 405].includes(err.status)) {
+        markLocal("course_enrollments", courseId, true);
+        if (!silent) {
+          showMessage("Enrolled on this browser. Backend enrollment route was not found, so add the route in SQR.py for database saving.", "error");
+          await refreshCurrentPage();
+        }
+        return true;
+      }
       if (!silent) showMessage(err.data && err.data.error || err.message || "Could not enroll.", "error");
       return false;
     }
@@ -872,17 +1014,30 @@
     try {
       await apiAny([
         `/api/courses/${encodeURIComponent(courseId)}/enroll`,
+        `/api/course/${encodeURIComponent(courseId)}/enroll`,
+        `/api/courses/${encodeURIComponent(courseId)}/enrollment`,
+        `/api/course/${encodeURIComponent(courseId)}/enrollment`,
+        `/api/enroll/course/${encodeURIComponent(courseId)}`,
         `/api/enrollments/course/${encodeURIComponent(courseId)}`,
         `/api/enroll/${encodeURIComponent(courseId)}`,
-        "/api/course-enrollments"
+        "/api/course-enrollments",
+        "/api/course_enrollments",
+        "/api/enroll-course"
       ], {
         method: "DELETE",
-        body: JSON.stringify({ course_id: courseId }),
+        body: JSON.stringify({ course_id: courseId, id: courseId }),
         action: true
       });
+      markLocal("course_enrollments", courseId, false);
       showMessage("Unenrolled successfully.", "success");
       await refreshCurrentPage();
     } catch (err) {
+      if (err && [404, 405].includes(err.status)) {
+        markLocal("course_enrollments", courseId, false);
+        showMessage("Unenrolled on this browser. Backend route was not found, so database may not update.", "error");
+        await refreshCurrentPage();
+        return;
+      }
       showMessage(err.data && err.data.error || err.message || "Could not unenroll.", "error");
     }
   }
@@ -927,6 +1082,8 @@
   }
   async function trackCourseOpened(courseId, silent) {
     if (!courseId || !token()) return false;
+    markLocal("course_opened", courseId, true);
+    markLocal("course_enrollments", courseId, true);
     try {
       await apiAny([
         `/api/courses/${encodeURIComponent(courseId)}/open`,
@@ -1092,25 +1249,55 @@
     }
   }
   function jobCard(job) {
+    const jid = itemId(job);
     const title = pick(job, ["title", "name", "job_title"], "Job");
     const desc = pick(job, ["description", "summary"], "");
     const salary = pick(job, ["salary", "average_salary"], "");
     const spec = pick(job, ["specialization", "specialization_name"], "");
     const linkUrl = pick(job, ["link", "url", "job_url"], "");
     return `
-      <article class="card job-card">
+      <article class="card job-card clickable" data-link="${route("jobDetails", { id: jid })}">
         <div class="card-body">
           <div class="card-title-row"><h2>${escapeHtml(title)}</h2></div>
           <div class="chip-row">${spec ? badge(spec, "badge badge-soft") : ""}${salary ? badge(salary, "badge") : ""}</div>
           <p>${escapeHtml(desc)}</p>
-          ${skillsHtml(job)}
-          <div class="card-actions">${linkUrl ? link("Open Job", asset(linkUrl), "btn btn-primary", "target=\"_blank\" rel=\"noopener\"") : ""}</div>
+          <div class="card-actions">
+            ${button("View Details", "btn btn-primary", `data-no-card-click data-open-job="${escapeAttr(jid)}"`)}
+            ${linkUrl ? link("Open Job", asset(linkUrl), "btn btn-soft", "target=\"_blank\" rel=\"noopener\" data-no-card-click") : ""}
+          </div>
         </div>
       </article>
     `;
   }
+  async function getJobById(jobId) {
+    let result = {};
+    let job = null;
+    try {
+      result = await apiAny([
+        `/api/jobs/${encodeURIComponent(jobId)}`,
+        `/api/job/${encodeURIComponent(jobId)}`,
+        `/api/job-details/${encodeURIComponent(jobId)}`
+      ], { redirectOnUnauthorized: false, silentUnauthorized: true });
+      job = result.job || result.item || result.data || result;
+    } catch (_) {
+      result = {};
+    }
+    if (!job || !itemId(job)) {
+      const allJobs = STATE.jobs.length ? STATE.jobs : await getJobs();
+      STATE.jobs = allJobs;
+      job = allJobs.find((item) => String(itemId(item)) === String(jobId)) || null;
+    }
+    return job;
+  }
   async function loadJobs() {
+    const selectedJid = param("id") || param("job_id");
+    const detailsBox = byId("jobDetails") || byId("jobDetail") || byId("jobBox") || byId("selectedJob");
     const box = byId("jobsBox") || byId("jobsList") || byId("jobs");
+    if (selectedJid && !detailsBox && box) {
+      box.classList.remove("grid", "cards-3");
+      box.innerHTML = `<div class="loading-card">Loading job details...</div>`;
+      return;
+    }
     if (!box) return;
     try {
       box.classList.add("grid", "cards-3");
@@ -1124,6 +1311,50 @@
       box.innerHTML = list.map(jobCard).join("");
     } catch (err) {
       box.innerHTML = `<div class="error-card">Could not load jobs.</div>`;
+    }
+  }
+  async function loadJobDetails() {
+    const jid = param("id") || param("job_id");
+    const fallbackBox = byId("jobsBox") || byId("jobsList") || byId("jobs");
+    const box = byId("jobDetails") || byId("jobDetail") || byId("jobBox") || byId("selectedJob") || fallbackBox;
+    if (!box || !jid) return;
+    try {
+      box.classList.remove("grid", "cards-3");
+      box.innerHTML = `<div class="loading-card">Loading job...</div>`;
+      const job = await getJobById(jid);
+      if (!job || !itemId(job)) {
+        box.innerHTML = `<div class="empty-state">Job not found.</div>`;
+        return;
+      }
+      const title = pick(job, ["title", "name", "job_title"], "Job");
+      const desc = pick(job, ["description", "summary"], "");
+      const salary = pick(job, ["salary", "average_salary"], "");
+      const spec = pick(job, ["specialization", "specialization_name"], "");
+      const linkUrl = asset(pick(job, ["link", "url", "job_url"], ""));
+      const skills = asArray(pick(job, ["skills", "required_skills", "skill_list"], []));
+      box.innerHTML = `
+        <section class="job-detail-card">
+          <div class="job-detail-hero">
+            <div>
+              <span class="eyebrow">Job Details</span>
+              <h1>${escapeHtml(title)}</h1>
+              <div class="chip-row">${spec ? badge(spec, "badge badge-soft") : ""}${salary ? badge(salary, "badge") : ""}</div>
+              <p>${escapeHtml(desc || "No description added yet.")}</p>
+              <div class="card-actions">
+                ${linkUrl ? link("Apply / Open Job", linkUrl, "btn btn-primary", "target=\"_blank\" rel=\"noopener\"") : ""}
+                ${link("Back to Jobs", route("jobs"), "btn btn-soft")}
+              </div>
+            </div>
+            <aside class="detail-list">
+              <article><h3>Specialization</h3><p>${escapeHtml(spec || "Not linked yet")}</p></article>
+              <article><h3>Average Salary</h3><p>${escapeHtml(salary || "Not specified")}</p></article>
+            </aside>
+          </div>
+          ${skills.length ? `<section class="detail-section"><h2>Required Skills</h2><div class="chip-row">${skills.map((skill) => badge(skill, "badge badge-soft")).join("")}</div></section>` : ""}
+        </section>
+      `;
+    } catch (err) {
+      box.innerHTML = `<div class="error-card">Could not load job details.</div>`;
     }
   }
   async function loadRecommendationQuiz() {
@@ -1380,18 +1611,41 @@
       return `<option value="${escapeAttr(value)}" ${String(value) === String(selected || "") ? "selected" : ""}>${escapeHtml(title)}</option>`;
     }).join("");
   }
+
+  function setupAdminTabs() {
+    const buttons = qsa("[data-admin-tab]");
+    const sections = qsa(".admin-section[id]");
+    if (!buttons.length || !sections.length) return;
+    const activate = (name) => {
+      buttons.forEach((btn) => btn.classList.toggle("active", btn.dataset.adminTab === name));
+      sections.forEach((section) => section.classList.toggle("active", section.id === name));
+      try { localStorage.setItem("sqr_admin_tab", name); } catch (_) {}
+    };
+    buttons.forEach((btn) => {
+      if (btn.dataset.boundAdminTab) return;
+      btn.dataset.boundAdminTab = "1";
+      btn.addEventListener("click", () => activate(btn.dataset.adminTab));
+    });
+    const saved = localStorage.getItem("sqr_admin_tab");
+    const first = buttons[0] && buttons[0].dataset.adminTab;
+    activate(saved && byId(saved) ? saved : first);
+  }
+
   async function loadAdmin() {
     const adminRoot = byId("adminApp") || byId("adminDashboard") || (pageKey() === "admin.html" ? qs("main, .container, body") : null);
     if (!adminRoot) return;
     if (!requireAdmin()) return;
+    setupAdminTabs();
     try {
       await Promise.allSettled([
         loadAdminStats(),
         loadAdminCollections()
       ]);
       setupAdminForms();
+      setupAdminTabs();
     } catch (_) {
       setupAdminForms();
+      setupAdminTabs();
     }
   }
   async function loadAdminStats() {
@@ -1411,7 +1665,16 @@
       box.classList.add("grid", "cards-3", "stats-grid");
       box.innerHTML = entries.map(([label, value]) => `<article class="stat-card"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></article>`).join("");
     } catch (err) {
-      box.innerHTML = `<div class="error-card">Could not load statistics.</div>`;
+      const entries = [
+        ["Users", STATE.users.length || 0],
+        ["Specializations", STATE.specializations.length || 0],
+        ["Courses", STATE.courses.length || 0],
+        ["Quizzes", STATE.quizzes.length || 0],
+        ["Jobs", STATE.jobs.length || 0],
+        ["Certificates", STATE.certificates.length || 0]
+      ];
+      box.classList.add("grid", "cards-3", "stats-grid");
+      box.innerHTML = entries.map(([label, value]) => `<article class="stat-card"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></article>`).join("");
     }
   }
   async function loadAdminCollections() {
@@ -1662,6 +1925,12 @@
         await openCourse(openCourseBtn.dataset.openCourse);
         return;
       }
+      const openJobBtn = event.target.closest("[data-open-job]");
+      if (openJobBtn) {
+        event.preventDefault();
+        go(route("jobDetails", { id: openJobBtn.dataset.openJob }));
+        return;
+      }
       const enrollCourseBtn = event.target.closest("[data-enroll-course]");
       if (enrollCourseBtn) {
         event.preventDefault();
@@ -1735,6 +2004,7 @@
     loadCourseDetails();
     loadQuizPage();
     loadJobs();
+    loadJobDetails();
     setupRecommendation();
     setupATS();
     loadAdmin();
@@ -1743,6 +2013,7 @@
     markRequiredFields(document);
   }
   function boot() {
+    ensurePageFixStyles();
     bindGlobalClicks();
     if (!qs(".navbar, .sqr-navbar")) navbar();
     autoBootPage();
@@ -1769,6 +2040,7 @@
     loadCourseDetails,
     loadQuizPage,
     loadJobs,
+    loadJobDetails,
     setupRecommendation,
     setupATS,
     loadAdmin,
@@ -1789,6 +2061,7 @@
   window.loadCourseDetails = loadCourseDetails;
   window.loadQuizPage = loadQuizPage;
   window.loadJobs = loadJobs;
+  window.loadJobDetails = loadJobDetails;
   window.setupRecommendation = setupRecommendation;
   window.setupATS = setupATS;
   window.loadAdmin = loadAdmin;
