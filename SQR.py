@@ -1,20 +1,17 @@
 import os
-import json
 import re
+import json
 import datetime
-import base64
-import hashlib
 from io import BytesIO
 from functools import wraps
 
 import jwt
 import mysql.connector
 from mysql.connector import pooling
-from flask import Flask, request, jsonify, send_from_directory, send_file, render_template, redirect
+from flask import Flask, request, jsonify, send_from_directory, send_file, render_template
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from cryptography.fernet import Fernet
 
 try:
     from openai import OpenAI
@@ -22,20 +19,14 @@ except Exception:
     OpenAI = None
 
 try:
-    import PyPDF2
+    from PyPDF2 import PdfReader
 except Exception:
-    PyPDF2 = None
+    PdfReader = None
 
 try:
     from docx import Document
-    from docx.shared import Pt
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
 except Exception:
     Document = None
-    Pt = None
-    OxmlElement = None
-    qn = None
 
 try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
@@ -59,49 +50,36 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 UPLOAD_DIR = os.path.join(BASE_DIR, os.getenv("UPLOAD_FOLDER", "uploads"))
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__, template_folder=TEMPLATES_DIR, static_folder=STATIC_DIR)
 CORS(app, resources={r"/api/*": {"origins": os.getenv("CORS_ORIGINS", "*").split(",")}})
-app.config["SECRET_KEY"] = os.getenv("SQR_SECRET_KEY") or os.getenv("SECRET_KEY") or "CHANGE_THIS_SECRET_KEY_BEFORE_DEPLOYMENT"
-app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH", 50 * 1024 * 1024))
-app.config["UPLOAD_FOLDER"] = UPLOAD_DIR
-os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-AES_SECRET = os.getenv("AES_SECRET_KEY", "CHANGE_THIS_AES_SECRET_KEY_32_CHARS")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if OpenAI and os.getenv("OPENAI_API_KEY") else None
+app.config["SECRET_KEY"] = os.getenv("SQR_SECRET_KEY") or os.getenv("SECRET_KEY") or "CHANGE_THIS_SECRET_KEY_BEFORE_DEPLOYMENT"
+app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH", str(50 * 1024 * 1024)))
+app.config["UPLOAD_FOLDER"] = UPLOAD_DIR
 
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "").strip(),
+    "host": os.getenv("DB_HOST", "localhost").strip(),
     "port": int(os.getenv("DB_PORT", "3306").strip() or "3306"),
-    "user": os.getenv("DB_USER", "").strip(),
+    "user": os.getenv("DB_USER", "root").strip(),
     "password": os.getenv("DB_PASSWORD", "").strip(),
-    "database": os.getenv("DB_NAME", "").strip(),
+    "database": os.getenv("DB_NAME", "railway").strip(),
     "connection_timeout": int(os.getenv("DB_TIMEOUT", "10")),
     "autocommit": True,
 }
 
 pool = None
-try:
-    if DB_CONFIG["host"] and DB_CONFIG["user"] and DB_CONFIG["database"]:
-        pool = pooling.MySQLConnectionPool(
-            pool_name="sqr_pool",
-            pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
-            **DB_CONFIG
-        )
-        print("Database connected")
-    else:
-        print("Database connection skipped: DB_HOST, DB_USER, or DB_NAME missing")
-except Exception as e:
-    print("Database connection failed:", e)
-    pool = None
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if OpenAI and os.getenv("OPENAI_API_KEY") else None
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 TECH_SKILLS = [
-    "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql", "react",
-    "node", "flask", "django", "api", "rest", "git", "github", "docker", "aws", "azure", "linux",
-    "security", "cybersecurity", "networking", "forensics", "wireshark", "burp suite", "database",
-    "machine learning", "data analysis", "communication", "teamwork", "problem solving", "cloud", "devops",
-    "kubernetes", "mongodb", "php", "c++", "go", "rust", "swift", "ai", "ui", "ux"
+    "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql",
+    "react", "node", "flask", "django", "api", "rest", "git", "github", "docker", "aws", "azure",
+    "linux", "security", "cybersecurity", "networking", "forensics", "wireshark", "burp suite", "database",
+    "machine learning", "ai", "data analysis", "data engineering", "etl", "cloud", "mongodb", "communication",
+    "teamwork", "problem solving", "devops", "kubernetes", "php", "c++", "go", "rust", "swift",
+    "figma", "ui", "ux", "testing", "automation", "incident response", "siem"
 ]
 
 COURSE_LEVEL_META = {
@@ -120,30 +98,8 @@ SPECIALIZATION_HINTS = {
     "cloud computing": ["cloud", "aws", "azure", "deployment", "server", "docker", "devops"],
     "database administration": ["database", "sql", "mysql", "postgresql", "queries", "schema", "admin"],
     "computer networks": ["network", "tcp", "ip", "routing", "switching", "security", "linux"],
-    "ui/ux engineering": ["ui", "ux", "design", "interface", "figma", "frontend", "user"]
+    "ui/ux engineering": ["ui", "ux", "design", "interface", "figma", "frontend", "user"],
 }
-
-
-def get_aes_key():
-    return base64.urlsafe_b64encode(hashlib.sha256(AES_SECRET.encode()).digest())
-
-
-cipher = Fernet(get_aes_key())
-
-
-def encrypt_text(value):
-    if not value:
-        return ""
-    return cipher.encrypt(str(value).encode()).decode()
-
-
-def decrypt_text(value):
-    if not value:
-        return ""
-    try:
-        return cipher.decrypt(str(value).encode()).decode()
-    except Exception:
-        return value
 
 
 def get_db():
@@ -188,18 +144,15 @@ def get_json():
     return request.get_json(silent=True) or {}
 
 
-def text_value(*values):
-    for value in values:
-        if value is not None and str(value).strip() != "":
-            return str(value).strip()
-    return ""
+def safe_text(value):
+    return str(value or "").strip()
 
 
-def int_value(value, default=0):
+def safe_int(value, default=0):
     try:
         if value is None or value == "":
             return default
-        return int(value)
+        return int(float(value))
     except Exception:
         return default
 
@@ -236,11 +189,6 @@ def column_exists(table_name, column_name):
         return False
 
 
-def add_column_if_missing(table_name, column_name, column_sql):
-    if table_exists(table_name) and not column_exists(table_name, column_name):
-        exec_db(f"ALTER TABLE `{table_name}` ADD COLUMN {column_sql}")
-
-
 def first_existing_column(table_name, names):
     for name in names:
         if column_exists(table_name, name):
@@ -248,22 +196,15 @@ def first_existing_column(table_name, names):
     return names[0]
 
 
-def normalize_level(level):
-    value = str(level or "beginner").strip().lower()
-    aliases = {
-        "begginer": "beginner",
-        "beginner": "beginner",
-        "intermidiete": "intermediate",
-        "intermediate": "intermediate",
-        "medium": "intermediate",
-        "advance": "advanced",
-        "advanced": "advanced",
-    }
-    return aliases.get(value, "beginner")
+def row_value(row, *names):
+    for name in names:
+        if isinstance(row, dict) and row.get(name) not in [None, ""]:
+            return row.get(name)
+    return None
 
 
 def upload_url(filename):
-    value = str(filename or "").strip()
+    value = safe_text(filename)
     if not value:
         return ""
     if value.startswith("http://") or value.startswith("https://") or value.startswith("/uploads/"):
@@ -271,29 +212,36 @@ def upload_url(filename):
     return f"/uploads/{value}"
 
 
-def asset_value(value):
-    return upload_url(value)
+def normalize_level(level):
+    value = safe_text(level).lower() or "beginner"
+    aliases = {
+        "begginer": "beginner",
+        "beginner": "beginner",
+        "medium": "intermediate",
+        "intermidiete": "intermediate",
+        "intermediate": "intermediate",
+        "advance": "advanced",
+        "advanced": "advanced",
+    }
+    return aliases.get(value, "beginner")
 
 
-def clean_user(user):
-    if not user:
-        return None
-    user = dict(user)
-    user.pop("password", None)
-    user["id"] = user.get("id") or user.get("user_id")
-    user["user_id"] = user.get("user_id") or user.get("id")
-    user["current_mode"] = user.get("current_mode") or user.get("role") or "student"
-    user["banned"] = int(user.get("banned", user.get("is_banned", 0)) or 0)
-    return user
+def add_level_meta(course):
+    level = normalize_level(course.get("level"))
+    course["level"] = level
+    course["level_badge"] = COURSE_LEVEL_META[level]
+    return course
 
 
 def normalize_specialization(row):
     if not row:
         return row
     row = dict(row)
-    row["id"] = row.get("id")
-    row["specialization_id"] = row.get("id")
-    row["image_url"] = asset_value(row.get("image"))
+    row["id"] = row_value(row, "id", "specialization_id")
+    row["specialization_id"] = row["id"]
+    row["image_url"] = upload_url(row_value(row, "image", "image_url"))
+    row["skills"] = row_value(row, "skills", "required_skills") or ""
+    row["description"] = row.get("description") or ""
     return row
 
 
@@ -301,22 +249,25 @@ def normalize_course(row):
     if not row:
         return row
     row = dict(row)
-    row["id"] = row.get("id")
-    row["course_id"] = row.get("id")
-    row["specialization_id"] = row.get("spec_id")
-    row["image_url"] = asset_value(row.get("image"))
-    row["video_url"] = asset_value(row.get("video"))
-    row["level"] = normalize_level(row.get("level"))
-    row["level_badge"] = COURSE_LEVEL_META[row["level"]]
-    return row
+    row["id"] = row_value(row, "id", "course_id")
+    row["course_id"] = row["id"]
+    row["specialization_id"] = row_value(row, "specialization_id", "spec_id")
+    row["spec_id"] = row["specialization_id"]
+    row["link"] = row_value(row, "link", "course_link") or ""
+    row["course_link"] = row["link"]
+    row["image_url"] = upload_url(row_value(row, "image", "image_url", "thumbnail"))
+    row["video_url"] = upload_url(row_value(row, "video", "video_url", "media_url"))
+    row["specialization_name"] = row_value(row, "specialization_name", "specialization") or ""
+    return add_level_meta(row)
 
 
 def normalize_quiz(row):
     if not row:
         return row
     row = dict(row)
-    row["id"] = row.get("id")
-    row["quiz_id"] = row.get("id")
+    row["id"] = row_value(row, "id", "quiz_id")
+    row["quiz_id"] = row["id"]
+    row["course_id"] = row_value(row, "course_id", "course")
     return row
 
 
@@ -324,11 +275,18 @@ def normalize_question(row, include_answer=False):
     if not row:
         return row
     row = dict(row)
-    row["id"] = row.get("id")
-    row["question_id"] = row.get("id")
-    row["options"] = [row.get("option1") or "", row.get("option2") or "", row.get("option3") or "", row.get("option4") or ""]
+    row["id"] = row_value(row, "id", "question_id")
+    row["question_id"] = row["id"]
+    row["question"] = row_value(row, "question", "question_text") or ""
+    row["options"] = [
+        row_value(row, "option1", "option_a") or "",
+        row_value(row, "option2", "option_b") or "",
+        row_value(row, "option3", "option_c") or "",
+        row_value(row, "option4", "option_d") or "",
+    ]
     if not include_answer:
         row.pop("answer", None)
+        row.pop("correct_answer", None)
     return row
 
 
@@ -336,23 +294,39 @@ def normalize_job(row):
     if not row:
         return row
     row = dict(row)
-    row["id"] = row.get("id")
-    row["job_id"] = row.get("id")
-    row["required_skills"] = row.get("skills") or ""
-    row["average_salary"] = row.get("salary") or ""
-    row["job_link"] = row.get("link") or ""
+    row["id"] = row_value(row, "id", "job_id")
+    row["job_id"] = row["id"]
+    row["skills"] = row_value(row, "skills", "required_skills") or ""
+    row["required_skills"] = row["skills"]
+    row["salary"] = row_value(row, "salary", "average_salary") or ""
+    row["average_salary"] = row["salary"]
+    row["link"] = row_value(row, "link", "job_link") or ""
+    row["job_link"] = row["link"]
+    row["specialization"] = row_value(row, "specialization_name", "specialization") or ""
     return row
+
+
+def clean_user(user):
+    if not user:
+        return None
+    user = dict(user)
+    user.pop("password", None)
+    user["id"] = row_value(user, "id", "user_id")
+    user["user_id"] = user["id"]
+    user["current_mode"] = user.get("current_mode") or user.get("role") or "student"
+    user["banned"] = safe_int(row_value(user, "banned", "is_banned"), 0)
+    return user
 
 
 def strong_password(password):
     password = str(password or "")
     return (
-        len(password) >= 8 and
-        re.search(r"[A-Z]", password) and
-        re.search(r"[a-z]", password) and
-        re.search(r"[0-9]", password) and
-        re.search(r"[^A-Za-z0-9]", password) and
-        not re.search(r"\s", password)
+        len(password) >= 8
+        and re.search(r"[A-Z]", password)
+        and re.search(r"[a-z]", password)
+        and re.search(r"[0-9]", password)
+        and re.search(r"[^A-Za-z0-9]", password)
+        and not re.search(r"\s", password)
     )
 
 
@@ -368,7 +342,7 @@ def generate_username(name, email):
 
 
 def generate_token(user):
-    uid = user.get("id") or user.get("user_id")
+    uid = row_value(user, "id", "user_id")
     payload = {
         "id": uid,
         "user_id": uid,
@@ -381,7 +355,7 @@ def generate_token(user):
     return jwt.encode(payload, app.config["SECRET_KEY"], algorithm="HS256")
 
 
-def get_current_user(required=False):
+def get_current_user():
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
     if not token:
         return None
@@ -391,7 +365,7 @@ def get_current_user(required=False):
         user = query_db("SELECT * FROM users WHERE id=%s", (uid,), fetchone=True)
         if not user:
             return None
-        if int(user.get("banned") or 0) == 1:
+        if safe_int(user.get("banned"), 0) == 1:
             return None
         return user
     except Exception:
@@ -401,7 +375,7 @@ def get_current_user(required=False):
 def login_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        user = get_current_user(required=True)
+        user = get_current_user()
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
         request.current_user = user
@@ -412,10 +386,10 @@ def login_required(func):
 def admin_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        user = get_current_user(required=True)
+        user = get_current_user()
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        if str(user.get("role") or "").lower() != "admin":
+        if safe_text(user.get("role")).lower() != "admin":
             return jsonify({"error": "Admin only"}), 403
         request.current_user = user
         return func(*args, **kwargs)
@@ -425,22 +399,18 @@ def admin_required(func):
 def student_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        user = get_current_user(required=True)
+        user = get_current_user()
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        if str(user.get("role") or "").lower() == "admin" and str(user.get("current_mode") or "admin").lower() != "student":
-            return jsonify({"error": "Admins can only access the admin page."}), 403
+        if safe_text(user.get("role")).lower() == "admin" and safe_text(user.get("current_mode") or "admin").lower() != "student":
+            return jsonify({"error": "Admins can only access the admin page unless switched to student mode."}), 403
         request.current_user = user
         return func(*args, **kwargs)
     return wrapper
 
 
-def optional_user():
-    return get_current_user(required=False)
-
-
 def allowed_file(filename):
-    allowed = {"png", "jpg", "jpeg", "gif", "webp", "mp4", "mov", "webm", "pdf", "docx", "txt"}
+    allowed = {"png", "jpg", "jpeg", "gif", "webp", "mp4", "mov", "webm", "ogg", "pdf", "docx", "txt"}
     return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed
 
 
@@ -459,20 +429,45 @@ def save_file(field_name):
 
 def request_data():
     if request.content_type and "multipart/form-data" in request.content_type:
-        data = dict(request.form)
-    else:
-        data = get_json()
-    return data
+        return dict(request.form)
+    return get_json()
 
 
-def safe_json_loads(text):
-    try:
-        return json.loads(text)
-    except Exception:
-        match = re.search(r"\{.*\}", str(text or ""), re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        raise ValueError("Invalid JSON")
+def calculate_match_percentage(profile_text, target_text):
+    profile = safe_text(profile_text).lower()
+    target = safe_text(target_text).lower()
+    words = []
+    for skill in TECH_SKILLS:
+        if skill in profile or skill in target:
+            words.append(skill)
+    matched = [skill for skill in words if skill in profile and skill in target]
+    unique_target = sorted(set([skill for skill in words if skill in target]))
+    if not unique_target:
+        tokens = set(re.findall(r"[a-zA-Z][a-zA-Z+#.]{2,}", target))
+        user_tokens = set(re.findall(r"[a-zA-Z][a-zA-Z+#.]{2,}", profile))
+        if not tokens:
+            return 0, []
+        score = round((len(tokens & user_tokens) / max(len(tokens), 1)) * 100)
+        return max(0, min(100, score)), sorted(tokens & user_tokens)[:12]
+    score = round((len(set(matched)) / max(len(unique_target), 1)) * 100)
+    return max(0, min(100, score)), sorted(set(matched))[:12]
+
+
+def extract_resume_text(file):
+    if not file or not file.filename:
+        return ""
+    name = file.filename.lower()
+    raw = file.read()
+    file.seek(0)
+    if name.endswith(".txt"):
+        return raw.decode("utf-8", errors="ignore")
+    if name.endswith(".pdf") and PdfReader:
+        reader = PdfReader(BytesIO(raw))
+        return "\n".join([page.extract_text() or "" for page in reader.pages])
+    if name.endswith(".docx") and Document:
+        doc = Document(BytesIO(raw))
+        return "\n".join([p.text for p in doc.paragraphs])
+    return ""
 
 
 def ai_json(prompt, fallback):
@@ -482,37 +477,16 @@ def ai_json(prompt, fallback):
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": "Return valid JSON only. You are an expert CS career, resume, and ATS assistant."},
+                {"role": "system", "content": "Return valid JSON only. Do not invent user experience."},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.25,
+            temperature=0.3,
         )
-        result = safe_json_loads(response.choices[0].message.content)
-        return result if isinstance(result, dict) else fallback
-    except Exception as e:
-        print("AI fallback used:", e)
+        text = response.choices[0].message.content or "{}"
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        return json.loads(match.group(0) if match else text)
+    except Exception:
         return fallback
-
-
-def extract_terms(text):
-    text = str(text or "").lower()
-    words = set(re.findall(r"[a-zA-Z][a-zA-Z+#.]{1,}", text))
-    phrases = {skill for skill in TECH_SKILLS if skill in text}
-    return words | phrases
-
-
-def calculate_match_percentage(profile_text, target_text):
-    profile_terms = extract_terms(profile_text)
-    target_terms = extract_terms(target_text)
-    if not target_terms:
-        return 0, []
-    matched = sorted(profile_terms & target_terms)
-    direct_score = len(matched) / max(len(target_terms), 1)
-    important = [skill for skill in TECH_SKILLS if skill in str(target_text or "").lower()]
-    important_matched = [skill for skill in important if skill in str(profile_text or "").lower()]
-    important_score = len(important_matched) / max(len(important), 1) if important else direct_score
-    score = int(min(100, round((direct_score * 45 + important_score * 55))))
-    return score, sorted(set(matched + important_matched))[:25]
 
 
 def init_db():
@@ -520,9 +494,9 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(150) NOT NULL,
-            username VARCHAR(100) NOT NULL UNIQUE,
-            email VARCHAR(150) NOT NULL UNIQUE,
+            username VARCHAR(120) UNIQUE,
+            name VARCHAR(160) NOT NULL,
+            email VARCHAR(180) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL,
             role ENUM('student','admin') DEFAULT 'student',
             current_mode ENUM('student','admin') DEFAULT 'student',
@@ -534,14 +508,20 @@ def init_db():
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS admins (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL UNIQUE,
+            admin_level VARCHAR(80) DEFAULT 'manager',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS specializations (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(150) NOT NULL,
+            name VARCHAR(180) NOT NULL,
             description TEXT,
             skills TEXT,
-            roadmap TEXT,
-            job_titles TEXT,
-            career_paths TEXT,
             image VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -549,41 +529,34 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS courses (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            spec_id INT NOT NULL,
-            title VARCHAR(200) NOT NULL,
+            spec_id INT,
+            title VARCHAR(220) NOT NULL,
             description TEXT,
-            link VARCHAR(255),
+            level VARCHAR(40) DEFAULT 'beginner',
+            link TEXT,
             image VARCHAR(255),
             video VARCHAR(255),
-            level ENUM('beginner','intermediate','advanced') DEFAULT 'beginner',
-            completed_weight INT DEFAULT 50,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
+            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE SET NULL
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS certificates (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            spec_id INT NOT NULL,
-            name VARCHAR(200) NOT NULL,
+            specialization_id INT,
+            name VARCHAR(220) NOT NULL,
             description TEXT,
-            link VARCHAR(255),
-            price VARCHAR(100),
-            type ENUM('practical','theoretical','both') DEFAULT 'both',
+            link TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
+            FOREIGN KEY (specialization_id) REFERENCES specializations(id) ON DELETE SET NULL
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS quizzes (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            spec_id INT NULL,
-            course_id INT NULL,
-            title VARCHAR(200) NOT NULL,
-            description TEXT,
-            total_questions INT DEFAULT 0,
+            course_id INT,
+            title VARCHAR(220) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE SET NULL,
             FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
         )
         """,
@@ -592,72 +565,53 @@ def init_db():
             id INT AUTO_INCREMENT PRIMARY KEY,
             quiz_id INT NOT NULL,
             question TEXT NOT NULL,
-            option1 VARCHAR(255),
-            option2 VARCHAR(255),
-            option3 VARCHAR(255),
-            option4 VARCHAR(255),
-            answer VARCHAR(255),
-            score INT DEFAULT 1,
+            option1 TEXT,
+            option2 TEXT,
+            option3 TEXT,
+            option4 TEXT,
+            answer VARCHAR(255) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS admins (
+        CREATE TABLE IF NOT EXISTS jobs (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL UNIQUE,
-            admin_level VARCHAR(50) DEFAULT 'manager',
+            specialization_id INT,
+            title VARCHAR(220) NOT NULL,
+            description TEXT,
+            skills TEXT,
+            salary VARCHAR(120),
+            link TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            FOREIGN KEY (specialization_id) REFERENCES specializations(id) ON DELETE SET NULL
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS specialization_enrollments (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            spec_id INT NOT NULL,
-            progress INT DEFAULT 0,
-            status ENUM('not_started','in_progress','completed') DEFAULT 'not_started',
-            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP NULL,
-            UNIQUE KEY unique_spec_enrollment (user_id, spec_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE CASCADE
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS course_enrollments (
+        CREATE TABLE IF NOT EXISTS course_progress (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             course_id INT NOT NULL,
-            progress INT DEFAULT 0,
-            status ENUM('not_started','in_progress','completed') DEFAULT 'not_started',
-            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP NULL,
-            UNIQUE KEY unique_course_enrollment (user_id, course_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS enrollments (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            course_id INT NOT NULL,
+            opened TINYINT DEFAULT 1,
+            video_started TINYINT DEFAULT 0,
+            completed TINYINT DEFAULT 0,
             opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY unique_user_course (user_id, course_id),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_course_user (user_id, course_id),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS progress (
+        CREATE TABLE IF NOT EXISTS specialization_progress (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
-            spec_id INT NOT NULL,
+            specialization_id INT NOT NULL,
             progress INT DEFAULT 0,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY unique_user_spec_progress (user_id, spec_id)
+            UNIQUE KEY unique_spec_user (user_id, specialization_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (specialization_id) REFERENCES specializations(id) ON DELETE CASCADE
         )
         """,
         """
@@ -665,482 +619,150 @@ def init_db():
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             quiz_id INT NOT NULL,
-            course_id INT NULL,
+            course_id INT,
             score INT DEFAULT 0,
-            passed TINYINT DEFAULT 0,
-            answers_json LONGTEXT,
-            attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             total INT DEFAULT 0,
-            percentage DECIMAL(5,2) DEFAULT 0,
+            score_percentage INT DEFAULT 0,
+            answers_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
             FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS jobs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            title VARCHAR(200) NOT NULL,
-            description TEXT,
-            skills TEXT,
-            specialization VARCHAR(150),
-            salary VARCHAR(100),
-            link VARCHAR(255),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            specialization_id INT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS assessments (
+        CREATE TABLE IF NOT EXISTS ats_results (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
-            title VARCHAR(255),
-            description TEXT,
-            interests TEXT,
-            skills TEXT,
-            goal TEXT,
-            total_score INT DEFAULT 0,
+            target_job VARCHAR(220),
+            score INT DEFAULT 0,
+            summary TEXT,
+            matched_keywords TEXT,
+            missing_keywords TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS assessment_answers (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            assessment_id INT NOT NULL,
-            question_text TEXT,
-            selected_option TEXT,
-            score INT DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS specialization_recommendations (
+        CREATE TABLE IF NOT EXISTS recommendation_results (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
-            spec_id INT NULL,
-            assessment_id INT NULL,
-            match_percentage INT DEFAULT 0,
-            matched_skills TEXT,
-            missing_skills TEXT,
-            reason TEXT,
+            recommendation_json LONGTEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE SET NULL,
-            FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE SET NULL
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """,
-        """
-        CREATE TABLE IF NOT EXISTS job_recommendations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            job_id INT NOT NULL,
-            match_percentage INT DEFAULT 0,
-            matched_skills TEXT,
-            reason TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS ats_results (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NULL,
-            resume_name VARCHAR(255) NULL,
-            ats_score INT DEFAULT 0,
-            score INT DEFAULT 0,
-            resume_text LONGTEXT,
-            generated_resume LONGTEXT,
-            job_description LONGTEXT,
-            target_job VARCHAR(255),
-            result_json LONGTEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-        )
-        """
     ]
     for statement in statements:
-        query_db(statement, commit=True)
-    run_schema_compatibility()
+        exec_db(statement)
 
 
-def run_schema_compatibility():
-    try:
-        add_column_if_missing("users", "current_mode", "current_mode ENUM('student','admin') DEFAULT 'student'")
-        add_column_if_missing("users", "banned", "banned TINYINT DEFAULT 0")
-        add_column_if_missing("users", "skills", "skills TEXT NULL")
-        add_column_if_missing("users", "interests", "interests TEXT NULL")
-        add_column_if_missing("users", "goal", "goal TEXT NULL")
-        add_column_if_missing("courses", "image", "image VARCHAR(255) NULL")
-        add_column_if_missing("courses", "video", "video VARCHAR(255) NULL")
-        add_column_if_missing("courses", "level", "level ENUM('beginner','intermediate','advanced') DEFAULT 'beginner'")
-        add_column_if_missing("courses", "completed_weight", "completed_weight INT DEFAULT 50")
-        add_column_if_missing("jobs", "specialization_id", "specialization_id INT NULL")
-        add_column_if_missing("quiz_attempts", "total", "total INT DEFAULT 0")
-        add_column_if_missing("quiz_attempts", "percentage", "percentage DECIMAL(5,2) DEFAULT 0")
-        exec_db("UPDATE users SET current_mode='admin' WHERE role='admin'")
-        exec_db("UPDATE users SET current_mode='student' WHERE role='student' AND (current_mode IS NULL OR current_mode='admin')")
-        exec_db("INSERT IGNORE INTO admins (user_id, admin_level) SELECT id, 'owner' FROM users WHERE role='admin'")
-    except Exception as e:
-        print("Compatibility schema update skipped:", e)
-
-
-def get_course(course_id):
-    row = query_db(
-        """
-        SELECT c.*, s.name AS specialization_name
-        FROM courses c
-        LEFT JOIN specializations s ON s.id=c.spec_id
-        WHERE c.id=%s
-        """,
-        (course_id,),
-        fetchone=True
-    )
-    return normalize_course(row)
-
-
-def ensure_specialization_enrollment(user_id, spec_id):
-    if not spec_id:
-        return
-    exec_db(
-        """
-        INSERT INTO specialization_enrollments (user_id, spec_id, progress, status)
-        VALUES (%s,%s,0,'not_started')
-        ON DUPLICATE KEY UPDATE user_id=VALUES(user_id)
-        """,
-        (user_id, spec_id)
-    )
-
-
-def ensure_course_enrollment(user_id, course_id, progress=50):
-    course = get_course(course_id)
-    if not course:
-        return None
-    ensure_specialization_enrollment(user_id, course.get("spec_id"))
-    progress = max(0, min(100, int_value(progress, 50)))
-    status = "completed" if progress >= 100 else "in_progress" if progress > 0 else "not_started"
-    exec_db(
-        """
-        INSERT INTO course_enrollments (user_id, course_id, progress, status, completed_at)
-        VALUES (%s,%s,%s,%s,IF(%s='completed',NOW(),NULL))
-        ON DUPLICATE KEY UPDATE
-          progress=GREATEST(progress, VALUES(progress)),
-          status=CASE
-            WHEN GREATEST(progress, VALUES(progress)) >= 100 THEN 'completed'
-            WHEN GREATEST(progress, VALUES(progress)) > 0 THEN 'in_progress'
-            ELSE 'not_started'
-          END,
-          completed_at=CASE WHEN GREATEST(progress, VALUES(progress)) >= 100 THEN COALESCE(completed_at,NOW()) ELSE completed_at END
-        """,
-        (user_id, course_id, progress, status, status)
-    )
-    try:
-        exec_db(
-            """
-            INSERT INTO enrollments (user_id, course_id)
-            VALUES (%s,%s)
-            ON DUPLICATE KEY UPDATE opened_at=CURRENT_TIMESTAMP
-            """,
-            (user_id, course_id)
-        )
-    except Exception:
-        pass
-    recalculate_course_progress(user_id, course_id)
-    return get_course(course_id)
-
-
-def recalculate_course_progress(user_id, course_id):
-    course = get_course(course_id)
-    if not course:
-        return 0
-    enrollment = query_db("SELECT * FROM course_enrollments WHERE user_id=%s AND course_id=%s", (user_id, course_id), fetchone=True)
-    base = 50 if enrollment and int(enrollment.get("progress") or 0) > 0 else 0
-    quizzes = query_db("SELECT id FROM quizzes WHERE course_id=%s", (course_id,), fetchall=True) or []
-    quiz_ids = [q["id"] for q in quizzes]
-    quiz_score = 0
-    if quiz_ids:
-        passed = 0
-        for quiz_id in quiz_ids:
-            row = query_db("SELECT MAX(passed) AS passed FROM quiz_attempts WHERE user_id=%s AND quiz_id=%s", (user_id, quiz_id), fetchone=True)
-            if row and int(row.get("passed") or 0) == 1:
-                passed += 1
-        quiz_score = round((passed / len(quiz_ids)) * 50)
-    elif base == 50:
-        quiz_score = 50
-    progress = min(100, int(base + quiz_score))
-    status = "completed" if progress >= 100 else "in_progress" if progress > 0 else "not_started"
-    exec_db(
-        """
-        INSERT INTO course_enrollments (user_id, course_id, progress, status, completed_at)
-        VALUES (%s,%s,%s,%s,IF(%s='completed',NOW(),NULL))
-        ON DUPLICATE KEY UPDATE
-          progress=VALUES(progress),
-          status=VALUES(status),
-          completed_at=CASE WHEN VALUES(progress) >= 100 THEN COALESCE(completed_at,NOW()) ELSE NULL END
-        """,
-        (user_id, course_id, progress, status, status)
-    )
-    recalculate_specialization_progress(user_id, course.get("spec_id"))
-    return progress
-
-
-def recalculate_specialization_progress(user_id, spec_id):
-    if not spec_id:
-        return 0
-    rows = query_db(
-        """
-        SELECT c.id, COALESCE(ce.progress,0) AS progress
-        FROM courses c
-        LEFT JOIN course_enrollments ce ON ce.course_id=c.id AND ce.user_id=%s
-        WHERE c.spec_id=%s
-        """,
-        (user_id, spec_id),
-        fetchall=True
-    ) or []
-    enrolled_rows = [r for r in rows if int(r.get("progress") or 0) > 0]
-    if rows:
-        progress = int(round(sum(int(r.get("progress") or 0) for r in rows) / len(rows)))
-    else:
-        progress = 0
-    status = "completed" if progress >= 100 else "in_progress" if progress > 0 else "not_started"
-    exec_db(
-        """
-        INSERT INTO specialization_enrollments (user_id, spec_id, progress, status, completed_at)
-        VALUES (%s,%s,%s,%s,IF(%s='completed',NOW(),NULL))
-        ON DUPLICATE KEY UPDATE
-          progress=VALUES(progress),
-          status=VALUES(status),
-          completed_at=CASE WHEN VALUES(progress) >= 100 THEN COALESCE(completed_at,NOW()) ELSE NULL END
-        """,
-        (user_id, spec_id, progress, status, status)
-    )
-    exec_db(
-        """
-        INSERT INTO progress (user_id, spec_id, progress)
-        VALUES (%s,%s,%s)
-        ON DUPLICATE KEY UPDATE progress=VALUES(progress), updated_at=CURRENT_TIMESTAMP
-        """,
-        (user_id, spec_id, progress)
-    )
-    return progress
-
-
-def local_ats_score(resume_text, job_description=""):
-    resume_lower = str(resume_text or "").lower()
-    matched = [skill for skill in TECH_SKILLS if skill in resume_lower]
-    missing = [skill for skill in TECH_SKILLS if skill not in resume_lower]
-    sections = {
-        "contact": any(x in resume_lower for x in ["@", "linkedin", "phone", "+966", "+1"]),
-        "summary": any(x in resume_lower for x in ["summary", "profile", "objective"]),
-        "skills": "skills" in resume_lower,
-        "experience": any(x in resume_lower for x in ["experience", "work", "internship"]),
-        "education": "education" in resume_lower,
-        "projects": "projects" in resume_lower,
-        "certifications": any(x in resume_lower for x in ["certifications", "certificate", "certificates"]),
-    }
-    keyword_score = int((len(matched) / max(len(TECH_SKILLS), 1)) * 35)
-    section_score = sum(6 for exists in sections.values() if exists)
-    job_score = 0
-    job_matches = []
-    if job_description:
-        job_pct, job_matches = calculate_match_percentage(resume_text, job_description)
-        job_score = int(job_pct * 0.35)
-    action_verbs = ["built", "developed", "designed", "implemented", "improved", "analyzed", "created", "managed", "tested", "deployed"]
-    action_score = min(10, sum(2 for verb in action_verbs if verb in resume_lower))
-    metric_score = 10 if re.search(r"\b\d+%?|\b\d+\+", resume_lower) else 3
-    score = max(10, min(100, keyword_score + section_score + job_score + action_score + metric_score))
-    return {
-        "ats_score": score,
-        "score": score,
-        "summary": "ATS analysis completed using the resume content and target job description.",
-        "matched_keywords": sorted(set(matched + job_matches)),
-        "missing_keywords": missing[:25],
-        "strengths": [
-            "The resume includes ATS-readable technical keywords." if matched else "The resume is readable, but it needs more technical keywords.",
-            "Core resume sections are present." if sum(sections.values()) >= 4 else "The resume needs more standard ATS sections."
-        ],
-        "weaknesses": [
-            "Some keywords from the target job are missing." if job_description else "No job description was provided, so job-specific matching is limited.",
-            "Add measurable achievements using numbers, percentages, tools, and outcomes."
-        ],
-        "improvements": [
-            "Add a targeted professional summary with the target job title.",
-            "Create a Skills section grouped by programming, tools, databases, and frameworks.",
-            "Rewrite experience bullets using action verb + tool + result.",
-            "Mirror important job description keywords naturally and honestly.",
-            "Add 2-3 projects with technologies, problem solved, and measurable output."
-        ],
-        "section_scores": {
-            "contact": 90 if sections["contact"] else 35,
-            "summary": 85 if sections["summary"] else 35,
-            "skills": 90 if sections["skills"] else 35,
-            "experience": 85 if sections["experience"] else 35,
-            "education": 85 if sections["education"] else 35,
-            "projects": 80 if sections["projects"] else 30,
-            "keywords": min(100, keyword_score * 2),
-            "job_match": min(100, job_score * 3),
-            "formatting": 80,
-        }
-    }
-
-
-def extract_pdf_text(file_storage):
-    if not PyPDF2:
-        return ""
-    try:
-        reader = PyPDF2.PdfReader(file_storage.stream)
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
-    except Exception:
-        return ""
-
-
-def extract_docx_text(file_storage):
-    if not Document:
-        return ""
-    try:
-        doc = Document(file_storage.stream)
-        return "\n".join(p.text for p in doc.paragraphs)
-    except Exception:
-        return ""
-
-
-def ats_resume_local(data):
-    name = text_value(data.get("name"), data.get("full_name"), "Your Name")
-    email = text_value(data.get("email"))
-    phone = text_value(data.get("phone"))
-    target_job = text_value(data.get("target_job"), data.get("job_title"), "Software Engineer")
-    summary = text_value(data.get("summary"), f"Motivated candidate targeting a {target_job} role with practical technical skills and project experience.")
-    skills = text_value(data.get("skills"), "Python, Java, SQL, HTML, CSS, JavaScript, Git, REST APIs")
-    education = text_value(data.get("education"), "Computer Science Student")
-    projects = text_value(data.get("projects"), "SQR career guidance platform with Flask, MySQL, REST APIs, quizzes, progress tracking, and ATS tools.")
-    experience = text_value(data.get("experience"), "Academic and project experience building full-stack web features, database models, and user-focused interfaces.")
-    certifications = text_value(data.get("certifications"))
-    work_style = text_value(data.get("work_style"))
-    lines = [
-        name,
-        " | ".join(x for x in [email, phone, target_job] if x),
-        "",
-        "PROFESSIONAL SUMMARY",
-        summary,
-        "",
-        "TECHNICAL SKILLS",
-        skills,
-        "",
-        "PROJECTS",
-        projects,
-        "",
-        "EXPERIENCE",
-        experience,
-        "",
-        "EDUCATION",
-        education,
-    ]
-    if certifications:
-        lines += ["", "CERTIFICATIONS", certifications]
-    if work_style:
-        lines += ["", "WORK STYLE", work_style]
-    return "\n".join(lines)
-
-
-def create_pdf_bytes(title, text):
-    if not SimpleDocTemplate:
-        return None
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=48, leftMargin=48, topMargin=42, bottomMargin=42)
-    styles = getSampleStyleSheet()
-    normal = styles["Normal"]
-    heading = ParagraphStyle("SQRHeading", parent=styles["Heading1"], alignment=TA_CENTER, fontSize=18, leading=22, textColor=colors.HexColor("#111827"))
-    story = [Paragraph(str(title or "SQR Resume"), heading), Spacer(1, 12), HRFlowable(width="100%"), Spacer(1, 12)]
-    for block in str(text or "").split("\n"):
-        clean = block.strip()
-        if not clean:
-            story.append(Spacer(1, 8))
-            continue
-        story.append(Paragraph(clean.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), normal))
-        story.append(Spacer(1, 4))
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
-
-def create_docx_bytes(text):
-    if not Document:
-        return None
-    doc = Document()
-    for index, line in enumerate(str(text or "").split("\n")):
-        if index == 0:
-            p = doc.add_paragraph()
-            r = p.add_run(line)
-            r.bold = True
-            if Pt:
-                r.font.size = Pt(18)
-        else:
-            doc.add_paragraph(line)
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-
-def score_specialization(spec, profile_text, answer_terms):
-    target = " ".join(str(spec.get(k) or "") for k in ["name", "description", "skills", "roadmap", "job_titles", "career_paths"])
-    score, matched = calculate_match_percentage(profile_text, target)
-    name_key = str(spec.get("name") or "").lower()
-    for key, hints in SPECIALIZATION_HINTS.items():
-        if key in name_key:
-            boost = sum(8 for hint in hints if hint in profile_text.lower() or hint in answer_terms)
-            score = min(100, score + boost)
-            matched = sorted(set(matched + [h for h in hints if h in profile_text.lower() or h in answer_terms]))
-    return score, matched
-
-
-@app.before_request
-def before_request_bootstrap():
-    if not getattr(app, "_sqr_db_ready", False):
-        try:
-            init_db()
-            app._sqr_db_ready = True
-        except Exception as e:
-            print("Database bootstrap skipped:", e)
-            app._sqr_db_ready = True
+def render_page(template_name):
+    return render_template(template_name)
 
 
 @app.route("/")
 def home():
-    return render_template("gp.html")
+    return render_page("gp.html")
 
 
-@app.route("/<path:page>")
-def render_page(page):
-    if page.startswith("api/"):
-        return jsonify({"error": "Not found"}), 404
-    if page.startswith("uploads/"):
-        filename = page.split("uploads/", 1)[1]
-        return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
-    safe_page = os.path.basename(page)
-    if safe_page.endswith(".html") and os.path.exists(os.path.join(TEMPLATES_DIR, safe_page)):
-        return render_template(safe_page)
-    return send_from_directory(STATIC_DIR, page)
+@app.route("/home")
+def page_home():
+    return render_page("gp.html")
+
+
+@app.route("/specializations")
+def page_specializations():
+    return render_page("Specialization.html")
+
+
+@app.route("/courses")
+def page_courses():
+    return render_page("Courses.html")
+
+
+@app.route("/quizzes")
+def page_quizzes():
+    return render_page("Quiz.html")
+
+
+@app.route("/ats")
+def page_ats():
+    return render_page("ATS.html")
+
+
+@app.route("/jobs")
+def page_jobs():
+    return render_page("jobs.html")
+
+
+@app.route("/recommendation")
+def page_recommendation():
+    return render_page("recommendation.html")
+
+
+@app.route("/profile")
+def page_profile():
+    return render_page("profile.html")
+
+
+@app.route("/admin")
+def page_admin():
+    return render_page("admin.html")
+
+
+@app.route("/signin")
+def page_signin():
+    return render_page("signin.html")
+
+
+@app.route("/signup")
+def page_signup():
+    return render_page("signup.html")
+
+
+@app.route("/<path:page>.html")
+def legacy_html_pages(page):
+    aliases = {
+        "gp": "gp.html",
+        "Specialization": "Specialization.html",
+        "Sepecialization": "Specialization.html",
+        "Courses": "Courses.html",
+        "courses": "Courses.html",
+        "Quiz": "Quiz.html",
+        "ATS": "ATS.html",
+        "ats": "ATS.html",
+        "jobs": "jobs.html",
+        "JobDetails": "JobDetails.html",
+        "recommendation": "recommendation.html",
+        "profile": "profile.html",
+        "admin": "admin.html",
+        "signin": "signin.html",
+        "signup": "signup.html",
+    }
+    return render_page(aliases.get(page, f"{page}.html"))
 
 
 @app.route("/uploads/<path:filename>")
-def uploaded_file(filename):
+def uploads(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
 
 @app.route("/api/health")
 def health():
-    return jsonify({"ok": True, "database": bool(pool), "time": datetime.datetime.utcnow().isoformat()})
+    return jsonify({
+        "message": "SQR Backend is running",
+        "features": ["auth", "admin", "specializations", "courses", "quizzes", "jobs", "profile", "progress", "ATS", "recommendation"],
+        "database": DB_CONFIG.get("database")
+    })
 
 
 @app.route("/api/signup", methods=["POST"])
 def signup():
-    data = request_data()
-    name = text_value(data.get("name"), data.get("full_name"))
-    email = text_value(data.get("email")).lower()
-    password = text_value(data.get("password"))
+    data = get_json()
+    name = safe_text(data.get("name"))
+    email = safe_text(data.get("email")).lower()
+    password = safe_text(data.get("password"))
     if not name or not email or not password:
         return jsonify({"error": "Name, email, and password are required"}), 400
     if not strong_password(password):
@@ -1151,2040 +773,3090 @@ def signup():
     hashed_password = generate_password_hash(password, method="pbkdf2:sha256", salt_length=16)
     user_id = query_db(
         """
-        INSERT INTO users (name, username, email, password, role, current_mode, banned)
+        INSERT INTO users (username, name, email, password, role, current_mode, banned)
         VALUES (%s,%s,%s,%s,'student','student',0)
         """,
-        (name, username, email, hashed_password),
+        (username, name, email, hashed_password),
         commit=True
     )
     user = query_db("SELECT * FROM users WHERE id=%s", (user_id,), fetchone=True)
-    return jsonify({"message": "Account created", "token": generate_token(user), "user": clean_user(user)})
+    return jsonify({"message": "Account created", "token": generate_token(user), "user": clean_user(user)}), 201
 
 
 @app.route("/api/signin", methods=["POST"])
-@app.route("/api/login", methods=["POST"])
 def signin():
-    data = request_data()
-    email = text_value(data.get("email"), data.get("username")).lower()
-    password = text_value(data.get("password"))
-    if not email or not password:
-        return jsonify({"error": "Email and password are required"}), 400
-    user = query_db("SELECT * FROM users WHERE email=%s OR username=%s", (email, email), fetchone=True)
+    data = get_json()
+    email = safe_text(data.get("email")).lower()
+    password = safe_text(data.get("password"))
+    user = query_db("SELECT * FROM users WHERE email=%s", (email,), fetchone=True)
     if not user or not check_password_hash(user.get("password") or "", password):
         return jsonify({"error": "Invalid email or password"}), 401
-    if int(user.get("banned") or 0) == 1:
+    if safe_int(user.get("banned"), 0) == 1:
         return jsonify({"error": "Your account is banned"}), 403
-    if user.get("role") == "admin" and user.get("current_mode") != "admin":
-        exec_db("UPDATE users SET current_mode='admin' WHERE id=%s", (user["id"],))
-        user["current_mode"] = "admin"
-    return jsonify({"message": "Signed in", "token": generate_token(user), "user": clean_user(user)})
+    return jsonify({"message": "Login successful", "token": generate_token(user), "user": clean_user(user)})
 
 
-@app.route("/api/me", methods=["GET"])
+@app.route("/api/me")
 @login_required
 def me():
-    return jsonify({"user": clean_user(request.current_user)})
-
-
-@app.route("/api/admin/switch-mode", methods=["POST"])
-@admin_required
-def switch_admin_mode():
-    data = request_data()
-    mode = text_value(data.get("mode"), data.get("current_mode"), "admin").lower()
-    if mode not in {"admin", "student"}:
-        mode = "admin"
-    exec_db("UPDATE users SET current_mode=%s WHERE id=%s", (mode, request.current_user["id"]))
-    user = query_db("SELECT * FROM users WHERE id=%s", (request.current_user["id"],), fetchone=True)
-    return jsonify({"message": f"Mode changed to {mode}", "token": generate_token(user), "user": clean_user(user)})
+    return jsonify(clean_user(request.current_user))
 
 
 @app.route("/api/profile", methods=["GET"])
 @login_required
-def profile():
+def get_profile():
     user = clean_user(request.current_user)
-    spec_progress = query_db(
+    user_id = user["id"]
+    quiz_history = query_db(
         """
-        SELECT se.spec_id, s.name, s.description, s.image, se.progress, se.status, se.enrolled_at, se.completed_at,
-               COUNT(DISTINCT c.id) AS total_courses,
-               COUNT(DISTINCT ce.course_id) AS opened_courses,
-               SUM(CASE WHEN ce.progress >= 100 THEN 1 ELSE 0 END) AS completed_courses
-        FROM specialization_enrollments se
-        JOIN specializations s ON s.id=se.spec_id
-        LEFT JOIN courses c ON c.spec_id=s.id
-        LEFT JOIN course_enrollments ce ON ce.course_id=c.id AND ce.user_id=se.user_id
-        WHERE se.user_id=%s
-        GROUP BY se.spec_id, s.name, s.description, s.image, se.progress, se.status, se.enrolled_at, se.completed_at
-        ORDER BY se.enrolled_at DESC
+        SELECT qa.id, qa.score, qa.total, qa.score_percentage, qa.created_at, q.title AS quiz_title, c.title AS course_title
+        FROM quiz_attempts qa
+        LEFT JOIN quizzes q ON q.id=qa.quiz_id
+        LEFT JOIN courses c ON c.id=qa.course_id
+        WHERE qa.user_id=%s
+        ORDER BY qa.created_at DESC
+        LIMIT 30
         """,
-        (user["id"],),
+        (user_id,),
         fetchall=True
     ) or []
-    for item in spec_progress:
-        item["image_url"] = upload_url(item.get("image"))
-        item["specialization_name"] = item.get("name")
-    course_progress = query_db(
+    ats_history = query_db(
         """
-        SELECT ce.course_id, c.title, c.description, c.image, c.video, c.link, c.level, c.spec_id,
-               s.name AS specialization_name, ce.progress, ce.status, ce.enrolled_at, ce.completed_at
-        FROM course_enrollments ce
-        JOIN courses c ON c.id=ce.course_id
-        LEFT JOIN specializations s ON s.id=c.spec_id
-        WHERE ce.user_id=%s
-        ORDER BY ce.enrolled_at DESC
+        SELECT id,target_job,score,summary,matched_keywords,missing_keywords,created_at
+        FROM ats_results
+        WHERE user_id=%s
+        ORDER BY created_at DESC
+        LIMIT 20
         """,
-        (user["id"],),
+        (user_id,),
         fetchall=True
     ) or []
-    course_progress = [normalize_course(c) for c in course_progress]
-    return jsonify({"user": user, "progress": spec_progress, "specialization_progress": spec_progress, "course_progress": course_progress})
+    return jsonify({"user": user, "quiz_history": quiz_history, "ats_history": ats_history})
 
 
-@app.route("/api/profile", methods=["PUT", "POST"])
+@app.route("/api/profile", methods=["PUT"])
 @login_required
 def update_profile():
-    data = request_data()
-    name = text_value(data.get("name"), request.current_user.get("name"))
-    skills = text_value(data.get("skills"))
-    interests = text_value(data.get("interests"))
-    goal = text_value(data.get("goal"))
-    exec_db("UPDATE users SET name=%s, skills=%s, interests=%s, goal=%s WHERE id=%s", (name, skills, interests, goal, request.current_user["id"]))
+    data = get_json()
+    name = safe_text(data.get("name")) or request.current_user.get("name")
+    skills = safe_text(data.get("skills"))
+    interests = safe_text(data.get("interests"))
+    goal = safe_text(data.get("goal"))
+    exec_db(
+        "UPDATE users SET name=%s, skills=%s, interests=%s, goal=%s WHERE id=%s",
+        (name, skills, interests, goal, request.current_user["id"])
+    )
     user = query_db("SELECT * FROM users WHERE id=%s", (request.current_user["id"],), fetchone=True)
     return jsonify({"message": "Profile updated", "user": clean_user(user)})
 
 
+def compute_user_progress(user_id):
+    specs = query_db("SELECT * FROM specializations ORDER BY name", fetchall=True) or []
+    progress_rows = []
+    for spec in specs:
+        spec_id = spec["id"]
+        total_courses_row = query_db("SELECT COUNT(*) AS total FROM courses WHERE spec_id=%s", (spec_id,), fetchone=True) or {"total": 0}
+        total_courses = safe_int(total_courses_row.get("total"), 0)
+        opened_row = query_db(
+            """
+            SELECT COUNT(DISTINCT cp.course_id) AS total
+            FROM course_progress cp
+            JOIN courses c ON c.id=cp.course_id
+            WHERE cp.user_id=%s AND c.spec_id=%s AND cp.opened=1
+            """,
+            (user_id, spec_id),
+            fetchone=True
+        ) or {"total": 0}
+        quiz_row = query_db(
+            """
+            SELECT COUNT(DISTINCT qa.course_id) AS completed_quizzes, COALESCE(ROUND(AVG(qa.score_percentage),0),0) AS average_score
+            FROM quiz_attempts qa
+            JOIN courses c ON c.id=qa.course_id
+            WHERE qa.user_id=%s AND c.spec_id=%s AND qa.score_percentage >= 60
+            """,
+            (user_id, spec_id),
+            fetchone=True
+        ) or {"completed_quizzes": 0, "average_score": 0}
+        opened_courses = safe_int(opened_row.get("total"), 0)
+        completed_quizzes = safe_int(quiz_row.get("completed_quizzes"), 0)
+        average_score = safe_int(quiz_row.get("average_score"), 0)
+        if total_courses <= 0:
+            percent_value = 0
+        else:
+            opened_part = (opened_courses / total_courses) * 50
+            quiz_part = (completed_quizzes / total_courses) * 50
+            percent_value = max(0, min(100, round(opened_part + quiz_part)))
+        exec_db(
+            """
+            INSERT INTO specialization_progress (user_id, specialization_id, progress)
+            VALUES (%s,%s,%s)
+            ON DUPLICATE KEY UPDATE progress=%s
+            """,
+            (user_id, spec_id, percent_value, percent_value)
+        )
+        progress_rows.append({
+            "specialization_id": spec_id,
+            "specialization_name": spec.get("name"),
+            "total_courses": total_courses,
+            "opened_courses": opened_courses,
+            "completed_quizzes": completed_quizzes,
+            "average_quiz_score": average_score,
+            "progress": percent_value,
+        })
+    return progress_rows
+
+
+@app.route("/api/profile/progress")
+@login_required
+def profile_progress():
+    return jsonify({"progress": compute_user_progress(request.current_user["id"])})
+
+
 @app.route("/api/specializations", methods=["GET"])
-def list_specializations():
-    user = optional_user()
-    user_id = user.get("id") if user else None
-    rows = query_db(
-        """
-        SELECT s.*,
-               COUNT(DISTINCT c.id) AS course_count,
-               COALESCE(se.progress, 0) AS progress,
-               COALESCE(se.status, 'not_started') AS status
-        FROM specializations s
-        LEFT JOIN courses c ON c.spec_id=s.id
-        LEFT JOIN specialization_enrollments se ON se.spec_id=s.id AND se.user_id=%s
-        GROUP BY s.id, se.progress, se.status
-        ORDER BY s.created_at DESC, s.id DESC
-        """,
-        (user_id or 0,),
-        fetchall=True
-    ) or []
-    return jsonify({"specializations": [normalize_specialization(r) for r in rows], "items": [normalize_specialization(r) for r in rows]})
+def get_specializations():
+    rows = query_db("SELECT * FROM specializations ORDER BY id DESC", fetchall=True) or []
+    return jsonify({"specializations": [normalize_specialization(row) for row in rows]})
 
 
 @app.route("/api/specializations/<int:spec_id>", methods=["GET"])
-@app.route("/api/specialization/<int:spec_id>", methods=["GET"])
 def get_specialization(spec_id):
     spec = query_db("SELECT * FROM specializations WHERE id=%s", (spec_id,), fetchone=True)
     if not spec:
         return jsonify({"error": "Specialization not found"}), 404
-    courses = query_db("SELECT * FROM courses WHERE spec_id=%s ORDER BY created_at DESC", (spec_id,), fetchall=True) or []
-    certificates = query_db("SELECT * FROM certificates WHERE spec_id=%s ORDER BY created_at DESC", (spec_id,), fetchall=True) or []
-    quizzes = query_db("SELECT * FROM quizzes WHERE spec_id=%s OR course_id IN (SELECT id FROM courses WHERE spec_id=%s) ORDER BY created_at DESC", (spec_id, spec_id), fetchall=True) or []
-    return jsonify({"specialization": normalize_specialization(spec), "courses": [normalize_course(c) for c in courses], "certificates": certificates, "quizzes": [normalize_quiz(q) for q in quizzes]})
+    courses = query_db("SELECT c.*, s.name AS specialization_name FROM courses c LEFT JOIN specializations s ON s.id=c.spec_id WHERE c.spec_id=%s ORDER BY c.id DESC", (spec_id,), fetchall=True) or []
+    jobs = query_db("SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.id=j.specialization_id WHERE j.specialization_id=%s ORDER BY j.id DESC", (spec_id,), fetchall=True) or []
+    certificates = query_db("SELECT * FROM certificates WHERE specialization_id=%s ORDER BY id DESC", (spec_id,), fetchall=True) or []
+    return jsonify({
+        "specialization": normalize_specialization(spec),
+        "courses": [normalize_course(row) for row in courses],
+        "jobs": [normalize_job(row) for row in jobs],
+        "certificates": certificates,
+    })
 
 
-@app.route("/api/specializations/<int:spec_id>/enroll", methods=["POST"])
-@app.route("/api/specialization/<int:spec_id>/enroll", methods=["POST"])
-@student_required
-def enroll_specialization(spec_id):
-    spec = query_db("SELECT * FROM specializations WHERE id=%s", (spec_id,), fetchone=True)
-    if not spec:
+@app.route("/api/specializations", methods=["POST"])
+@admin_required
+def add_specialization():
+    data = request_data()
+    image = save_file("image") or safe_text(data.get("image"))
+    name = safe_text(data.get("name"))
+    if not name:
+        return jsonify({"error": "Specialization name is required"}), 400
+    spec_id = query_db(
+        "INSERT INTO specializations (name, description, skills, image) VALUES (%s,%s,%s,%s)",
+        (name, safe_text(data.get("description")), safe_text(data.get("skills")), image),
+        commit=True
+    )
+    return jsonify({"message": "Specialization added", "id": spec_id})
+
+
+@app.route("/api/specializations/<int:spec_id>", methods=["PUT"])
+@admin_required
+def update_specialization(spec_id):
+    data = request_data()
+    old = query_db("SELECT * FROM specializations WHERE id=%s", (spec_id,), fetchone=True)
+    if not old:
         return jsonify({"error": "Specialization not found"}), 404
-    ensure_specialization_enrollment(request.current_user["id"], spec_id)
-    recalculate_specialization_progress(request.current_user["id"], spec_id)
-    return jsonify({"message": "Specialization enrolled", "specialization": normalize_specialization(spec)})
+    image = save_file("image") or safe_text(data.get("image")) or old.get("image")
+    exec_db(
+        "UPDATE specializations SET name=%s, description=%s, skills=%s, image=%s WHERE id=%s",
+        (safe_text(data.get("name")) or old.get("name"), safe_text(data.get("description")), safe_text(data.get("skills")), image, spec_id)
+    )
+    return jsonify({"message": "Specialization updated"})
 
 
-@app.route("/api/specializations/<int:spec_id>/unenroll", methods=["POST", "DELETE"])
-@app.route("/api/specialization/<int:spec_id>/unenroll", methods=["POST", "DELETE"])
-@student_required
-def unenroll_specialization(spec_id):
-    course_ids = query_db("SELECT id FROM courses WHERE spec_id=%s", (spec_id,), fetchall=True) or []
-    for row in course_ids:
-        exec_db("DELETE FROM course_enrollments WHERE user_id=%s AND course_id=%s", (request.current_user["id"], row["id"]))
-    exec_db("DELETE FROM specialization_enrollments WHERE user_id=%s AND spec_id=%s", (request.current_user["id"], spec_id))
-    exec_db("DELETE FROM progress WHERE user_id=%s AND spec_id=%s", (request.current_user["id"], spec_id))
-    return jsonify({"message": "Specialization unenrolled"})
+@app.route("/api/specializations/<int:spec_id>", methods=["DELETE"])
+@admin_required
+def delete_specialization(spec_id):
+    exec_db("DELETE FROM specializations WHERE id=%s", (spec_id,))
+    return jsonify({"message": "Specialization deleted"})
 
 
 @app.route("/api/courses", methods=["GET"])
-def list_courses():
-    user = optional_user()
-    user_id = user.get("id") if user else 0
+def get_courses():
     spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
-    params = [user_id]
-    where = ""
+    search = safe_text(request.args.get("search"))
+    sql = "SELECT c.*, s.name AS specialization_name FROM courses c LEFT JOIN specializations s ON s.id=c.spec_id WHERE 1=1"
+    params = []
     if spec_id:
-        where = "WHERE c.spec_id=%s"
+        sql += " AND c.spec_id=%s"
         params.append(spec_id)
-    rows = query_db(
-        f"""
-        SELECT c.*, s.name AS specialization_name,
-               COALESCE(ce.progress,0) AS progress,
-               COALESCE(ce.status,'not_started') AS enrollment_status
-        FROM courses c
-        LEFT JOIN specializations s ON s.id=c.spec_id
-        LEFT JOIN course_enrollments ce ON ce.course_id=c.id AND ce.user_id=%s
-        {where}
-        ORDER BY c.created_at DESC, c.id DESC
-        """,
-        tuple(params),
-        fetchall=True
-    ) or []
-    return jsonify({"courses": [normalize_course(r) for r in rows], "items": [normalize_course(r) for r in rows]})
+    if search:
+        sql += " AND (c.title LIKE %s OR c.description LIKE %s OR c.level LIKE %s)"
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+    sql += " ORDER BY c.id DESC"
+    rows = query_db(sql, tuple(params), fetchall=True) or []
+    return jsonify({"courses": [normalize_course(row) for row in rows]})
 
 
 @app.route("/api/courses/<int:course_id>", methods=["GET"])
-@app.route("/api/course/<int:course_id>", methods=["GET"])
-def course_details(course_id):
-    course = get_course(course_id)
+def get_course(course_id):
+    course = query_db("SELECT c.*, s.name AS specialization_name FROM courses c LEFT JOIN specializations s ON s.id=c.spec_id WHERE c.id=%s", (course_id,), fetchone=True)
     if not course:
         return jsonify({"error": "Course not found"}), 404
-    quizzes = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY created_at ASC", (course_id,), fetchall=True) or []
-    certs = query_db("SELECT * FROM certificates WHERE spec_id=%s ORDER BY created_at DESC", (course.get("spec_id"),), fetchall=True) or []
-    return jsonify({"course": course, "quizzes": [normalize_quiz(q) for q in quizzes], "certificates": certs})
+    quizzes = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY id DESC", (course_id,), fetchall=True) or []
+    return jsonify({"course": normalize_course(course), "quizzes": [normalize_quiz(row) for row in quizzes]})
 
 
-@app.route("/api/courses/<int:course_id>/enroll", methods=["POST"])
-@app.route("/api/course/<int:course_id>/enroll", methods=["POST"])
-@student_required
-def enroll_course(course_id):
-    course = ensure_course_enrollment(request.current_user["id"], course_id, 50)
-    if not course:
+@app.route("/api/courses", methods=["POST"])
+@admin_required
+def add_course():
+    data = request_data()
+    image = save_file("image") or safe_text(data.get("image"))
+    video = save_file("video") or safe_text(data.get("video"))
+    title = safe_text(data.get("title"))
+    if not title:
+        return jsonify({"error": "Course title is required"}), 400
+    course_id = query_db(
+        """
+        INSERT INTO courses (spec_id,title,description,level,link,image,video)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            safe_int(data.get("spec_id") or data.get("specialization_id"), None),
+            title,
+            safe_text(data.get("description")),
+            normalize_level(data.get("level")),
+            safe_text(data.get("link") or data.get("course_link")),
+            image,
+            video,
+        ),
+        commit=True
+    )
+    return jsonify({"message": "Course added", "id": course_id})
+
+
+@app.route("/api/courses/<int:course_id>", methods=["PUT"])
+@admin_required
+def update_course(course_id):
+    data = request_data()
+    old = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
+    if not old:
         return jsonify({"error": "Course not found"}), 404
-    progress = recalculate_course_progress(request.current_user["id"], course_id)
-    return jsonify({"message": "Course enrolled", "course": course, "progress": progress})
+    image = save_file("image") or safe_text(data.get("image")) or old.get("image")
+    video = save_file("video") or safe_text(data.get("video")) or old.get("video")
+    exec_db(
+        """
+        UPDATE courses SET spec_id=%s,title=%s,description=%s,level=%s,link=%s,image=%s,video=%s WHERE id=%s
+        """,
+        (
+            safe_int(data.get("spec_id") or data.get("specialization_id"), old.get("spec_id")),
+            safe_text(data.get("title")) or old.get("title"),
+            safe_text(data.get("description")),
+            normalize_level(data.get("level") or old.get("level")),
+            safe_text(data.get("link") or data.get("course_link") or old.get("link")),
+            image,
+            video,
+            course_id,
+        )
+    )
+    return jsonify({"message": "Course updated"})
+
+
+@app.route("/api/courses/<int:course_id>", methods=["DELETE"])
+@admin_required
+def delete_course(course_id):
+    exec_db("DELETE FROM courses WHERE id=%s", (course_id,))
+    return jsonify({"message": "Course deleted"})
 
 
 @app.route("/api/courses/<int:course_id>/open", methods=["POST"])
-@app.route("/api/courses/<int:course_id>/complete", methods=["POST"])
 @student_required
 def open_course(course_id):
-    course = ensure_course_enrollment(request.current_user["id"], course_id, 50)
+    course = query_db("SELECT id FROM courses WHERE id=%s", (course_id,), fetchone=True)
     if not course:
         return jsonify({"error": "Course not found"}), 404
-    progress = recalculate_course_progress(request.current_user["id"], course_id)
-    return jsonify({"message": "Course progress updated", "course": course, "progress": progress})
-
-
-@app.route("/api/courses/<int:course_id>/unenroll", methods=["POST", "DELETE"])
-@app.route("/api/course/<int:course_id>/unenroll", methods=["POST", "DELETE"])
-@student_required
-def unenroll_course(course_id):
-    course = get_course(course_id)
-    if not course:
-        return jsonify({"error": "Course not found"}), 404
-    exec_db("DELETE FROM course_enrollments WHERE user_id=%s AND course_id=%s", (request.current_user["id"], course_id))
-    try:
-        exec_db("DELETE FROM enrollments WHERE user_id=%s AND course_id=%s", (request.current_user["id"], course_id))
-    except Exception:
-        pass
-    recalculate_specialization_progress(request.current_user["id"], course.get("spec_id"))
-    return jsonify({"message": "Course unenrolled"})
-
-
-@app.route("/api/courses/enrolled", methods=["GET"])
-@login_required
-def courses_enrolled():
-    rows = query_db(
-        """
-        SELECT ce.course_id, c.*, s.name AS specialization_name, ce.progress, ce.status, ce.enrolled_at, ce.completed_at
-        FROM course_enrollments ce
-        JOIN courses c ON c.id=ce.course_id
-        LEFT JOIN specializations s ON s.id=c.spec_id
-        WHERE ce.user_id=%s
-        ORDER BY ce.enrolled_at DESC
-        """,
-        (request.current_user["id"],),
-        fetchall=True
-    ) or []
-    return jsonify({"courses": [normalize_course(r) for r in rows], "course_progress": [normalize_course(r) for r in rows]})
-
-
-@app.route("/api/progress", methods=["GET"])
-@login_required
-def progress_api():
-    user_id = request.current_user["id"]
-    spec_rows = query_db(
-        """
-        SELECT se.user_id, se.spec_id, s.name AS specialization_name, s.image, se.progress, se.status, se.enrolled_at,
-               COUNT(DISTINCT c.id) AS total_courses,
-               COUNT(DISTINCT ce.course_id) AS opened_courses,
-               SUM(CASE WHEN ce.progress >= 100 THEN 1 ELSE 0 END) AS completed_courses
-        FROM specialization_enrollments se
-        JOIN specializations s ON s.id=se.spec_id
-        LEFT JOIN courses c ON c.spec_id=s.id
-        LEFT JOIN course_enrollments ce ON ce.course_id=c.id AND ce.user_id=se.user_id
-        WHERE se.user_id=%s
-        GROUP BY se.user_id, se.spec_id, s.name, s.image, se.progress, se.status, se.enrolled_at
-        ORDER BY se.enrolled_at DESC
-        """,
-        (user_id,),
-        fetchall=True
-    ) or []
-    course_rows = query_db(
-        """
-        SELECT ce.user_id, ce.course_id, c.title, c.spec_id, s.name AS specialization_name, ce.progress, ce.status, ce.enrolled_at
-        FROM course_enrollments ce
-        JOIN courses c ON c.id=ce.course_id
-        LEFT JOIN specializations s ON s.id=c.spec_id
-        WHERE ce.user_id=%s
-        ORDER BY ce.enrolled_at DESC
-        """,
-        (user_id,),
-        fetchall=True
-    ) or []
-    return jsonify({"progress": spec_rows, "specialization_progress": spec_rows, "course_progress": course_rows})
-
-
-@app.route("/api/progress", methods=["POST"])
-@student_required
-def update_progress_api():
-    data = request_data()
-    spec_id = int_value(data.get("spec_id") or data.get("specialization_id"))
-    progress_value = max(0, min(100, int_value(data.get("progress"))))
-    if not spec_id:
-        return jsonify({"error": "spec_id is required"}), 400
-    status = "completed" if progress_value >= 100 else "in_progress" if progress_value > 0 else "not_started"
+    data = get_json()
+    video_started = 1 if data.get("video_started") else 0
+    completed = 1 if data.get("completed") else 0
     exec_db(
         """
-        INSERT INTO specialization_enrollments (user_id, spec_id, progress, status, completed_at)
-        VALUES (%s,%s,%s,%s,IF(%s='completed',NOW(),NULL))
-        ON DUPLICATE KEY UPDATE progress=VALUES(progress), status=VALUES(status), completed_at=CASE WHEN VALUES(progress)>=100 THEN COALESCE(completed_at,NOW()) ELSE NULL END
+        INSERT INTO course_progress (user_id,course_id,opened,video_started,completed)
+        VALUES (%s,%s,1,%s,%s)
+        ON DUPLICATE KEY UPDATE opened=1, video_started=GREATEST(video_started,VALUES(video_started)), completed=GREATEST(completed,VALUES(completed))
         """,
-        (request.current_user["id"], spec_id, progress_value, status, status)
+        (request.current_user["id"], course_id, video_started, completed)
     )
-    exec_db("INSERT INTO progress (user_id,spec_id,progress) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE progress=VALUES(progress)", (request.current_user["id"], spec_id, progress_value))
-    return jsonify({"message": "Progress updated", "progress": progress_value})
-
-
-@app.route("/api/certificates", methods=["GET"])
-def list_certificates():
-    spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
-    if spec_id:
-        rows = query_db("SELECT * FROM certificates WHERE spec_id=%s ORDER BY created_at DESC", (spec_id,), fetchall=True) or []
-    else:
-        rows = query_db("SELECT c.*, s.name AS specialization_name FROM certificates c LEFT JOIN specializations s ON s.id=c.spec_id ORDER BY c.created_at DESC", fetchall=True) or []
-    return jsonify({"certificates": rows, "items": rows})
+    compute_user_progress(request.current_user["id"])
+    return jsonify({"message": "Course progress tracked"})
 
 
 @app.route("/api/quizzes", methods=["GET"])
-def list_quizzes():
+def get_quizzes():
     course_id = request.args.get("course_id")
-    spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
+    sql = "SELECT q.*, c.title AS course_title FROM quizzes q LEFT JOIN courses c ON c.id=q.course_id WHERE 1=1"
+    params = []
     if course_id:
-        rows = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY created_at DESC", (course_id,), fetchall=True) or []
-    elif spec_id:
-        rows = query_db("SELECT * FROM quizzes WHERE spec_id=%s OR course_id IN (SELECT id FROM courses WHERE spec_id=%s) ORDER BY created_at DESC", (spec_id, spec_id), fetchall=True) or []
-    else:
-        rows = query_db("SELECT * FROM quizzes ORDER BY created_at DESC", fetchall=True) or []
-    return jsonify({"quizzes": [normalize_quiz(q) for q in rows], "items": [normalize_quiz(q) for q in rows]})
+        sql += " AND q.course_id=%s"
+        params.append(course_id)
+    sql += " ORDER BY q.id DESC"
+    rows = query_db(sql, tuple(params), fetchall=True) or []
+    return jsonify({"quizzes": [normalize_quiz(row) for row in rows]})
 
 
 @app.route("/api/quizzes/<int:quiz_id>", methods=["GET"])
 def get_quiz(quiz_id):
-    quiz = query_db("SELECT * FROM quizzes WHERE id=%s", (quiz_id,), fetchone=True)
+    quiz = query_db("SELECT q.*, c.title AS course_title FROM quizzes q LEFT JOIN courses c ON c.id=q.course_id WHERE q.id=%s", (quiz_id,), fetchone=True)
     if not quiz:
         return jsonify({"error": "Quiz not found"}), 404
-    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id ASC", (quiz_id,), fetchall=True) or []
-    return jsonify({"quiz": normalize_quiz(quiz), "questions": [normalize_question(q, include_answer=False) for q in questions]})
+    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id", (quiz_id,), fetchall=True) or []
+    return jsonify({"quiz": normalize_quiz(quiz), "questions": [normalize_question(row) for row in questions]})
+
+
+@app.route("/api/quizzes", methods=["POST"])
+@admin_required
+def add_quiz():
+    data = get_json()
+    title = safe_text(data.get("title") or data.get("name"))
+    course_id = safe_int(data.get("course_id"), None)
+    if not title or not course_id:
+        return jsonify({"error": "Quiz title and course are required"}), 400
+    quiz_id = query_db("INSERT INTO quizzes (course_id,title) VALUES (%s,%s)", (course_id, title), commit=True)
+    questions = data.get("questions") or []
+    if not questions and data.get("questions_json"):
+        try:
+            questions = json.loads(data.get("questions_json"))
+        except Exception:
+            questions = []
+    for q in questions:
+        add_question_to_quiz(quiz_id, q)
+    return jsonify({"message": "Quiz added", "id": quiz_id})
+
+
+def add_question_to_quiz(quiz_id, data):
+    return query_db(
+        """
+        INSERT INTO quiz_questions (quiz_id,question,option1,option2,option3,option4,answer)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            quiz_id,
+            safe_text(data.get("question") or data.get("question_text")),
+            safe_text(data.get("option1") or data.get("option_a")),
+            safe_text(data.get("option2") or data.get("option_b")),
+            safe_text(data.get("option3") or data.get("option_c")),
+            safe_text(data.get("option4") or data.get("option_d")),
+            safe_text(data.get("answer") or data.get("correct_answer")),
+        ),
+        commit=True
+    )
+
+
+@app.route("/api/quizzes/<int:quiz_id>/questions", methods=["POST"])
+@admin_required
+def add_quiz_question(quiz_id):
+    question_id = add_question_to_quiz(quiz_id, get_json())
+    return jsonify({"message": "Question added", "id": question_id})
+
+
+@app.route("/api/quizzes/<int:quiz_id>", methods=["DELETE"])
+@admin_required
+def delete_quiz(quiz_id):
+    exec_db("DELETE FROM quizzes WHERE id=%s", (quiz_id,))
+    return jsonify({"message": "Quiz deleted"})
 
 
 @app.route("/api/quizzes/<int:quiz_id>/submit", methods=["POST"])
 @student_required
 def submit_quiz(quiz_id):
-    data = request_data()
-    answers = data.get("answers", {})
-    if isinstance(answers, str):
-        try:
-            answers = json.loads(answers)
-        except Exception:
-            answers = {}
-    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s", (quiz_id,), fetchall=True) or []
-    if not questions:
-        return jsonify({"error": "Quiz has no questions"}), 404
-    correct = 0
-    for q in questions:
-        qid = str(q.get("id"))
-        selected = answers.get(qid)
-        if selected is None:
-            selected = answers.get(qid.lower(), "")
-        valid_values = {str(q.get("answer") or "").strip().lower()}
-        option_map = {
-            "a": q.get("option1"), "b": q.get("option2"), "c": q.get("option3"), "d": q.get("option4"),
-            "1": q.get("option1"), "2": q.get("option2"), "3": q.get("option3"), "4": q.get("option4"),
-        }
-        ans_lower = str(selected or "").strip().lower()
-        if ans_lower in valid_values or str(option_map.get(ans_lower) or "").strip().lower() in valid_values:
-            correct += 1
-    total = len(questions)
-    percentage = round((correct / total) * 100, 2)
-    score = int(round(percentage))
-    passed = 1 if percentage >= 60 else 0
+    data = get_json()
+    answers = data.get("answers") or {}
+    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id", (quiz_id,), fetchall=True) or []
     quiz = query_db("SELECT * FROM quizzes WHERE id=%s", (quiz_id,), fetchone=True)
-    course_id = quiz.get("course_id") if quiz else None
-    query_db(
+    if not quiz:
+        return jsonify({"error": "Quiz not found"}), 404
+    score = 0
+    details = []
+    for q in questions:
+        qid = str(q["id"])
+        given = safe_text(answers.get(qid) or answers.get(q["id"])).lower()
+        correct = safe_text(q.get("answer")).lower()
+        ok = given == correct or given in ["1", "a"] and correct in ["a", "1", safe_text(q.get("option1")).lower()] or given in ["2", "b"] and correct in ["b", "2", safe_text(q.get("option2")).lower()] or given in ["3", "c"] and correct in ["c", "3", safe_text(q.get("option3")).lower()] or given in ["4", "d"] and correct in ["d", "4", safe_text(q.get("option4")).lower()]
+        if ok:
+            score += 1
+        details.append({"question_id": q["id"], "given": given, "correct": correct, "correct_boolean": bool(ok)})
+    total = len(questions)
+    percentage = round((score / total) * 100) if total else 0
+    attempt_id = query_db(
         """
-        INSERT INTO quiz_attempts (user_id, quiz_id, course_id, score, passed, answers_json, total, percentage)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        INSERT INTO quiz_attempts (user_id,quiz_id,course_id,score,total,score_percentage,answers_json)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
         """,
-        (request.current_user["id"], quiz_id, course_id, score, passed, json.dumps(answers, ensure_ascii=False), total, percentage),
+        (request.current_user["id"], quiz_id, quiz.get("course_id"), score, total, percentage, json.dumps(details)),
         commit=True
     )
-    course_progress = 0
-    specialization_progress = 0
-    if course_id:
-        ensure_course_enrollment(request.current_user["id"], course_id, 50)
-        course_progress = recalculate_course_progress(request.current_user["id"], course_id)
-        course = get_course(course_id)
-        specialization_progress = recalculate_specialization_progress(request.current_user["id"], course.get("spec_id")) if course else 0
-    elif quiz and quiz.get("spec_id"):
-        specialization_progress = max(score, recalculate_specialization_progress(request.current_user["id"], quiz.get("spec_id")))
-        exec_db("INSERT INTO progress (user_id,spec_id,progress) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE progress=GREATEST(progress,VALUES(progress))", (request.current_user["id"], quiz.get("spec_id"), specialization_progress))
-    return jsonify({"score": score, "percentage": percentage, "correct": correct, "total": total, "passed": bool(passed), "course_progress": course_progress, "specialization_progress": specialization_progress})
+    if quiz.get("course_id"):
+        exec_db(
+            """
+            INSERT INTO course_progress (user_id,course_id,opened,completed)
+            VALUES (%s,%s,1,%s)
+            ON DUPLICATE KEY UPDATE opened=1, completed=GREATEST(completed,VALUES(completed))
+            """,
+            (request.current_user["id"], quiz.get("course_id"), 1 if percentage >= 60 else 0)
+        )
+    compute_user_progress(request.current_user["id"])
+    return jsonify({"message": "Quiz submitted", "attempt_id": attempt_id, "score": score, "total": total, "score_percentage": percentage, "details": details})
 
 
 @app.route("/api/jobs", methods=["GET"])
-def list_jobs():
-    spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
+def get_jobs():
+    search = safe_text(request.args.get("search"))
+    spec_id = request.args.get("specialization_id") or request.args.get("spec_id")
+    sql = "SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.id=j.specialization_id WHERE 1=1"
+    params = []
+    if search:
+        sql += " AND (j.title LIKE %s OR j.description LIKE %s OR j.skills LIKE %s)"
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
     if spec_id:
-        rows = query_db("SELECT * FROM jobs WHERE specialization_id=%s OR specialization IN (SELECT name FROM specializations WHERE id=%s) ORDER BY created_at DESC", (spec_id, spec_id), fetchall=True) or []
-    else:
-        rows = query_db("SELECT * FROM jobs ORDER BY created_at DESC", fetchall=True) or []
-    return jsonify({"jobs": [normalize_job(j) for j in rows], "items": [normalize_job(j) for j in rows]})
+        sql += " AND j.specialization_id=%s"
+        params.append(spec_id)
+    sql += " ORDER BY j.id DESC"
+    rows = query_db(sql, tuple(params), fetchall=True) or []
+    return jsonify({"jobs": [normalize_job(row) for row in rows]})
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["GET"])
 def get_job(job_id):
-    job = query_db("SELECT * FROM jobs WHERE id=%s", (job_id,), fetchone=True)
-    if not job:
+    row = query_db("SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.id=j.specialization_id WHERE j.id=%s", (job_id,), fetchone=True)
+    if not row:
         return jsonify({"error": "Job not found"}), 404
-    return jsonify({"job": normalize_job(job)})
+    return jsonify({"job": normalize_job(row)})
 
 
-@app.route("/api/recommendation", methods=["POST"])
-@app.route("/api/recommendations", methods=["POST"])
-@app.route("/api/specialization/recommendation", methods=["POST"])
-@student_required
-def recommendation():
-    data = request_data()
-    interests = text_value(data.get("interests"), data.get("interest"))
-    skills = text_value(data.get("skills"))
-    goal = text_value(data.get("goal"), data.get("career_goal"))
-    work_style = text_value(data.get("work_style"), data.get("workStyle"))
-    answers = data.get("answers", [])
-    if isinstance(answers, str):
-        try:
-            answers = json.loads(answers)
-        except Exception:
-            answers = [answers]
-    answer_terms = " ".join(str(a) for a in answers)
-    profile_text = " ".join([interests, skills, goal, work_style, answer_terms])
-    if not profile_text.strip():
-        return jsonify({"error": "Add your interests, skills, goal, or answers first"}), 400
-    assessment_id = query_db(
-        """
-        INSERT INTO assessments (user_id, title, description, interests, skills, goal, total_score)
-        VALUES (%s,'Career Recommendation','SQR recommendation assessment',%s,%s,%s,%s)
-        """,
-        (request.current_user["id"], interests, skills, goal, len(answers)),
+@app.route("/api/jobs", methods=["POST"])
+@admin_required
+def add_job():
+    data = get_json()
+    title = safe_text(data.get("title"))
+    if not title:
+        return jsonify({"error": "Job title is required"}), 400
+    job_id = query_db(
+        "INSERT INTO jobs (specialization_id,title,description,skills,salary,link) VALUES (%s,%s,%s,%s,%s,%s)",
+        (safe_int(data.get("specialization_id") or data.get("spec_id"), None), title, safe_text(data.get("description")), safe_text(data.get("skills") or data.get("required_skills")), safe_text(data.get("salary")), safe_text(data.get("link") or data.get("job_link"))),
         commit=True
     )
-    for answer in answers:
-        query_db("INSERT INTO assessment_answers (assessment_id, question_text, selected_option, score) VALUES (%s,%s,%s,1)", (assessment_id, "Quick career question", str(answer)), commit=True)
-    specs = query_db("SELECT * FROM specializations ORDER BY id ASC", fetchall=True) or []
-    scored = []
-    for spec in specs:
-        score, matched = score_specialization(spec, profile_text, answer_terms)
-        scored.append((score, matched, spec))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    if scored:
-        score, matched, best = scored[0]
-    else:
-        best = {"id": None, "name": "Software Engineering", "description": "A flexible path for building applications, solving problems, and learning full-stack development.", "skills": "Python, Java, SQL, APIs, Git"}
-        score, matched = calculate_match_percentage(profile_text, best["description"] + " " + best["skills"])
-    missing = [skill for skill in TECH_SKILLS if skill in str(best.get("skills") or "").lower() and skill not in profile_text.lower()]
-    reason = f"This path matches your answers because it connects with {', '.join(matched[:6]) or 'your interests and work style'}."
-    spec_id = best.get("id")
-    if spec_id:
-        query_db(
-            """
-            INSERT INTO specialization_recommendations (user_id, spec_id, assessment_id, match_percentage, matched_skills, missing_skills, reason)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
-            """,
-            (request.current_user["id"], spec_id, assessment_id, score, json.dumps(matched), json.dumps(missing[:10]), reason),
-            commit=True
-        )
-    courses = query_db("SELECT * FROM courses WHERE spec_id=%s ORDER BY created_at DESC LIMIT 6", (spec_id,), fetchall=True) if spec_id else []
-    jobs = query_db("SELECT * FROM jobs WHERE specialization_id=%s OR specialization=%s ORDER BY created_at DESC LIMIT 6", (spec_id, best.get("name")), fetchall=True) if spec_id else []
-    for job in jobs or []:
-        job_score, job_matched = calculate_match_percentage(profile_text, " ".join([str(job.get("title") or ""), str(job.get("description") or ""), str(job.get("skills") or "")]))
-        try:
-            query_db("INSERT INTO job_recommendations (user_id, job_id, match_percentage, matched_skills, reason) VALUES (%s,%s,%s,%s,%s)", (request.current_user["id"], job["id"], job_score, json.dumps(job_matched), "Matched from career recommendation"), commit=True)
-        except Exception:
-            pass
-    result = {
-        "specialization": normalize_specialization(best),
-        "recommended_specialization": best.get("name"),
-        "specialization_name": best.get("name"),
-        "match_percentage": score,
-        "score": score,
-        "matched_skills": matched,
-        "missing_skills": missing[:10],
-        "reason": reason,
-        "courses": [normalize_course(c) for c in (courses or [])],
-        "jobs": [normalize_job(j) for j in (jobs or [])],
-        "assessment_id": assessment_id,
-    }
-    ai_result = ai_json(
-        f"Return JSON improving this career recommendation without inventing facts. User profile: {profile_text}. Current result: {json.dumps(result, ensure_ascii=False)}",
-        result
+    return jsonify({"message": "Job added", "id": job_id})
+
+
+@app.route("/api/jobs/<int:job_id>", methods=["PUT"])
+@admin_required
+def update_job(job_id):
+    data = get_json()
+    old = query_db("SELECT * FROM jobs WHERE id=%s", (job_id,), fetchone=True)
+    if not old:
+        return jsonify({"error": "Job not found"}), 404
+    exec_db(
+        "UPDATE jobs SET specialization_id=%s,title=%s,description=%s,skills=%s,salary=%s,link=%s WHERE id=%s",
+        (safe_int(data.get("specialization_id") or data.get("spec_id"), old.get("specialization_id")), safe_text(data.get("title")) or old.get("title"), safe_text(data.get("description")), safe_text(data.get("skills") or data.get("required_skills")), safe_text(data.get("salary")), safe_text(data.get("link") or data.get("job_link")), job_id)
     )
-    result.update({k: v for k, v in ai_result.items() if k in {"reason", "advice", "next_steps"}})
+    return jsonify({"message": "Job updated"})
+
+
+@app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
+@admin_required
+def delete_job(job_id):
+    exec_db("DELETE FROM jobs WHERE id=%s", (job_id,))
+    return jsonify({"message": "Job deleted"})
+
+
+@app.route("/api/certificates", methods=["GET"])
+def get_certificates():
+    rows = query_db("SELECT c.*, s.name AS specialization_name FROM certificates c LEFT JOIN specializations s ON s.id=c.specialization_id ORDER BY c.id DESC", fetchall=True) or []
+    return jsonify({"certificates": rows})
+
+
+@app.route("/api/certificates", methods=["POST"])
+@admin_required
+def add_certificate():
+    data = get_json()
+    name = safe_text(data.get("name"))
+    if not name:
+        return jsonify({"error": "Certificate name is required"}), 400
+    cert_id = query_db(
+        "INSERT INTO certificates (specialization_id,name,description,link) VALUES (%s,%s,%s,%s)",
+        (safe_int(data.get("specialization_id") or data.get("spec_id"), None), name, safe_text(data.get("description")), safe_text(data.get("link"))),
+        commit=True
+    )
+    return jsonify({"message": "Certificate added", "id": cert_id})
+
+
+@app.route("/api/certificates/<int:cert_id>", methods=["DELETE"])
+@admin_required
+def delete_certificate(cert_id):
+    exec_db("DELETE FROM certificates WHERE id=%s", (cert_id,))
+    return jsonify({"message": "Certificate deleted"})
+
+
+@app.route("/api/recommendations", methods=["POST"])
+@student_required
+def recommendations():
+    data = get_json()
+    interests = safe_text(data.get("interests"))
+    skills = safe_text(data.get("skills"))
+    preferred_work = safe_text(data.get("preferred_work") or data.get("goal"))
+    profile_text = f"{interests} {skills} {preferred_work}".lower()
+    specs = [normalize_specialization(row) for row in (query_db("SELECT * FROM specializations", fetchall=True) or [])]
+    jobs = [normalize_job(row) for row in (query_db("SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.id=j.specialization_id", fetchall=True) or [])]
+    recommended_specs = []
+    for spec in specs:
+        target = f"{spec.get('name','')} {spec.get('description','')} {spec.get('skills','')}"
+        score, matches = calculate_match_percentage(profile_text, target)
+        lower_name = safe_text(spec.get("name")).lower()
+        for key, hints in SPECIALIZATION_HINTS.items():
+            if key in lower_name:
+                score = max(score, min(100, len([h for h in hints if h in profile_text]) * 18))
+        recommended_specs.append({"id": spec.get("id"), "name": spec.get("name"), "match_percentage": score, "matched_skills": matches, "reason": "Matched your interests and skills with specialization content."})
+    recommended_jobs = []
+    for job in jobs:
+        target = f"{job.get('title','')} {job.get('description','')} {job.get('skills','')} {job.get('specialization','')}"
+        score, matches = calculate_match_percentage(profile_text, target)
+        recommended_jobs.append({"id": job.get("id"), "title": job.get("title"), "match_percentage": score, "matched_skills": matches, "salary": job.get("salary"), "reason": "Matched your profile with job skills and description."})
+    recommended_specs.sort(key=lambda item: item["match_percentage"], reverse=True)
+    recommended_jobs.sort(key=lambda item: item["match_percentage"], reverse=True)
+    fallback = {
+        "recommended_specializations": recommended_specs[:5],
+        "recommended_jobs": recommended_jobs[:8],
+        "roadmap": [
+            "Choose the highest matching specialization.",
+            "Start beginner courses, then move to intermediate and advanced content.",
+            "Complete course quizzes to update your profile progress.",
+            "Use ATS tools to improve your resume for the highest matching jobs."
+        ],
+        "summary": "Recommendations are based on your answers and current database content."
+    }
+    prompt = f"Return JSON with recommended_specializations, recommended_jobs, roadmap, summary. User interests: {interests}. Skills: {skills}. Preferred work: {preferred_work}. Specs: {json.dumps(specs[:20])}. Jobs: {json.dumps(jobs[:30])}."
+    result = ai_json(prompt, fallback)
+    query_db("INSERT INTO recommendation_results (user_id,recommendation_json) VALUES (%s,%s)", (request.current_user["id"], json.dumps(result)), commit=True)
     return jsonify(result)
 
 
-@app.route("/api/jobs/recommendations", methods=["GET", "POST"])
+@app.route("/api/recommendations/analyze", methods=["POST"])
 @student_required
-def job_recommendation_api():
-    user = request.current_user
-    data = request_data() if request.method == "POST" else {}
-    profile_text = " ".join([
-        str(user.get("skills") or ""),
-        str(user.get("interests") or ""),
-        str(user.get("goal") or ""),
-        str(data.get("skills") or ""),
-        str(data.get("interests") or ""),
-        str(data.get("goal") or ""),
-    ])
-    jobs = query_db("SELECT * FROM jobs ORDER BY created_at DESC", fetchall=True) or []
-    scored = []
-    for job in jobs:
-        target = " ".join([str(job.get("title") or ""), str(job.get("description") or ""), str(job.get("skills") or "")])
-        score, matched = calculate_match_percentage(profile_text, target)
-        scored.append({**normalize_job(job), "match_percentage": score, "matched_skills": matched, "reason": "Matched using your skills, interests, and goal."})
-    scored.sort(key=lambda j: j.get("match_percentage", 0), reverse=True)
-    return jsonify({"jobs": scored[:10], "recommendations": scored[:10]})
+def recommendations_analyze():
+    return recommendations()
 
 
 @app.route("/api/ats/check", methods=["POST"])
 @student_required
 def ats_check():
-    resume_text = ""
-    filename = "resume"
-    job_description = text_value(request.form.get("job_description"), get_json().get("job_description") if request.is_json else "")
-    file = request.files.get("resume") or request.files.get("file") or request.files.get("resume_file")
-    if file and file.filename:
-        filename = secure_filename(file.filename)
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        if ext == "pdf":
-            resume_text = extract_pdf_text(file)
-        elif ext == "docx":
-            resume_text = extract_docx_text(file)
-        elif ext == "txt":
-            resume_text = file.stream.read().decode("utf-8", errors="ignore")
-        else:
-            return jsonify({"error": "Upload PDF, DOCX, or TXT only"}), 400
-    else:
-        data = get_json()
-        resume_text = text_value(data.get("resume_text"), data.get("resume"))
+    target_job = safe_text(request.form.get("target_job") or request.form.get("job_description"))
+    resume_file = request.files.get("resume_file") or request.files.get("resume")
+    if not target_job:
+        return jsonify({"error": "Target job or job description is required"}), 400
+    if not resume_file:
+        return jsonify({"error": "Please upload a PDF, DOCX, or TXT resume"}), 400
+    resume_text = extract_resume_text(resume_file)
     if not resume_text.strip():
-        return jsonify({"error": "Resume file or resume text is required"}), 400
-    result = local_ats_score(resume_text, job_description)
-    result["resume_name"] = filename
-    result["resume_text_preview"] = resume_text[:1200]
-    ai_result = ai_json(
-        f"Analyze this resume for ATS. Return JSON with ats_score, matched_keywords, missing_keywords, strengths, weaknesses, improvements. Job description: {job_description}\nResume: {resume_text[:6000]}",
-        result
+        return jsonify({"error": "Could not read resume text from this file"}), 400
+    score, matched = calculate_match_percentage(resume_text, target_job)
+    target_skills = [skill for skill in TECH_SKILLS if skill in target_job.lower()]
+    missing = [skill for skill in target_skills if skill not in resume_text.lower()]
+    section_scores = {
+        "keywords": score,
+        "structure": 85 if re.search(r"education|experience|projects|skills", resume_text, re.I) else 55,
+        "clarity": 80 if len(resume_text.split()) > 120 else 60,
+    }
+    ats_score = round((section_scores["keywords"] * 0.5) + (section_scores["structure"] * 0.3) + (section_scores["clarity"] * 0.2))
+    fallback = {
+        "ats_score": ats_score,
+        "score": ats_score,
+        "summary": "ATS analysis completed using resume text, target job keywords, and structure checks.",
+        "matched_keywords": matched,
+        "missing_keywords": missing[:20],
+        "strengths": ["Resume file was readable", "Relevant keywords were detected"] if matched else ["Resume file was readable"],
+        "weaknesses": ["Add more target-job keywords"] if missing else [],
+        "improvements": ["Add measurable achievements", "Add missing role-specific keywords", "Keep sections clear: Summary, Skills, Projects, Education"],
+        "section_scores": section_scores,
+    }
+    prompt = f"Return JSON ATS result with ats_score, summary, matched_keywords, missing_keywords, strengths, weaknesses, improvements, section_scores. Target job: {target_job}. Resume: {resume_text[:5000]}"
+    result = ai_json(prompt, fallback)
+    ats_score = safe_int(result.get("ats_score") or result.get("score"), ats_score)
+    query_db(
+        "INSERT INTO ats_results (user_id,target_job,score,summary,matched_keywords,missing_keywords) VALUES (%s,%s,%s,%s,%s,%s)",
+        (request.current_user["id"], target_job[:220], ats_score, safe_text(result.get("summary")), json.dumps(result.get("matched_keywords", [])), json.dumps(result.get("missing_keywords", []))),
+        commit=True
     )
-    result.update(ai_result)
-    if os.getenv("SQR_SAVE_ATS", "0") == "1":
-        query_db("INSERT INTO ats_results (user_id, resume_name, ats_score, score, resume_text, job_description, result_json) VALUES (%s,%s,%s,%s,%s,%s,%s)", (request.current_user["id"], filename, result.get("ats_score", result.get("score", 0)), result.get("score", result.get("ats_score", 0)), resume_text, job_description, json.dumps(result, ensure_ascii=False)), commit=True)
     return jsonify(result)
 
 
 @app.route("/api/ats/generate", methods=["POST"])
 @student_required
 def ats_generate():
-    data = request_data()
-    generated = ats_resume_local(data)
+    data = get_json()
+    name = safe_text(data.get("name") or request.current_user.get("name"))
+    target_role = safe_text(data.get("target_role") or data.get("target_job"))
+    summary = safe_text(data.get("summary"))
+    skills = safe_text(data.get("skills"))
+    projects = safe_text(data.get("projects"))
+    education = safe_text(data.get("education"))
+    if not name or not target_role or not skills or not summary:
+        return jsonify({"error": "Name, target role, summary, and skills are required"}), 400
+    resume = f"""{name}\n{target_role}\n\nSUMMARY\n{summary}\n\nSKILLS\n{skills}\n\nPROJECTS\n{projects or 'Add relevant projects with tools and measurable results.'}\n\nEDUCATION\n{education or 'Add education details.'}\n"""
     fallback = {
-        "resume": generated,
-        "generated_resume": generated,
-        "summary": text_value(data.get("summary"), "ATS-friendly resume generated."),
-        "ats_tips": ["Use standard section titles.", "Add measurable achievements.", "Match keywords honestly to the target job."]
+        "resume": resume,
+        "enhanced_summary": summary,
+        "ats_score": 82,
+        "matched_keywords": [skill for skill in TECH_SKILLS if skill in skills.lower()][:12],
     }
-    prompt = f"Generate an ATS-friendly resume as JSON with generated_resume, summary, skills, projects, experience, education, ats_tips. User data: {json.dumps(data, ensure_ascii=False)}"
+    prompt = f"Return JSON with resume, enhanced_summary, ats_score, matched_keywords. Create ATS-friendly resume text, no fake claims. Name: {name}. Role: {target_role}. Summary: {summary}. Skills: {skills}. Projects: {projects}. Education: {education}."
     result = ai_json(prompt, fallback)
-    if not result.get("generated_resume"):
-        result["generated_resume"] = generated
-    result["resume"] = result.get("generated_resume")
-    if os.getenv("SQR_SAVE_ATS", "0") == "1":
-        query_db("INSERT INTO ats_results (user_id, generated_resume, target_job, result_json) VALUES (%s,%s,%s,%s)", (request.current_user["id"], result.get("generated_resume"), text_value(data.get("target_job")), json.dumps(result, ensure_ascii=False)), commit=True)
     return jsonify(result)
 
 
-@app.route("/api/ats/enhance-summary", methods=["POST"])
-@student_required
-def enhance_ats_summary():
-    data = request_data()
-    summary = text_value(data.get("summary"))
-    target_job = text_value(data.get("target_job"))
-    skills = text_value(data.get("skills"))
-    if not summary:
-        return jsonify({"error": "summary is required"}), 400
-    fallback_summary = f"Detail-oriented candidate targeting a {target_job or 'technology'} role with strengths in {skills or 'technical problem solving, teamwork, and communication'}. {summary}"
-    result = ai_json(
-        f"Improve this resume summary for ATS. Return JSON only with summary, keywords_added, why_better. Target job: {target_job}. Skills: {skills}. Original: {summary}",
-        {"summary": fallback_summary, "keywords_added": [s for s in TECH_SKILLS if s in skills.lower()][:8], "why_better": "Improved clarity, role targeting, and ATS keywords."}
-    )
-    return jsonify(result)
+def build_resume_pdf(text):
+    if not SimpleDocTemplate:
+        return None
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=42, leftMargin=42, topMargin=38, bottomMargin=38)
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("Body", parent=styles["Normal"], fontName="Helvetica", fontSize=10, leading=14, textColor=colors.HexColor("#111827"))
+    heading = ParagraphStyle("Heading", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=colors.HexColor("#111827"), spaceBefore=10)
+    story = []
+    lines = str(text or "").splitlines()
+    for line in lines:
+        value = line.strip()
+        if not value:
+            story.append(Spacer(1, 8))
+        elif value.isupper() and len(value) < 35:
+            story.append(Paragraph(value, heading))
+            story.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#d1d5db")))
+        else:
+            story.append(Paragraph(value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), body))
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 
 
 @app.route("/api/ats/export/pdf", methods=["POST"])
 @student_required
-def ats_export_pdf():
-    data = request_data()
-    text = text_value(data.get("resume"), data.get("resume_text"), data.get("generated_resume"))
+def export_pdf():
+    data = get_json()
+    text = safe_text(data.get("resume") or data.get("text"))
     if not text:
-        return jsonify({"error": "resume text is required"}), 400
-    buffer = create_pdf_bytes("ATS Resume", text)
-    if not buffer:
-        return jsonify({"error": "PDF export library is unavailable"}), 500
-    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name="sqr_ats_resume.pdf")
+        return jsonify({"error": "Resume text is required"}), 400
+    pdf = build_resume_pdf(text)
+    if not pdf:
+        return jsonify({"error": "PDF export library is not installed"}), 500
+    return send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name="sqr_resume.pdf")
 
 
 @app.route("/api/ats/export/docx", methods=["POST"])
 @student_required
-def ats_export_docx():
-    data = request_data()
-    text = text_value(data.get("resume"), data.get("resume_text"), data.get("generated_resume"))
+def export_docx():
+    if not Document:
+        return jsonify({"error": "DOCX export library is not installed"}), 500
+    data = get_json()
+    text = safe_text(data.get("resume") or data.get("text"))
     if not text:
-        return jsonify({"error": "resume text is required"}), 400
-    buffer = create_docx_bytes(text)
-    if not buffer:
-        return jsonify({"error": "DOCX export library is unavailable"}), 500
-    return send_file(buffer, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", as_attachment=True, download_name="sqr_ats_resume.docx")
+        return jsonify({"error": "Resume text is required"}), 400
+    doc = Document()
+    for line in text.splitlines():
+        value = line.strip()
+        if not value:
+            doc.add_paragraph("")
+        elif value.isupper() and len(value) < 35:
+            doc.add_heading(value, level=2)
+        else:
+            doc.add_paragraph(value)
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return send_file(buffer, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", as_attachment=True, download_name="sqr_resume.docx")
 
 
-@app.route("/api/admin/stats", methods=["GET"])
+@app.route("/api/admin/stats")
 @admin_required
 def admin_stats():
     def count(table):
         if not table_exists(table):
             return 0
-        row = query_db(f"SELECT COUNT(*) AS total FROM `{table}`", fetchone=True)
-        return int(row.get("total") or 0) if row else 0
-    stats = {
+        row = query_db(f"SELECT COUNT(*) AS total FROM `{table}`", fetchone=True) or {"total": 0}
+        return safe_int(row.get("total"), 0)
+    return jsonify({
         "users": count("users"),
-        "students": (query_db("SELECT COUNT(*) AS total FROM users WHERE role='student'", fetchone=True) or {}).get("total", 0),
-        "admins": (query_db("SELECT COUNT(*) AS total FROM users WHERE role='admin'", fetchone=True) or {}).get("total", 0),
         "specializations": count("specializations"),
         "courses": count("courses"),
         "quizzes": count("quizzes"),
-        "quiz_questions": count("quiz_questions"),
         "jobs": count("jobs"),
         "certificates": count("certificates"),
-        "course_enrollments": count("course_enrollments"),
-        "quiz_attempts": count("quiz_attempts"),
-    }
-    return jsonify({"stats": stats, **stats})
+        "ats_results": count("ats_results"),
+    })
 
 
-@app.route("/api/admin/users", methods=["GET"])
+@app.route("/api/admin/users")
 @admin_required
 def admin_users():
-    rows = query_db("SELECT id,name,username,email,role,current_mode,banned,created_at FROM users ORDER BY created_at DESC", fetchall=True) or []
-    return jsonify({"users": rows})
+    rows = query_db("SELECT id,username,name,email,role,current_mode,banned,created_at FROM users ORDER BY id DESC", fetchall=True) or []
+    return jsonify({"users": [clean_user(row) for row in rows]})
 
 
-@app.route("/api/admin/users/<int:user_id>/ban", methods=["POST"])
+@app.route("/api/admin/users/<int:user_id>/ban", methods=["PUT", "POST"])
 @admin_required
-def admin_ban_user(user_id):
+def ban_user(user_id):
     if user_id == request.current_user["id"]:
         return jsonify({"error": "You cannot ban yourself"}), 400
     exec_db("UPDATE users SET banned=1 WHERE id=%s", (user_id,))
     return jsonify({"message": "User banned"})
 
 
-@app.route("/api/admin/users/<int:user_id>/unban", methods=["POST"])
+@app.route("/api/admin/users/<int:user_id>/unban", methods=["PUT", "POST"])
 @admin_required
-def admin_unban_user(user_id):
+def unban_user(user_id):
     exec_db("UPDATE users SET banned=0 WHERE id=%s", (user_id,))
     return jsonify({"message": "User unbanned"})
 
 
-@app.route("/api/admin/users/<int:user_id>/role", methods=["POST", "PUT"])
+@app.route("/api/admin/users/<int:user_id>/role", methods=["PUT", "POST"])
 @admin_required
-def admin_set_role(user_id):
-    data = request_data()
-    role = text_value(data.get("role"), "student").lower()
-    if role not in {"student", "admin"}:
-        return jsonify({"error": "Invalid role"}), 400
-    mode = "admin" if role == "admin" else "student"
-    exec_db("UPDATE users SET role=%s,current_mode=%s WHERE id=%s", (role, mode, user_id))
+def change_user_role(user_id):
+    data = get_json()
+    role = safe_text(data.get("role")).lower()
+    if role not in ["student", "admin"]:
+        return jsonify({"error": "Role must be student or admin"}), 400
+    current_mode = "admin" if role == "admin" else "student"
+    exec_db("UPDATE users SET role=%s,current_mode=%s WHERE id=%s", (role, current_mode, user_id))
     if role == "admin":
-        exec_db("INSERT IGNORE INTO admins (user_id, admin_level) VALUES (%s,'manager')", (user_id,))
-    return jsonify({"message": "Role updated"})
+        exec_db("INSERT IGNORE INTO admins (user_id,admin_level) VALUES (%s,'manager')", (user_id,))
+    else:
+        exec_db("DELETE FROM admins WHERE user_id=%s", (user_id,))
+    return jsonify({"message": "User role updated"})
 
 
-def admin_specialization_payload():
-    data = request_data()
-    image = save_file("image") or save_file("image_file") or text_value(data.get("image"), data.get("image_url"))
-    return {
-        "name": text_value(data.get("name"), data.get("title")),
-        "description": text_value(data.get("description")),
-        "skills": text_value(data.get("skills")),
-        "roadmap": text_value(data.get("roadmap")),
-        "job_titles": text_value(data.get("job_titles"), data.get("jobs")),
-        "career_paths": text_value(data.get("career_paths"), data.get("career_path")),
-        "image": image,
-    }
-
-
-@app.route("/api/admin/specializations", methods=["POST"])
-@app.route("/api/specializations", methods=["POST"])
-@admin_required
-def admin_add_specialization():
-    item = admin_specialization_payload()
-    if not item["name"]:
-        return jsonify({"error": "Specialization name is required"}), 400
-    new_id = query_db("INSERT INTO specializations (name,description,skills,roadmap,job_titles,career_paths,image) VALUES (%s,%s,%s,%s,%s,%s,%s)", (item["name"], item["description"], item["skills"], item["roadmap"], item["job_titles"], item["career_paths"], item["image"]), commit=True)
-    spec = query_db("SELECT * FROM specializations WHERE id=%s", (new_id,), fetchone=True)
-    return jsonify({"message": "Specialization added", "specialization": normalize_specialization(spec)})
-
-
-@app.route("/api/admin/specializations/<int:spec_id>", methods=["PUT", "POST"])
-@app.route("/api/specializations/<int:spec_id>", methods=["PUT"])
-@admin_required
-def admin_update_specialization(spec_id):
-    item = admin_specialization_payload()
-    exec_db("UPDATE specializations SET name=%s,description=%s,skills=%s,roadmap=%s,job_titles=%s,career_paths=%s,image=COALESCE(NULLIF(%s,''),image) WHERE id=%s", (item["name"], item["description"], item["skills"], item["roadmap"], item["job_titles"], item["career_paths"], item["image"], spec_id))
-    spec = query_db("SELECT * FROM specializations WHERE id=%s", (spec_id,), fetchone=True)
-    return jsonify({"message": "Specialization updated", "specialization": normalize_specialization(spec)})
-
-
-@app.route("/api/admin/specializations/<int:spec_id>", methods=["DELETE"])
-@app.route("/api/specializations/<int:spec_id>", methods=["DELETE"])
-@admin_required
-def admin_delete_specialization(spec_id):
-    exec_db("DELETE FROM specializations WHERE id=%s", (spec_id,))
-    return jsonify({"message": "Specialization deleted"})
-
-
-def admin_course_payload():
-    data = request_data()
-    image = save_file("image") or save_file("image_file") or text_value(data.get("image"), data.get("image_url"))
-    video = save_file("video") or save_file("video_file") or text_value(data.get("video"), data.get("video_url"))
-    return {
-        "spec_id": int_value(data.get("spec_id") or data.get("specialization_id")),
-        "title": text_value(data.get("title"), data.get("name")),
-        "description": text_value(data.get("description")),
-        "link": text_value(data.get("link"), data.get("course_link")),
-        "image": image,
-        "video": video,
-        "level": normalize_level(data.get("level") or data.get("difficulty")),
-    }
-
-
-@app.route("/api/admin/courses", methods=["POST"])
-@app.route("/api/courses", methods=["POST"])
-@admin_required
-def admin_add_course():
-    item = admin_course_payload()
-    if not item["spec_id"] or not item["title"]:
-        return jsonify({"error": "Specialization and course title are required"}), 400
-    new_id = query_db("INSERT INTO courses (spec_id,title,description,link,image,video,level) VALUES (%s,%s,%s,%s,%s,%s,%s)", (item["spec_id"], item["title"], item["description"], item["link"], item["image"], item["video"], item["level"]), commit=True)
-    course = get_course(new_id)
-    return jsonify({"message": "Course added", "course": course})
-
-
-@app.route("/api/admin/courses/<int:course_id>", methods=["PUT", "POST"])
-@app.route("/api/courses/<int:course_id>", methods=["PUT"])
-@admin_required
-def admin_update_course(course_id):
-    item = admin_course_payload()
-    exec_db("UPDATE courses SET spec_id=%s,title=%s,description=%s,link=%s,image=COALESCE(NULLIF(%s,''),image),video=COALESCE(NULLIF(%s,''),video),level=%s WHERE id=%s", (item["spec_id"], item["title"], item["description"], item["link"], item["image"], item["video"], item["level"], course_id))
-    return jsonify({"message": "Course updated", "course": get_course(course_id)})
-
-
-@app.route("/api/admin/courses/<int:course_id>", methods=["DELETE"])
-@app.route("/api/courses/<int:course_id>", methods=["DELETE"])
-@admin_required
-def admin_delete_course(course_id):
-    exec_db("DELETE FROM courses WHERE id=%s", (course_id,))
-    return jsonify({"message": "Course deleted"})
-
-
-@app.route("/api/admin/certificates", methods=["POST"])
-@app.route("/api/certificates", methods=["POST"])
-@admin_required
-def admin_add_certificate():
-    data = request_data()
-    spec_id = int_value(data.get("spec_id") or data.get("specialization_id"))
-    name = text_value(data.get("name"), data.get("title"))
-    if not spec_id or not name:
-        return jsonify({"error": "Specialization and certificate name are required"}), 400
-    cert_id = query_db("INSERT INTO certificates (spec_id,name,description,link,price,type) VALUES (%s,%s,%s,%s,%s,%s)", (spec_id, name, text_value(data.get("description")), text_value(data.get("link")), text_value(data.get("price")), text_value(data.get("type"), "both")), commit=True)
-    cert = query_db("SELECT * FROM certificates WHERE id=%s", (cert_id,), fetchone=True)
-    return jsonify({"message": "Certificate added", "certificate": cert})
-
-
-@app.route("/api/admin/certificates/<int:cert_id>", methods=["DELETE"])
-@admin_required
-def admin_delete_certificate(cert_id):
-    exec_db("DELETE FROM certificates WHERE id=%s", (cert_id,))
-    return jsonify({"message": "Certificate deleted"})
-
-
-@app.route("/api/admin/jobs", methods=["POST"])
-@app.route("/api/jobs", methods=["POST"])
-@admin_required
-def admin_add_job():
-    data = request_data()
-    title = text_value(data.get("title"), data.get("name"))
-    if not title:
-        return jsonify({"error": "Job title is required"}), 400
-    specialization_id = int_value(data.get("specialization_id") or data.get("spec_id"), None)
-    specialization = text_value(data.get("specialization"))
-    if specialization_id and not specialization:
-        row = query_db("SELECT name FROM specializations WHERE id=%s", (specialization_id,), fetchone=True)
-        specialization = row.get("name") if row else ""
-    job_id = query_db("INSERT INTO jobs (title,description,skills,specialization,salary,link,specialization_id) VALUES (%s,%s,%s,%s,%s,%s,%s)", (title, text_value(data.get("description")), text_value(data.get("skills"), data.get("required_skills")), specialization, text_value(data.get("salary"), data.get("average_salary")), text_value(data.get("link"), data.get("job_link")), specialization_id), commit=True)
-    job = query_db("SELECT * FROM jobs WHERE id=%s", (job_id,), fetchone=True)
-    return jsonify({"message": "Job added", "job": normalize_job(job)})
-
-
-@app.route("/api/admin/jobs/<int:job_id>", methods=["PUT", "POST"])
-@app.route("/api/jobs/<int:job_id>", methods=["PUT"])
-@admin_required
-def admin_update_job(job_id):
-    data = request_data()
-    specialization_id = int_value(data.get("specialization_id") or data.get("spec_id"), None)
-    exec_db("UPDATE jobs SET title=%s,description=%s,skills=%s,specialization=%s,salary=%s,link=%s,specialization_id=%s WHERE id=%s", (text_value(data.get("title"), data.get("name")), text_value(data.get("description")), text_value(data.get("skills"), data.get("required_skills")), text_value(data.get("specialization")), text_value(data.get("salary"), data.get("average_salary")), text_value(data.get("link"), data.get("job_link")), specialization_id, job_id))
-    job = query_db("SELECT * FROM jobs WHERE id=%s", (job_id,), fetchone=True)
-    return jsonify({"message": "Job updated", "job": normalize_job(job)})
-
-
-@app.route("/api/admin/jobs/<int:job_id>", methods=["DELETE"])
-@app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
-@admin_required
-def admin_delete_job(job_id):
-    exec_db("DELETE FROM jobs WHERE id=%s", (job_id,))
-    return jsonify({"message": "Job deleted"})
-
-
-def parse_questions_payload(data):
-    questions = data.get("questions") or []
-    if isinstance(questions, str):
-        try:
-            questions = json.loads(questions)
-        except Exception:
-            questions = []
-    if not questions:
-        for i in range(1, 31):
-            question = text_value(data.get(f"question{i}"), data.get(f"q{i}"))
-            if question:
-                questions.append({
-                    "question": question,
-                    "option1": text_value(data.get(f"option1_{i}"), data.get(f"q{i}_option1"), data.get(f"a{i}")),
-                    "option2": text_value(data.get(f"option2_{i}"), data.get(f"q{i}_option2"), data.get(f"b{i}")),
-                    "option3": text_value(data.get(f"option3_{i}"), data.get(f"q{i}_option3"), data.get(f"c{i}")),
-                    "option4": text_value(data.get(f"option4_{i}"), data.get(f"q{i}_option4"), data.get(f"d{i}")),
-                    "answer": text_value(data.get(f"answer{i}"), data.get(f"correct{i}")),
-                })
-    return questions
-
-
-@app.route("/api/admin/quizzes", methods=["POST"])
-@app.route("/api/quizzes", methods=["POST"])
-@admin_required
-def admin_add_quiz():
-    data = request_data()
-    course_id = int_value(data.get("course_id")) or None
-    spec_id = int_value(data.get("spec_id") or data.get("specialization_id")) or None
-    if course_id and not spec_id:
-        course = get_course(course_id)
-        spec_id = course.get("spec_id") if course else None
-    title = text_value(data.get("title"), data.get("name"), "Course Quiz")
-    quiz_id = query_db("INSERT INTO quizzes (spec_id,course_id,title,description,total_questions) VALUES (%s,%s,%s,%s,0)", (spec_id, course_id, title, text_value(data.get("description"))), commit=True)
-    questions = parse_questions_payload(data)
-    for q in questions:
-        query_db("INSERT INTO quiz_questions (quiz_id,question,option1,option2,option3,option4,answer,score) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (quiz_id, text_value(q.get("question"), q.get("question_text")), text_value(q.get("option1"), q.get("option_a")), text_value(q.get("option2"), q.get("option_b")), text_value(q.get("option3"), q.get("option_c")), text_value(q.get("option4"), q.get("option_d")), text_value(q.get("answer"), q.get("correct_answer")), int_value(q.get("score"), 1)), commit=True)
-    exec_db("UPDATE quizzes SET total_questions=(SELECT COUNT(*) FROM quiz_questions WHERE quiz_id=%s) WHERE id=%s", (quiz_id, quiz_id))
-    quiz = query_db("SELECT * FROM quizzes WHERE id=%s", (quiz_id,), fetchone=True)
-    return jsonify({"message": "Quiz added", "quiz": normalize_quiz(quiz), "questions_added": len(questions)})
-
-
-@app.route("/api/admin/quizzes/<int:quiz_id>", methods=["DELETE"])
-@app.route("/api/quizzes/<int:quiz_id>", methods=["DELETE"])
-@admin_required
-def admin_delete_quiz(quiz_id):
-    exec_db("DELETE FROM quizzes WHERE id=%s", (quiz_id,))
-    return jsonify({"message": "Quiz deleted"})
-
-
-@app.route("/api/admin/quizzes/<int:quiz_id>/questions", methods=["POST"])
-@app.route("/api/quizzes/<int:quiz_id>/questions", methods=["POST"])
-@admin_required
-def admin_add_question(quiz_id):
-    data = request_data()
-    question_id = query_db("INSERT INTO quiz_questions (quiz_id,question,option1,option2,option3,option4,answer,score) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (quiz_id, text_value(data.get("question"), data.get("question_text")), text_value(data.get("option1"), data.get("option_a")), text_value(data.get("option2"), data.get("option_b")), text_value(data.get("option3"), data.get("option_c")), text_value(data.get("option4"), data.get("option_d")), text_value(data.get("answer"), data.get("correct_answer")), int_value(data.get("score"), 1)), commit=True)
-    exec_db("UPDATE quizzes SET total_questions=(SELECT COUNT(*) FROM quiz_questions WHERE quiz_id=%s) WHERE id=%s", (quiz_id, quiz_id))
-    q = query_db("SELECT * FROM quiz_questions WHERE id=%s", (question_id,), fetchone=True)
-    return jsonify({"message": "Question added", "question": normalize_question(q, include_answer=True)})
-
-
-@app.errorhandler(404)
-def not_found(error):
-    if request.path.startswith("/api/"):
-        return jsonify({"error": "Not found"}), 404
-    try:
-        return render_template("gp.html")
-    except Exception:
-        return "Not found", 404
-
-
-@app.errorhandler(500)
-def server_error(error):
-    if request.path.startswith("/api/"):
-        return jsonify({"error": "Server error"}), 500
-    return "Server error", 500
+@app.route("/api/mode", methods=["PUT", "POST"])
+@login_required
+def switch_mode():
+    data = get_json()
+    mode = safe_text(data.get("mode")).lower()
+    if request.current_user.get("role") != "admin":
+        return jsonify({"error": "Only admins can switch mode"}), 403
+    if mode not in ["student", "admin"]:
+        return jsonify({"error": "Mode must be student or admin"}), 400
+    exec_db("UPDATE users SET current_mode=%s WHERE id=%s", (mode, request.current_user["id"]))
+    user = query_db("SELECT * FROM users WHERE id=%s", (request.current_user["id"],), fetchone=True)
+    return jsonify({"message": "Mode updated", "token": generate_token(user), "user": clean_user(user)})
 
 
 
-@app.route("/healthz", methods=["GET", "HEAD"])
-def healthz():
-    return jsonify({"status": "ok", "service": "SQR", "time": datetime.datetime.utcnow().isoformat()}), 200
+# =====================================================
+# SQR LONG DYNAMIC PATCH LAYER
+# Non-destructive extension: adds dynamic bootstrap, diagnostics,
+# recommendation question bank, and rich profile/admin summary routes.
+# =====================================================
 
-@app.route("/api/status", methods=["GET", "HEAD"])
-def api_status():
-    status = {"status": "ok", "database": False, "service": "SQR"}
-    try:
-        if pool is not None or (DB_CONFIG.get("host") and DB_CONFIG.get("user") and DB_CONFIG.get("database")):
-            row = query_db("SELECT 1 AS ok", fetchone=True)
-            status["database"] = bool(row and row.get("ok"))
-    except Exception as exc:
-        status["database"] = False
-        status["details"] = str(exc)
-    return jsonify(status), 200
-
-@app.route("/api/frontend-config", methods=["GET"])
-def frontend_config():
-    return jsonify({
-        "app": "SQR",
-        "brand": "Skill Quest Road",
-        "version": "enhanced-no-feature-delete-v2",
-        "pages": [
-            "gp.html",
-            "Specialization.html",
-            "specialization-details.html",
-            "Courses.html",
-            "course-details.html",
-            "Quiz.html",
-            "ATS.html",
-            "jobs.html",
-            "JobDetails.html",
-            "recommendation.html",
-            "profile.html",
-            "admin.html",
-            "signin.html",
-            "signup.html"
+SQR_RECOMMENDATION_QUESTION_BANK = [
+    {
+        "id": "cybersecurity_interest",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "interest",
+        "question": "How interested are you in Cybersecurity tasks such as linux, networking, and security?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
         ],
-        "features": [
-            "auth",
-            "admin",
-            "specializations",
-            "courses",
-            "auto enrollment",
-            "progress tracking",
-            "quizzes",
-            "ATS checker",
-            "ATS generator",
-            "jobs",
-            "recommendations",
-            "profile dashboard"
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_skill",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "skill",
+        "question": "How confident are you with linux, networking, or security for a Cybersecurity path?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_work_style",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves linux, networking, and practical problem solving for Cybersecurity?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_project",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using linux, networking, and security?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_career",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Cybersecurity and skills like linux and networking?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_interest",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "interest",
+        "question": "How interested are you in Digital Forensics tasks such as forensics, evidence, and malware?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_skill",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "skill",
+        "question": "How confident are you with forensics, evidence, or malware for a Digital Forensics path?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_work_style",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves forensics, evidence, and practical problem solving for Digital Forensics?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_project",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using forensics, evidence, and malware?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_career",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Digital Forensics and skills like forensics and evidence?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_interest",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "interest",
+        "question": "How interested are you in Software Engineering tasks such as java, python, and testing?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_skill",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "skill",
+        "question": "How confident are you with java, python, or testing for a Software Engineering path?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_work_style",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves java, python, and practical problem solving for Software Engineering?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_project",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using java, python, and testing?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_career",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Software Engineering and skills like java and python?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_interest",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "interest",
+        "question": "How interested are you in Web Development tasks such as html, css, and javascript?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_skill",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "skill",
+        "question": "How confident are you with html, css, or javascript for a Web Development path?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_work_style",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves html, css, and practical problem solving for Web Development?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_project",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using html, css, and javascript?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_career",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Web Development and skills like html and css?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_interest",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "interest",
+        "question": "How interested are you in Data Science tasks such as python, sql, and statistics?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_skill",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "skill",
+        "question": "How confident are you with python, sql, or statistics for a Data Science path?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_work_style",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves python, sql, and practical problem solving for Data Science?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_project",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using python, sql, and statistics?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_career",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Data Science and skills like python and sql?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_interest",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "interest",
+        "question": "How interested are you in AI and Machine Learning tasks such as python, machine learning, and deep learning?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_skill",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "skill",
+        "question": "How confident are you with python, machine learning, or deep learning for a AI and Machine Learning path?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_work_style",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves python, machine learning, and practical problem solving for AI and Machine Learning?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_project",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using python, machine learning, and deep learning?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_career",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to AI and Machine Learning and skills like python and machine learning?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_interest",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "interest",
+        "question": "How interested are you in Cloud and DevOps tasks such as aws, docker, and linux?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_skill",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "skill",
+        "question": "How confident are you with aws, docker, or linux for a Cloud and DevOps path?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_work_style",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves aws, docker, and practical problem solving for Cloud and DevOps?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_project",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using aws, docker, and linux?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_career",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Cloud and DevOps and skills like aws and docker?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_interest",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "interest",
+        "question": "How interested are you in Database Systems tasks such as sql, mysql, and postgresql?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_skill",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "skill",
+        "question": "How confident are you with sql, mysql, or postgresql for a Database Systems path?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_work_style",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves sql, mysql, and practical problem solving for Database Systems?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_project",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using sql, mysql, and postgresql?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_career",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Database Systems and skills like sql and mysql?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_interest",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "interest",
+        "question": "How interested are you in Mobile App Development tasks such as flutter, swift, and kotlin?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_skill",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "skill",
+        "question": "How confident are you with flutter, swift, or kotlin for a Mobile App Development path?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_work_style",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves flutter, swift, and practical problem solving for Mobile App Development?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_project",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using flutter, swift, and kotlin?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_career",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Mobile App Development and skills like flutter and swift?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_interest",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "interest",
+        "question": "How interested are you in Computer Networks tasks such as routing, tcp/ip, and switching?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_skill",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "skill",
+        "question": "How confident are you with routing, tcp/ip, or switching for a Computer Networks path?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_work_style",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves routing, tcp/ip, and practical problem solving for Computer Networks?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_project",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using routing, tcp/ip, and switching?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_career",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Computer Networks and skills like routing and tcp/ip?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_interest",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "interest",
+        "question": "How interested are you in UI/UX Engineering tasks such as design, accessibility, and prototyping?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_skill",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "skill",
+        "question": "How confident are you with design, accessibility, or prototyping for a UI/UX Engineering path?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_work_style",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves design, accessibility, and practical problem solving for UI/UX Engineering?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_project",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using design, accessibility, and prototyping?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_career",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to UI/UX Engineering and skills like design and accessibility?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_interest",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "interest",
+        "question": "How interested are you in Game Development tasks such as c++, unity, and graphics?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_skill",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "skill",
+        "question": "How confident are you with c++, unity, or graphics for a Game Development path?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_work_style",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves c++, unity, and practical problem solving for Game Development?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_project",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using c++, unity, and graphics?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_career",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Game Development and skills like c++ and unity?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_scenario_1",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a beginner scenario that uses networking and security.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cybersecurity_scenario_2",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a intermediate scenario that uses security and incident response.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cybersecurity_scenario_3",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a advanced scenario that uses incident response and linux.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cybersecurity_scenario_4",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a project scenario that uses linux and networking.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cybersecurity_scenario_5",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a career scenario that uses networking and security.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_1",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a beginner scenario that uses evidence and malware.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_2",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a intermediate scenario that uses malware and investigation.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_3",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a advanced scenario that uses investigation and forensics.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_4",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a project scenario that uses forensics and evidence.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_5",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a career scenario that uses evidence and malware.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_1",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a beginner scenario that uses python and testing.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_2",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a intermediate scenario that uses testing and architecture.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_3",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a advanced scenario that uses architecture and java.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_4",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a project scenario that uses java and python.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_5",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a career scenario that uses python and testing.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_1",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a beginner scenario that uses css and javascript.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_2",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a intermediate scenario that uses javascript and react.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_3",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a advanced scenario that uses react and html.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_4",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a project scenario that uses html and css.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_5",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a career scenario that uses css and javascript.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_1",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a beginner scenario that uses sql and statistics.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_2",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a intermediate scenario that uses statistics and machine learning.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_3",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a advanced scenario that uses machine learning and python.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_4",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a project scenario that uses python and sql.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_5",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a career scenario that uses sql and statistics.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_1",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a beginner scenario that uses machine learning and deep learning.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_2",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a intermediate scenario that uses deep learning and models.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_3",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a advanced scenario that uses models and python.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_4",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a project scenario that uses python and machine learning.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_5",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a career scenario that uses machine learning and deep learning.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_1",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a beginner scenario that uses docker and linux.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_2",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a intermediate scenario that uses linux and ci/cd.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_3",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a advanced scenario that uses ci/cd and aws.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_4",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a project scenario that uses aws and docker.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_5",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a career scenario that uses docker and linux.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_1",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a beginner scenario that uses mysql and postgresql.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_2",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a intermediate scenario that uses postgresql and data modeling.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_3",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a advanced scenario that uses data modeling and sql.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_4",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a project scenario that uses sql and mysql.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_5",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a career scenario that uses mysql and postgresql.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_1",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a beginner scenario that uses swift and kotlin.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_2",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a intermediate scenario that uses kotlin and ui.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_3",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a advanced scenario that uses ui and flutter.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_4",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a project scenario that uses flutter and swift.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_5",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a career scenario that uses swift and kotlin.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_1",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a beginner scenario that uses tcp/ip and switching.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_2",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a intermediate scenario that uses switching and security.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_3",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a advanced scenario that uses security and routing.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_4",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a project scenario that uses routing and tcp/ip.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_5",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a career scenario that uses tcp/ip and switching.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_1",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a beginner scenario that uses accessibility and prototyping.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_2",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a intermediate scenario that uses prototyping and frontend.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_3",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a advanced scenario that uses frontend and design.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_4",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a project scenario that uses design and accessibility.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_5",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a career scenario that uses accessibility and prototyping.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_1",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a beginner scenario that uses unity and graphics.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_2",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a intermediate scenario that uses graphics and logic.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_3",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a advanced scenario that uses logic and c++.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_4",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a project scenario that uses c++ and unity.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_5",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a career scenario that uses unity and graphics.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    }
+]
+
+SQR_PAGE_BLUEPRINTS = {
+    "home": [
+        "homeSpecializations",
+        "homeCourses",
+        "homeJobs"
+    ],
+    "profile": [
+        "profileSummary",
+        "profileProgressBars",
+        "profileQuizHistory",
+        "profileAtsHistory"
+    ],
+    "specializations": [
+        "specializationDetails",
+        "specializationsBox"
+    ],
+    "courses": [
+        "courseDetails",
+        "coursesBox"
+    ],
+    "quiz": [
+        "quizDetails",
+        "quizResult",
+        "quizzesBox"
+    ],
+    "ats": [
+        "atsCheckForm",
+        "atsGenerateForm",
+        "atsResult",
+        "generatedResume"
+    ],
+    "jobs": [
+        "jobsBox",
+        "jobDetails"
+    ],
+    "recommendation": [
+        "recommendationForm",
+        "recommendationResult",
+        "recommendationQuestionBank"
+    ],
+    "admin": [
+        "adminStatsBox",
+        "adminSpecializationsList",
+        "adminCoursesList",
+        "adminJobsList",
+        "adminQuizzesList",
+        "adminCertificatesList",
+        "adminUsersList"
+    ]
+}
+
+SQR_COLOR_THEME_TOKENS = {
+    "background": "#020617",
+    "surface": "rgba(15,23,42,0.82)",
+    "cyan": "#22d3ee",
+    "blue": "#3b82f6",
+    "purple": "#8b5cf6",
+    "pink": "#ec4899",
+    "green": "#22c55e",
+    "orange": "#f97316",
+    "red": "#ef4444"
+}
+
+
+def sqr_patch_safe_count(table_name):
+    try:
+        if not table_exists(table_name):
+            return 0
+        row = query_db(f"SELECT COUNT(*) AS total FROM `{table_name}`", fetchone=True)
+        return int(row.get("total") or 0) if row else 0
+    except Exception:
+        return 0
+
+
+def sqr_patch_table_columns(table_name):
+    try:
+        if not DB_CONFIG.get("database"):
+            return []
+        rows = query_db(
+            """
+            SELECT COLUMN_NAME AS name
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+            ORDER BY ORDINAL_POSITION
+            """,
+            (DB_CONFIG.get("database"), table_name),
+            fetchall=True
+        ) or []
+        return [r.get("name") for r in rows if r.get("name")]
+    except Exception:
+        return []
+
+
+def sqr_patch_select_rows(table_name, limit=8, order_col="created_at"):
+    try:
+        if not table_exists(table_name):
+            return []
+        columns = sqr_patch_table_columns(table_name)
+        order_sql = f" ORDER BY `{order_col}` DESC" if order_col in columns else ""
+        safe_limit = max(1, min(int(limit or 8), 50))
+        return query_db(f"SELECT * FROM `{table_name}`{order_sql} LIMIT {safe_limit}", fetchall=True) or []
+    except Exception:
+        return []
+
+
+def sqr_patch_normalize_rows(table_name, rows):
+    normalized = []
+    for row in rows or []:
+        try:
+            if table_name == "specializations":
+                normalized.append(normalize_specialization(row))
+            elif table_name == "courses":
+                normalized.append(normalize_course(row))
+            elif table_name == "jobs":
+                normalized.append(normalize_job(row))
+            elif table_name == "quizzes":
+                normalized.append(normalize_quiz(row))
+            else:
+                normalized.append(dict(row))
+        except Exception:
+            normalized.append(dict(row))
+    return normalized
+
+
+def sqr_patch_public_stats():
+    return {
+        "users": sqr_patch_safe_count("users"),
+        "specializations": sqr_patch_safe_count("specializations"),
+        "courses": sqr_patch_safe_count("courses"),
+        "quizzes": sqr_patch_safe_count("quizzes"),
+        "jobs": sqr_patch_safe_count("jobs"),
+        "certificates": sqr_patch_safe_count("certificates"),
+        "ats_results": sqr_patch_safe_count("ats_results"),
+        "quiz_attempts": sqr_patch_safe_count("quiz_attempts")
+    }
+
+
+def sqr_patch_keyword_list(text):
+    source = safe_text(text).lower()
+    found = []
+    for skill in TECH_SKILLS:
+        if skill.lower() in source and skill not in found:
+            found.append(skill)
+    return found
+
+
+def sqr_patch_score_text_against_keywords(text, keywords):
+    body = safe_text(text).lower()
+    keys = [safe_text(k).lower() for k in (keywords or []) if safe_text(k)]
+    if not keys:
+        return 0, []
+    matched = [k for k in keys if k in body]
+    score = round((len(matched) / max(len(keys), 1)) * 100)
+    return min(100, score), matched
+
+
+def sqr_patch_recommend_from_text(text, limit=5):
+    profile_text = safe_text(text)
+    specs = sqr_patch_normalize_rows("specializations", sqr_patch_select_rows("specializations", 50))
+    jobs = sqr_patch_normalize_rows("jobs", sqr_patch_select_rows("jobs", 50))
+    spec_matches = []
+    for spec in specs:
+        keywords = sqr_patch_keyword_list(" ".join([safe_text(spec.get("name")), safe_text(spec.get("description")), safe_text(spec.get("skills"))]))
+        score, matched = sqr_patch_score_text_against_keywords(profile_text, keywords)
+        if score or safe_text(spec.get("name")).lower() in profile_text.lower():
+            spec_matches.append({
+                "id": spec.get("id"),
+                "name": spec.get("name"),
+                "match_percentage": max(score, 20 if safe_text(spec.get("name")).lower() in profile_text.lower() else 0),
+                "matched_skills": matched,
+                "reason": "Matched profile text with specialization keywords."
+            })
+    job_matches = []
+    for job in jobs:
+        keywords = sqr_patch_keyword_list(" ".join([safe_text(job.get("title")), safe_text(job.get("description")), safe_text(job.get("skills")), safe_text(job.get("required_skills"))]))
+        score, matched = sqr_patch_score_text_against_keywords(profile_text, keywords)
+        if score or safe_text(job.get("title")).lower() in profile_text.lower():
+            job_matches.append({
+                "id": job.get("id"),
+                "title": job.get("title"),
+                "match_percentage": max(score, 20 if safe_text(job.get("title")).lower() in profile_text.lower() else 0),
+                "matched_skills": matched,
+                "reason": "Matched profile text with job skills."
+            })
+    spec_matches.sort(key=lambda item: item.get("match_percentage", 0), reverse=True)
+    job_matches.sort(key=lambda item: item.get("match_percentage", 0), reverse=True)
+    return {
+        "recommended_specializations": spec_matches[:limit],
+        "recommended_jobs": job_matches[:limit],
+        "detected_skills": sqr_patch_keyword_list(profile_text),
+        "roadmap": [
+            "Choose the highest matching specialization.",
+            "Open linked courses to start progress tracking.",
+            "Complete course quizzes to raise profile progress.",
+            "Use ATS tools for the target job.",
+            "Apply first to jobs with stronger skill matches."
+        ]
+    }
+
+
+def sqr_patch_profile_text(user):
+    if not user:
+        return ""
+    return " ".join([
+        safe_text(user.get("name")),
+        safe_text(user.get("skills")),
+        safe_text(user.get("interests")),
+        safe_text(user.get("goal")),
+        safe_text(user.get("work_style")) if isinstance(user, dict) else ""
+    ])
+
+
+def sqr_patch_user_activity(user_id):
+    data = {"opened_courses": 0, "quiz_attempts": 0, "ats_results": 0}
+    try:
+        if table_exists("course_enrollments"):
+            row = query_db("SELECT COUNT(*) AS total FROM course_enrollments WHERE user_id=%s", (user_id,), fetchone=True)
+            data["opened_courses"] = int(row.get("total") or 0) if row else 0
+        elif table_exists("progress"):
+            row = query_db("SELECT COUNT(*) AS total FROM progress WHERE user_id=%s", (user_id,), fetchone=True)
+            data["opened_courses"] = int(row.get("total") or 0) if row else 0
+    except Exception:
+        pass
+    try:
+        if table_exists("quiz_attempts"):
+            row = query_db("SELECT COUNT(*) AS total FROM quiz_attempts WHERE user_id=%s", (user_id,), fetchone=True)
+            data["quiz_attempts"] = int(row.get("total") or 0) if row else 0
+    except Exception:
+        pass
+    try:
+        if table_exists("ats_results"):
+            row = query_db("SELECT COUNT(*) AS total FROM ats_results WHERE user_id=%s", (user_id,), fetchone=True)
+            data["ats_results"] = int(row.get("total") or 0) if row else 0
+    except Exception:
+        pass
+    return data
+
+
+@app.route("/api/public/bootstrap", methods=["GET"])
+def sqr_patch_public_bootstrap():
+    return jsonify({
+        "message": "SQR dynamic bootstrap loaded",
+        "stats": sqr_patch_public_stats(),
+        "specializations": sqr_patch_normalize_rows("specializations", sqr_patch_select_rows("specializations", 6)),
+        "courses": sqr_patch_normalize_rows("courses", sqr_patch_select_rows("courses", 6)),
+        "jobs": sqr_patch_normalize_rows("jobs", sqr_patch_select_rows("jobs", 6)),
+        "theme": SQR_COLOR_THEME_TOKENS,
+        "pages": SQR_PAGE_BLUEPRINTS
+    })
+
+
+@app.route("/api/home/dashboard", methods=["GET"])
+def sqr_patch_home_dashboard():
+    return jsonify({
+        "stats": sqr_patch_public_stats(),
+        "latest_specializations": sqr_patch_normalize_rows("specializations", sqr_patch_select_rows("specializations", 9)),
+        "latest_courses": sqr_patch_normalize_rows("courses", sqr_patch_select_rows("courses", 9)),
+        "latest_jobs": sqr_patch_normalize_rows("jobs", sqr_patch_select_rows("jobs", 9))
+    })
+
+
+@app.route("/api/recommendation/questions", methods=["GET"])
+def sqr_patch_recommendation_questions():
+    specialization_key = safe_text(request.args.get("specialization_key")).lower()
+    dimension = safe_text(request.args.get("dimension")).lower()
+    questions = []
+    for question in SQR_RECOMMENDATION_QUESTION_BANK:
+        if specialization_key and safe_text(question.get("specialization_key")).lower() != specialization_key:
+            continue
+        if dimension and safe_text(question.get("dimension")).lower() != dimension:
+            continue
+        questions.append(question)
+    return jsonify({"questions": questions, "count": len(questions)})
+
+
+@app.route("/api/catalog/search", methods=["GET"])
+def sqr_patch_catalog_search():
+    term = safe_text(request.args.get("q")).lower()
+    limit = max(1, min(int(request.args.get("limit", 12) or 12), 40))
+    results = {"specializations": [], "courses": [], "jobs": [], "quizzes": []}
+    if not term:
+        return jsonify(results)
+    for table_name, key in [("specializations", "specializations"), ("courses", "courses"), ("jobs", "jobs"), ("quizzes", "quizzes")]:
+        rows = sqr_patch_normalize_rows(table_name, sqr_patch_select_rows(table_name, 50))
+        filtered = []
+        for row in rows:
+            body = " ".join(safe_text(v) for v in row.values()).lower()
+            if term in body:
+                filtered.append(row)
+        results[key] = filtered[:limit]
+    return jsonify(results)
+
+
+@app.route("/api/profile/dashboard/advanced", methods=["GET"])
+@login_required
+def sqr_patch_profile_dashboard_advanced():
+    user = clean_user(request.current_user)
+    user_id = user.get("id") or user.get("user_id")
+    recommendation = sqr_patch_recommend_from_text(sqr_patch_profile_text(user), 5)
+    activity = sqr_patch_user_activity(user_id)
+    progress_payload = []
+    try:
+        if "profile_progress" in globals():
+            pass
+    except Exception:
+        pass
+    return jsonify({
+        "user": user,
+        "activity": activity,
+        "recommendation_preview": recommendation,
+        "profile_completeness": sqr_patch_profile_completeness(user),
+        "stats": sqr_patch_public_stats(),
+        "progress_hint": "Use /api/profile/progress for real progress bars shown only on profile.html."
+    })
+
+
+def sqr_patch_profile_completeness(user):
+    fields = ["name", "email", "skills", "interests", "goal"]
+    if not user:
+        return 0
+    filled = sum(1 for field in fields if safe_text(user.get(field)))
+    return round((filled / len(fields)) * 100)
+
+
+@app.route("/api/admin/dashboard/advanced", methods=["GET"])
+@admin_required
+def sqr_patch_admin_dashboard_advanced():
+    return jsonify({
+        "stats": sqr_patch_public_stats(),
+        "tables": {
+            name: sqr_patch_table_columns(name)
+            for name in ["users", "specializations", "courses", "quizzes", "quiz_questions", "jobs", "certificates", "ats_results", "course_enrollments", "quiz_attempts"]
+        },
+        "recent": {
+            "specializations": sqr_patch_normalize_rows("specializations", sqr_patch_select_rows("specializations", 5)),
+            "courses": sqr_patch_normalize_rows("courses", sqr_patch_select_rows("courses", 5)),
+            "jobs": sqr_patch_normalize_rows("jobs", sqr_patch_select_rows("jobs", 5)),
+            "quizzes": sqr_patch_normalize_rows("quizzes", sqr_patch_select_rows("quizzes", 5))
+        }
+    })
+
+
+@app.route("/api/schema/check", methods=["GET"])
+def sqr_patch_schema_check():
+    tables = ["users", "admins", "specializations", "courses", "quizzes", "quiz_questions", "jobs", "certificates", "course_enrollments", "quiz_attempts", "ats_results", "assessments"]
+    return jsonify({
+        "database": DB_CONFIG.get("database"),
+        "connected": bool(pool),
+        "tables": [
+            {"name": table, "exists": table_exists(table), "columns": sqr_patch_table_columns(table)}
+            for table in tables
         ]
     })
 
 
-SQR_FEATURE_REGISTRY = [
-    {"id": 1, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 2, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 3, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 4, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 5, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 6, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 7, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 8, "area": "admin", "feature": "ban unban", "status": "preserved"},
-    {"id": 9, "area": "admin", "feature": "role control", "status": "preserved"},
-    {"id": 10, "area": "specializations", "feature": "list", "status": "preserved"},
-    {"id": 11, "area": "specializations", "feature": "details", "status": "preserved"},
-    {"id": 12, "area": "specializations", "feature": "enroll", "status": "preserved"},
-    {"id": 13, "area": "specializations", "feature": "unenroll", "status": "preserved"},
-    {"id": 14, "area": "specializations", "feature": "progress", "status": "preserved"},
-    {"id": 15, "area": "courses", "feature": "catalog", "status": "preserved"},
-    {"id": 16, "area": "courses", "feature": "filter", "status": "preserved"},
-    {"id": 17, "area": "courses", "feature": "details", "status": "preserved"},
-    {"id": 18, "area": "courses", "feature": "upload image", "status": "preserved"},
-    {"id": 19, "area": "courses", "feature": "upload video", "status": "preserved"},
-    {"id": 20, "area": "courses", "feature": "open tracking", "status": "preserved"},
-    {"id": 21, "area": "courses", "feature": "auto enrollment", "status": "preserved"},
-    {"id": 22, "area": "courses", "feature": "unenroll", "status": "preserved"},
-    {"id": 23, "area": "quizzes", "feature": "course quizzes", "status": "preserved"},
-    {"id": 24, "area": "quizzes", "feature": "questions", "status": "preserved"},
-    {"id": 25, "area": "quizzes", "feature": "submit answers", "status": "preserved"},
-    {"id": 26, "area": "quizzes", "feature": "score circle", "status": "preserved"},
-    {"id": 27, "area": "quizzes", "feature": "pass progress", "status": "preserved"},
-    {"id": 28, "area": "ats", "feature": "pdf upload", "status": "preserved"},
-    {"id": 29, "area": "ats", "feature": "docx upload", "status": "preserved"},
-    {"id": 30, "area": "ats", "feature": "checker", "status": "preserved"},
-    {"id": 31, "area": "ats", "feature": "generator", "status": "preserved"},
-    {"id": 32, "area": "ats", "feature": "pdf export", "status": "preserved"},
-    {"id": 33, "area": "ats", "feature": "docx export", "status": "preserved"},
-    {"id": 34, "area": "ats", "feature": "summary enhance", "status": "preserved"},
-    {"id": 35, "area": "recommendations", "feature": "assessment", "status": "preserved"},
-    {"id": 36, "area": "recommendations", "feature": "specialization match", "status": "preserved"},
-    {"id": 37, "area": "recommendations", "feature": "job match", "status": "preserved"},
-    {"id": 38, "area": "recommendations", "feature": "work style", "status": "preserved"},
-    {"id": 39, "area": "jobs", "feature": "list", "status": "preserved"},
-    {"id": 40, "area": "jobs", "feature": "details", "status": "preserved"},
-    {"id": 41, "area": "jobs", "feature": "linked specialization", "status": "preserved"},
-    {"id": 42, "area": "profile", "feature": "dashboard", "status": "preserved"},
-    {"id": 43, "area": "profile", "feature": "course progress", "status": "preserved"},
-    {"id": 44, "area": "profile", "feature": "specialization progress", "status": "preserved"},
-    {"id": 45, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 46, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 47, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 48, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 49, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 50, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 51, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 52, "area": "admin", "feature": "ban unban", "status": "preserved"},
-    {"id": 53, "area": "admin", "feature": "role control", "status": "preserved"},
-    {"id": 54, "area": "specializations", "feature": "list", "status": "preserved"},
-    {"id": 55, "area": "specializations", "feature": "details", "status": "preserved"},
-    {"id": 56, "area": "specializations", "feature": "enroll", "status": "preserved"},
-    {"id": 57, "area": "specializations", "feature": "unenroll", "status": "preserved"},
-    {"id": 58, "area": "specializations", "feature": "progress", "status": "preserved"},
-    {"id": 59, "area": "courses", "feature": "catalog", "status": "preserved"},
-    {"id": 60, "area": "courses", "feature": "filter", "status": "preserved"},
-    {"id": 61, "area": "courses", "feature": "details", "status": "preserved"},
-    {"id": 62, "area": "courses", "feature": "upload image", "status": "preserved"},
-    {"id": 63, "area": "courses", "feature": "upload video", "status": "preserved"},
-    {"id": 64, "area": "courses", "feature": "open tracking", "status": "preserved"},
-    {"id": 65, "area": "courses", "feature": "auto enrollment", "status": "preserved"},
-    {"id": 66, "area": "courses", "feature": "unenroll", "status": "preserved"},
-    {"id": 67, "area": "quizzes", "feature": "course quizzes", "status": "preserved"},
-    {"id": 68, "area": "quizzes", "feature": "questions", "status": "preserved"},
-    {"id": 69, "area": "quizzes", "feature": "submit answers", "status": "preserved"},
-    {"id": 70, "area": "quizzes", "feature": "score circle", "status": "preserved"},
-    {"id": 71, "area": "quizzes", "feature": "pass progress", "status": "preserved"},
-    {"id": 72, "area": "ats", "feature": "pdf upload", "status": "preserved"},
-    {"id": 73, "area": "ats", "feature": "docx upload", "status": "preserved"},
-    {"id": 74, "area": "ats", "feature": "checker", "status": "preserved"},
-    {"id": 75, "area": "ats", "feature": "generator", "status": "preserved"},
-    {"id": 76, "area": "ats", "feature": "pdf export", "status": "preserved"},
-    {"id": 77, "area": "ats", "feature": "docx export", "status": "preserved"},
-    {"id": 78, "area": "ats", "feature": "summary enhance", "status": "preserved"},
-    {"id": 79, "area": "recommendations", "feature": "assessment", "status": "preserved"},
-    {"id": 80, "area": "recommendations", "feature": "specialization match", "status": "preserved"},
-    {"id": 81, "area": "recommendations", "feature": "job match", "status": "preserved"},
-    {"id": 82, "area": "recommendations", "feature": "work style", "status": "preserved"},
-    {"id": 83, "area": "jobs", "feature": "list", "status": "preserved"},
-    {"id": 84, "area": "jobs", "feature": "details", "status": "preserved"},
-    {"id": 85, "area": "jobs", "feature": "linked specialization", "status": "preserved"},
-    {"id": 86, "area": "profile", "feature": "dashboard", "status": "preserved"},
-    {"id": 87, "area": "profile", "feature": "course progress", "status": "preserved"},
-    {"id": 88, "area": "profile", "feature": "specialization progress", "status": "preserved"},
-    {"id": 89, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 90, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 91, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 92, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 93, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 94, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 95, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 96, "area": "admin", "feature": "ban unban", "status": "preserved"},
-    {"id": 97, "area": "admin", "feature": "role control", "status": "preserved"},
-    {"id": 98, "area": "specializations", "feature": "list", "status": "preserved"},
-    {"id": 99, "area": "specializations", "feature": "details", "status": "preserved"},
-    {"id": 100, "area": "specializations", "feature": "enroll", "status": "preserved"},
-    {"id": 101, "area": "specializations", "feature": "unenroll", "status": "preserved"},
-    {"id": 102, "area": "specializations", "feature": "progress", "status": "preserved"},
-    {"id": 103, "area": "courses", "feature": "catalog", "status": "preserved"},
-    {"id": 104, "area": "courses", "feature": "filter", "status": "preserved"},
-    {"id": 105, "area": "courses", "feature": "details", "status": "preserved"},
-    {"id": 106, "area": "courses", "feature": "upload image", "status": "preserved"},
-    {"id": 107, "area": "courses", "feature": "upload video", "status": "preserved"},
-    {"id": 108, "area": "courses", "feature": "open tracking", "status": "preserved"},
-    {"id": 109, "area": "courses", "feature": "auto enrollment", "status": "preserved"},
-    {"id": 110, "area": "courses", "feature": "unenroll", "status": "preserved"},
-    {"id": 111, "area": "quizzes", "feature": "course quizzes", "status": "preserved"},
-    {"id": 112, "area": "quizzes", "feature": "questions", "status": "preserved"},
-    {"id": 113, "area": "quizzes", "feature": "submit answers", "status": "preserved"},
-    {"id": 114, "area": "quizzes", "feature": "score circle", "status": "preserved"},
-    {"id": 115, "area": "quizzes", "feature": "pass progress", "status": "preserved"},
-    {"id": 116, "area": "ats", "feature": "pdf upload", "status": "preserved"},
-    {"id": 117, "area": "ats", "feature": "docx upload", "status": "preserved"},
-    {"id": 118, "area": "ats", "feature": "checker", "status": "preserved"},
-    {"id": 119, "area": "ats", "feature": "generator", "status": "preserved"},
-    {"id": 120, "area": "ats", "feature": "pdf export", "status": "preserved"},
-    {"id": 121, "area": "ats", "feature": "docx export", "status": "preserved"},
-    {"id": 122, "area": "ats", "feature": "summary enhance", "status": "preserved"},
-    {"id": 123, "area": "recommendations", "feature": "assessment", "status": "preserved"},
-    {"id": 124, "area": "recommendations", "feature": "specialization match", "status": "preserved"},
-    {"id": 125, "area": "recommendations", "feature": "job match", "status": "preserved"},
-    {"id": 126, "area": "recommendations", "feature": "work style", "status": "preserved"},
-    {"id": 127, "area": "jobs", "feature": "list", "status": "preserved"},
-    {"id": 128, "area": "jobs", "feature": "details", "status": "preserved"},
-    {"id": 129, "area": "jobs", "feature": "linked specialization", "status": "preserved"},
-    {"id": 130, "area": "profile", "feature": "dashboard", "status": "preserved"},
-    {"id": 131, "area": "profile", "feature": "course progress", "status": "preserved"},
-    {"id": 132, "area": "profile", "feature": "specialization progress", "status": "preserved"},
-    {"id": 133, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 134, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 135, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 136, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 137, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 138, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 139, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 140, "area": "admin", "feature": "ban unban", "status": "preserved"},
-    {"id": 141, "area": "admin", "feature": "role control", "status": "preserved"},
-    {"id": 142, "area": "specializations", "feature": "list", "status": "preserved"},
-    {"id": 143, "area": "specializations", "feature": "details", "status": "preserved"},
-    {"id": 144, "area": "specializations", "feature": "enroll", "status": "preserved"},
-    {"id": 145, "area": "specializations", "feature": "unenroll", "status": "preserved"},
-    {"id": 146, "area": "specializations", "feature": "progress", "status": "preserved"},
-    {"id": 147, "area": "courses", "feature": "catalog", "status": "preserved"},
-    {"id": 148, "area": "courses", "feature": "filter", "status": "preserved"},
-    {"id": 149, "area": "courses", "feature": "details", "status": "preserved"},
-    {"id": 150, "area": "courses", "feature": "upload image", "status": "preserved"},
-    {"id": 151, "area": "courses", "feature": "upload video", "status": "preserved"},
-    {"id": 152, "area": "courses", "feature": "open tracking", "status": "preserved"},
-    {"id": 153, "area": "courses", "feature": "auto enrollment", "status": "preserved"},
-    {"id": 154, "area": "courses", "feature": "unenroll", "status": "preserved"},
-    {"id": 155, "area": "quizzes", "feature": "course quizzes", "status": "preserved"},
-    {"id": 156, "area": "quizzes", "feature": "questions", "status": "preserved"},
-    {"id": 157, "area": "quizzes", "feature": "submit answers", "status": "preserved"},
-    {"id": 158, "area": "quizzes", "feature": "score circle", "status": "preserved"},
-    {"id": 159, "area": "quizzes", "feature": "pass progress", "status": "preserved"},
-    {"id": 160, "area": "ats", "feature": "pdf upload", "status": "preserved"},
-    {"id": 161, "area": "ats", "feature": "docx upload", "status": "preserved"},
-    {"id": 162, "area": "ats", "feature": "checker", "status": "preserved"},
-    {"id": 163, "area": "ats", "feature": "generator", "status": "preserved"},
-    {"id": 164, "area": "ats", "feature": "pdf export", "status": "preserved"},
-    {"id": 165, "area": "ats", "feature": "docx export", "status": "preserved"},
-    {"id": 166, "area": "ats", "feature": "summary enhance", "status": "preserved"},
-    {"id": 167, "area": "recommendations", "feature": "assessment", "status": "preserved"},
-    {"id": 168, "area": "recommendations", "feature": "specialization match", "status": "preserved"},
-    {"id": 169, "area": "recommendations", "feature": "job match", "status": "preserved"},
-    {"id": 170, "area": "recommendations", "feature": "work style", "status": "preserved"},
-    {"id": 171, "area": "jobs", "feature": "list", "status": "preserved"},
-    {"id": 172, "area": "jobs", "feature": "details", "status": "preserved"},
-    {"id": 173, "area": "jobs", "feature": "linked specialization", "status": "preserved"},
-    {"id": 174, "area": "profile", "feature": "dashboard", "status": "preserved"},
-    {"id": 175, "area": "profile", "feature": "course progress", "status": "preserved"},
-    {"id": 176, "area": "profile", "feature": "specialization progress", "status": "preserved"},
-    {"id": 177, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 178, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 179, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 180, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 181, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 182, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 183, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 184, "area": "admin", "feature": "ban unban", "status": "preserved"},
-    {"id": 185, "area": "admin", "feature": "role control", "status": "preserved"},
-    {"id": 186, "area": "specializations", "feature": "list", "status": "preserved"},
-    {"id": 187, "area": "specializations", "feature": "details", "status": "preserved"},
-    {"id": 188, "area": "specializations", "feature": "enroll", "status": "preserved"},
-    {"id": 189, "area": "specializations", "feature": "unenroll", "status": "preserved"},
-    {"id": 190, "area": "specializations", "feature": "progress", "status": "preserved"},
-    {"id": 191, "area": "courses", "feature": "catalog", "status": "preserved"},
-    {"id": 192, "area": "courses", "feature": "filter", "status": "preserved"},
-    {"id": 193, "area": "courses", "feature": "details", "status": "preserved"},
-    {"id": 194, "area": "courses", "feature": "upload image", "status": "preserved"},
-    {"id": 195, "area": "courses", "feature": "upload video", "status": "preserved"},
-    {"id": 196, "area": "courses", "feature": "open tracking", "status": "preserved"},
-    {"id": 197, "area": "courses", "feature": "auto enrollment", "status": "preserved"},
-    {"id": 198, "area": "courses", "feature": "unenroll", "status": "preserved"},
-    {"id": 199, "area": "quizzes", "feature": "course quizzes", "status": "preserved"},
-    {"id": 200, "area": "quizzes", "feature": "questions", "status": "preserved"},
-    {"id": 201, "area": "quizzes", "feature": "submit answers", "status": "preserved"},
-    {"id": 202, "area": "quizzes", "feature": "score circle", "status": "preserved"},
-    {"id": 203, "area": "quizzes", "feature": "pass progress", "status": "preserved"},
-    {"id": 204, "area": "ats", "feature": "pdf upload", "status": "preserved"},
-    {"id": 205, "area": "ats", "feature": "docx upload", "status": "preserved"},
-    {"id": 206, "area": "ats", "feature": "checker", "status": "preserved"},
-    {"id": 207, "area": "ats", "feature": "generator", "status": "preserved"},
-    {"id": 208, "area": "ats", "feature": "pdf export", "status": "preserved"},
-    {"id": 209, "area": "ats", "feature": "docx export", "status": "preserved"},
-    {"id": 210, "area": "ats", "feature": "summary enhance", "status": "preserved"},
-    {"id": 211, "area": "recommendations", "feature": "assessment", "status": "preserved"},
-    {"id": 212, "area": "recommendations", "feature": "specialization match", "status": "preserved"},
-    {"id": 213, "area": "recommendations", "feature": "job match", "status": "preserved"},
-    {"id": 214, "area": "recommendations", "feature": "work style", "status": "preserved"},
-    {"id": 215, "area": "jobs", "feature": "list", "status": "preserved"},
-    {"id": 216, "area": "jobs", "feature": "details", "status": "preserved"},
-    {"id": 217, "area": "jobs", "feature": "linked specialization", "status": "preserved"},
-    {"id": 218, "area": "profile", "feature": "dashboard", "status": "preserved"},
-    {"id": 219, "area": "profile", "feature": "course progress", "status": "preserved"},
-    {"id": 220, "area": "profile", "feature": "specialization progress", "status": "preserved"},
-    {"id": 221, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 222, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 223, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 224, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 225, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 226, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 227, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 228, "area": "admin", "feature": "ban unban", "status": "preserved"},
-    {"id": 229, "area": "admin", "feature": "role control", "status": "preserved"},
-    {"id": 230, "area": "specializations", "feature": "list", "status": "preserved"},
-    {"id": 231, "area": "specializations", "feature": "details", "status": "preserved"},
-    {"id": 232, "area": "specializations", "feature": "enroll", "status": "preserved"},
-    {"id": 233, "area": "specializations", "feature": "unenroll", "status": "preserved"},
-    {"id": 234, "area": "specializations", "feature": "progress", "status": "preserved"},
-    {"id": 235, "area": "courses", "feature": "catalog", "status": "preserved"},
-    {"id": 236, "area": "courses", "feature": "filter", "status": "preserved"},
-    {"id": 237, "area": "courses", "feature": "details", "status": "preserved"},
-    {"id": 238, "area": "courses", "feature": "upload image", "status": "preserved"},
-    {"id": 239, "area": "courses", "feature": "upload video", "status": "preserved"},
-    {"id": 240, "area": "courses", "feature": "open tracking", "status": "preserved"},
-    {"id": 241, "area": "courses", "feature": "auto enrollment", "status": "preserved"},
-    {"id": 242, "area": "courses", "feature": "unenroll", "status": "preserved"},
-    {"id": 243, "area": "quizzes", "feature": "course quizzes", "status": "preserved"},
-    {"id": 244, "area": "quizzes", "feature": "questions", "status": "preserved"},
-    {"id": 245, "area": "quizzes", "feature": "submit answers", "status": "preserved"},
-    {"id": 246, "area": "quizzes", "feature": "score circle", "status": "preserved"},
-    {"id": 247, "area": "quizzes", "feature": "pass progress", "status": "preserved"},
-    {"id": 248, "area": "ats", "feature": "pdf upload", "status": "preserved"},
-    {"id": 249, "area": "ats", "feature": "docx upload", "status": "preserved"},
-    {"id": 250, "area": "ats", "feature": "checker", "status": "preserved"},
-    {"id": 251, "area": "ats", "feature": "generator", "status": "preserved"},
-    {"id": 252, "area": "ats", "feature": "pdf export", "status": "preserved"},
-    {"id": 253, "area": "ats", "feature": "docx export", "status": "preserved"},
-    {"id": 254, "area": "ats", "feature": "summary enhance", "status": "preserved"},
-    {"id": 255, "area": "recommendations", "feature": "assessment", "status": "preserved"},
-    {"id": 256, "area": "recommendations", "feature": "specialization match", "status": "preserved"},
-    {"id": 257, "area": "recommendations", "feature": "job match", "status": "preserved"},
-    {"id": 258, "area": "recommendations", "feature": "work style", "status": "preserved"},
-    {"id": 259, "area": "jobs", "feature": "list", "status": "preserved"},
-    {"id": 260, "area": "jobs", "feature": "details", "status": "preserved"},
-    {"id": 261, "area": "jobs", "feature": "linked specialization", "status": "preserved"},
-    {"id": 262, "area": "profile", "feature": "dashboard", "status": "preserved"},
-    {"id": 263, "area": "profile", "feature": "course progress", "status": "preserved"},
-    {"id": 264, "area": "profile", "feature": "specialization progress", "status": "preserved"},
-    {"id": 265, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 266, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 267, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 268, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 269, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 270, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 271, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 272, "area": "admin", "feature": "ban unban", "status": "preserved"},
-    {"id": 273, "area": "admin", "feature": "role control", "status": "preserved"},
-    {"id": 274, "area": "specializations", "feature": "list", "status": "preserved"},
-    {"id": 275, "area": "specializations", "feature": "details", "status": "preserved"},
-    {"id": 276, "area": "specializations", "feature": "enroll", "status": "preserved"},
-    {"id": 277, "area": "specializations", "feature": "unenroll", "status": "preserved"},
-    {"id": 278, "area": "specializations", "feature": "progress", "status": "preserved"},
-    {"id": 279, "area": "courses", "feature": "catalog", "status": "preserved"},
-    {"id": 280, "area": "courses", "feature": "filter", "status": "preserved"},
-    {"id": 281, "area": "courses", "feature": "details", "status": "preserved"},
-    {"id": 282, "area": "courses", "feature": "upload image", "status": "preserved"},
-    {"id": 283, "area": "courses", "feature": "upload video", "status": "preserved"},
-    {"id": 284, "area": "courses", "feature": "open tracking", "status": "preserved"},
-    {"id": 285, "area": "courses", "feature": "auto enrollment", "status": "preserved"},
-    {"id": 286, "area": "courses", "feature": "unenroll", "status": "preserved"},
-    {"id": 287, "area": "quizzes", "feature": "course quizzes", "status": "preserved"},
-    {"id": 288, "area": "quizzes", "feature": "questions", "status": "preserved"},
-    {"id": 289, "area": "quizzes", "feature": "submit answers", "status": "preserved"},
-    {"id": 290, "area": "quizzes", "feature": "score circle", "status": "preserved"},
-    {"id": 291, "area": "quizzes", "feature": "pass progress", "status": "preserved"},
-    {"id": 292, "area": "ats", "feature": "pdf upload", "status": "preserved"},
-    {"id": 293, "area": "ats", "feature": "docx upload", "status": "preserved"},
-    {"id": 294, "area": "ats", "feature": "checker", "status": "preserved"},
-    {"id": 295, "area": "ats", "feature": "generator", "status": "preserved"},
-    {"id": 296, "area": "ats", "feature": "pdf export", "status": "preserved"},
-    {"id": 297, "area": "ats", "feature": "docx export", "status": "preserved"},
-    {"id": 298, "area": "ats", "feature": "summary enhance", "status": "preserved"},
-    {"id": 299, "area": "recommendations", "feature": "assessment", "status": "preserved"},
-    {"id": 300, "area": "recommendations", "feature": "specialization match", "status": "preserved"},
-    {"id": 301, "area": "recommendations", "feature": "job match", "status": "preserved"},
-    {"id": 302, "area": "recommendations", "feature": "work style", "status": "preserved"},
-    {"id": 303, "area": "jobs", "feature": "list", "status": "preserved"},
-    {"id": 304, "area": "jobs", "feature": "details", "status": "preserved"},
-    {"id": 305, "area": "jobs", "feature": "linked specialization", "status": "preserved"},
-    {"id": 306, "area": "profile", "feature": "dashboard", "status": "preserved"},
-    {"id": 307, "area": "profile", "feature": "course progress", "status": "preserved"},
-    {"id": 308, "area": "profile", "feature": "specialization progress", "status": "preserved"},
-    {"id": 309, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 310, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 311, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 312, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 313, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 314, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 315, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 316, "area": "admin", "feature": "ban unban", "status": "preserved"},
-    {"id": 317, "area": "admin", "feature": "role control", "status": "preserved"},
-    {"id": 318, "area": "specializations", "feature": "list", "status": "preserved"},
-    {"id": 319, "area": "specializations", "feature": "details", "status": "preserved"},
-    {"id": 320, "area": "specializations", "feature": "enroll", "status": "preserved"},
-    {"id": 321, "area": "specializations", "feature": "unenroll", "status": "preserved"},
-    {"id": 322, "area": "specializations", "feature": "progress", "status": "preserved"},
-    {"id": 323, "area": "courses", "feature": "catalog", "status": "preserved"},
-    {"id": 324, "area": "courses", "feature": "filter", "status": "preserved"},
-    {"id": 325, "area": "courses", "feature": "details", "status": "preserved"},
-    {"id": 326, "area": "courses", "feature": "upload image", "status": "preserved"},
-    {"id": 327, "area": "courses", "feature": "upload video", "status": "preserved"},
-    {"id": 328, "area": "courses", "feature": "open tracking", "status": "preserved"},
-    {"id": 329, "area": "courses", "feature": "auto enrollment", "status": "preserved"},
-    {"id": 330, "area": "courses", "feature": "unenroll", "status": "preserved"},
-    {"id": 331, "area": "quizzes", "feature": "course quizzes", "status": "preserved"},
-    {"id": 332, "area": "quizzes", "feature": "questions", "status": "preserved"},
-    {"id": 333, "area": "quizzes", "feature": "submit answers", "status": "preserved"},
-    {"id": 334, "area": "quizzes", "feature": "score circle", "status": "preserved"},
-    {"id": 335, "area": "quizzes", "feature": "pass progress", "status": "preserved"},
-    {"id": 336, "area": "ats", "feature": "pdf upload", "status": "preserved"},
-    {"id": 337, "area": "ats", "feature": "docx upload", "status": "preserved"},
-    {"id": 338, "area": "ats", "feature": "checker", "status": "preserved"},
-    {"id": 339, "area": "ats", "feature": "generator", "status": "preserved"},
-    {"id": 340, "area": "ats", "feature": "pdf export", "status": "preserved"},
-    {"id": 341, "area": "ats", "feature": "docx export", "status": "preserved"},
-    {"id": 342, "area": "ats", "feature": "summary enhance", "status": "preserved"},
-    {"id": 343, "area": "recommendations", "feature": "assessment", "status": "preserved"},
-    {"id": 344, "area": "recommendations", "feature": "specialization match", "status": "preserved"},
-    {"id": 345, "area": "recommendations", "feature": "job match", "status": "preserved"},
-    {"id": 346, "area": "recommendations", "feature": "work style", "status": "preserved"},
-    {"id": 347, "area": "jobs", "feature": "list", "status": "preserved"},
-    {"id": 348, "area": "jobs", "feature": "details", "status": "preserved"},
-    {"id": 349, "area": "jobs", "feature": "linked specialization", "status": "preserved"},
-    {"id": 350, "area": "profile", "feature": "dashboard", "status": "preserved"},
-    {"id": 351, "area": "profile", "feature": "course progress", "status": "preserved"},
-    {"id": 352, "area": "profile", "feature": "specialization progress", "status": "preserved"},
-    {"id": 353, "area": "authentication", "feature": "signup validation", "status": "preserved"},
-    {"id": 354, "area": "authentication", "feature": "signin redirect", "status": "preserved"},
-    {"id": 355, "area": "authentication", "feature": "jwt session", "status": "preserved"},
-    {"id": 356, "area": "authentication", "feature": "logout", "status": "preserved"},
-    {"id": 357, "area": "admin", "feature": "admin only access", "status": "preserved"},
-    {"id": 358, "area": "admin", "feature": "stats cards", "status": "preserved"},
-    {"id": 359, "area": "admin", "feature": "manage users", "status": "preserved"},
-    {"id": 360, "area": "admin", "feature": "ban unban", "status": "preserved"},
+@app.route("/api/static/page-blueprint/<page_name>", methods=["GET"])
+def sqr_patch_page_blueprint(page_name):
+    key = safe_text(page_name).replace(".html", "").lower()
+    return jsonify({"page": key, "dynamic_targets": SQR_PAGE_BLUEPRINTS.get(key, []), "theme": SQR_COLOR_THEME_TOKENS})
+
+
+@app.route("/api/recommendations/preview", methods=["POST"])
+@login_required
+def sqr_patch_recommendations_preview():
+    data = get_json()
+    text = " ".join([
+        safe_text(data.get("interests")),
+        safe_text(data.get("skills")),
+        safe_text(data.get("work_style")),
+        safe_text(data.get("goal")),
+        sqr_patch_profile_text(request.current_user)
+    ])
+    return jsonify(sqr_patch_recommend_from_text(text, 8))
+
+
+# Extra backend view-model helpers used by the colorful templates.
+# These routes are intentionally unique so they do not replace existing project features.
+@app.route("/api/view-model/home", methods=["GET"])
+def sqr_patch_view_model_home():
+    payload = sqr_patch_public_stats()
+    return jsonify({
+        "page": "home",
+        "title": "Skill Quest Road",
+        "counts": payload,
+        "sections": SQR_PAGE_BLUEPRINTS.get("home", []),
+        "colors": SQR_COLOR_THEME_TOKENS
+    })
+
+
+@app.route("/api/view-model/profile", methods=["GET"])
+@login_required
+def sqr_patch_view_model_profile():
+    user = clean_user(request.current_user)
+    return jsonify({
+        "page": "profile",
+        "user": user,
+        "activity": sqr_patch_user_activity(user.get("id") or user.get("user_id")),
+        "completeness": sqr_patch_profile_completeness(user),
+        "sections": SQR_PAGE_BLUEPRINTS.get("profile", [])
+    })
+
+SQR_DYNAMIC_CONTAINER_REGISTRY = [
+    {
+        "page": "home",
+        "target": "homeSpecializations",
+        "priority": 1,
+        "purpose": "Dynamic container homeSpecializations on home page"
+    },
+    {
+        "page": "home",
+        "target": "homeCourses",
+        "priority": 2,
+        "purpose": "Dynamic container homeCourses on home page"
+    },
+    {
+        "page": "home",
+        "target": "homeJobs",
+        "priority": 3,
+        "purpose": "Dynamic container homeJobs on home page"
+    },
+    {
+        "page": "profile",
+        "target": "profileSummary",
+        "priority": 1,
+        "purpose": "Dynamic container profileSummary on profile page"
+    },
+    {
+        "page": "profile",
+        "target": "profileProgressBars",
+        "priority": 2,
+        "purpose": "Dynamic container profileProgressBars on profile page"
+    },
+    {
+        "page": "profile",
+        "target": "profileQuizHistory",
+        "priority": 3,
+        "purpose": "Dynamic container profileQuizHistory on profile page"
+    },
+    {
+        "page": "profile",
+        "target": "profileAtsHistory",
+        "priority": 4,
+        "purpose": "Dynamic container profileAtsHistory on profile page"
+    },
+    {
+        "page": "specializations",
+        "target": "specializationDetails",
+        "priority": 1,
+        "purpose": "Dynamic container specializationDetails on specializations page"
+    },
+    {
+        "page": "specializations",
+        "target": "specializationsBox",
+        "priority": 2,
+        "purpose": "Dynamic container specializationsBox on specializations page"
+    },
+    {
+        "page": "courses",
+        "target": "courseDetails",
+        "priority": 1,
+        "purpose": "Dynamic container courseDetails on courses page"
+    },
+    {
+        "page": "courses",
+        "target": "coursesBox",
+        "priority": 2,
+        "purpose": "Dynamic container coursesBox on courses page"
+    },
+    {
+        "page": "quiz",
+        "target": "quizDetails",
+        "priority": 1,
+        "purpose": "Dynamic container quizDetails on quiz page"
+    },
+    {
+        "page": "quiz",
+        "target": "quizResult",
+        "priority": 2,
+        "purpose": "Dynamic container quizResult on quiz page"
+    },
+    {
+        "page": "quiz",
+        "target": "quizzesBox",
+        "priority": 3,
+        "purpose": "Dynamic container quizzesBox on quiz page"
+    },
+    {
+        "page": "ats",
+        "target": "atsCheckForm",
+        "priority": 1,
+        "purpose": "Dynamic container atsCheckForm on ats page"
+    },
+    {
+        "page": "ats",
+        "target": "atsGenerateForm",
+        "priority": 2,
+        "purpose": "Dynamic container atsGenerateForm on ats page"
+    },
+    {
+        "page": "ats",
+        "target": "atsResult",
+        "priority": 3,
+        "purpose": "Dynamic container atsResult on ats page"
+    },
+    {
+        "page": "ats",
+        "target": "generatedResume",
+        "priority": 4,
+        "purpose": "Dynamic container generatedResume on ats page"
+    },
+    {
+        "page": "jobs",
+        "target": "jobsBox",
+        "priority": 1,
+        "purpose": "Dynamic container jobsBox on jobs page"
+    },
+    {
+        "page": "jobs",
+        "target": "jobDetails",
+        "priority": 2,
+        "purpose": "Dynamic container jobDetails on jobs page"
+    },
+    {
+        "page": "recommendation",
+        "target": "recommendationForm",
+        "priority": 1,
+        "purpose": "Dynamic container recommendationForm on recommendation page"
+    },
+    {
+        "page": "recommendation",
+        "target": "recommendationResult",
+        "priority": 2,
+        "purpose": "Dynamic container recommendationResult on recommendation page"
+    },
+    {
+        "page": "recommendation",
+        "target": "recommendationQuestionBank",
+        "priority": 3,
+        "purpose": "Dynamic container recommendationQuestionBank on recommendation page"
+    },
+    {
+        "page": "admin",
+        "target": "adminStatsBox",
+        "priority": 1,
+        "purpose": "Dynamic container adminStatsBox on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminSpecializationsList",
+        "priority": 2,
+        "purpose": "Dynamic container adminSpecializationsList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminCoursesList",
+        "priority": 3,
+        "purpose": "Dynamic container adminCoursesList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminJobsList",
+        "priority": 4,
+        "purpose": "Dynamic container adminJobsList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminQuizzesList",
+        "priority": 5,
+        "purpose": "Dynamic container adminQuizzesList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminCertificatesList",
+        "priority": 6,
+        "purpose": "Dynamic container adminCertificatesList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminUsersList",
+        "priority": 7,
+        "purpose": "Dynamic container adminUsersList on admin page"
+    }
 ]
 
-@app.route("/api/feature-registry", methods=["GET"])
-def feature_registry():
-    return jsonify({"features": SQR_FEATURE_REGISTRY, "total": len(SQR_FEATURE_REGISTRY)})
+
+@app.route("/api/static/dynamic-containers", methods=["GET"])
+def sqr_patch_dynamic_containers():
+    page = safe_text(request.args.get("page")).replace(".html", "").lower()
+    rows = [row for row in SQR_DYNAMIC_CONTAINER_REGISTRY if not page or row.get("page") == page]
+    return jsonify({"containers": rows, "count": len(rows)})
 
 
-SQR_EXTRA_COMPATIBILITY_MATRIX = [
-    ("module_1", "feature_preserved", "enhanced"),
-    ("module_2", "feature_preserved", "enhanced"),
-    ("module_3", "feature_preserved", "enhanced"),
-    ("module_4", "feature_preserved", "enhanced"),
-    ("module_5", "feature_preserved", "enhanced"),
-    ("module_6", "feature_preserved", "enhanced"),
-    ("module_7", "feature_preserved", "enhanced"),
-    ("module_8", "feature_preserved", "enhanced"),
-    ("module_9", "feature_preserved", "enhanced"),
-    ("module_10", "feature_preserved", "enhanced"),
-    ("module_11", "feature_preserved", "enhanced"),
-    ("module_12", "feature_preserved", "enhanced"),
-    ("module_13", "feature_preserved", "enhanced"),
-    ("module_14", "feature_preserved", "enhanced"),
-    ("module_15", "feature_preserved", "enhanced"),
-    ("module_16", "feature_preserved", "enhanced"),
-    ("module_17", "feature_preserved", "enhanced"),
-    ("module_18", "feature_preserved", "enhanced"),
-    ("module_19", "feature_preserved", "enhanced"),
-    ("module_20", "feature_preserved", "enhanced"),
-    ("module_21", "feature_preserved", "enhanced"),
-    ("module_22", "feature_preserved", "enhanced"),
-    ("module_23", "feature_preserved", "enhanced"),
-    ("module_24", "feature_preserved", "enhanced"),
-    ("module_25", "feature_preserved", "enhanced"),
-    ("module_26", "feature_preserved", "enhanced"),
-    ("module_27", "feature_preserved", "enhanced"),
-    ("module_28", "feature_preserved", "enhanced"),
-    ("module_29", "feature_preserved", "enhanced"),
-    ("module_30", "feature_preserved", "enhanced"),
-    ("module_31", "feature_preserved", "enhanced"),
-    ("module_32", "feature_preserved", "enhanced"),
-    ("module_33", "feature_preserved", "enhanced"),
-    ("module_34", "feature_preserved", "enhanced"),
-    ("module_35", "feature_preserved", "enhanced"),
-    ("module_36", "feature_preserved", "enhanced"),
-    ("module_37", "feature_preserved", "enhanced"),
-    ("module_38", "feature_preserved", "enhanced"),
-    ("module_39", "feature_preserved", "enhanced"),
-    ("module_40", "feature_preserved", "enhanced"),
-    ("module_41", "feature_preserved", "enhanced"),
-    ("module_42", "feature_preserved", "enhanced"),
-    ("module_43", "feature_preserved", "enhanced"),
-    ("module_44", "feature_preserved", "enhanced"),
-    ("module_45", "feature_preserved", "enhanced"),
-    ("module_46", "feature_preserved", "enhanced"),
-    ("module_47", "feature_preserved", "enhanced"),
-    ("module_48", "feature_preserved", "enhanced"),
-    ("module_49", "feature_preserved", "enhanced"),
-    ("module_50", "feature_preserved", "enhanced"),
-    ("module_51", "feature_preserved", "enhanced"),
-    ("module_52", "feature_preserved", "enhanced"),
-    ("module_53", "feature_preserved", "enhanced"),
-    ("module_54", "feature_preserved", "enhanced"),
-    ("module_55", "feature_preserved", "enhanced"),
-    ("module_56", "feature_preserved", "enhanced"),
-    ("module_57", "feature_preserved", "enhanced"),
-    ("module_58", "feature_preserved", "enhanced"),
-    ("module_59", "feature_preserved", "enhanced"),
-    ("module_60", "feature_preserved", "enhanced"),
-    ("module_61", "feature_preserved", "enhanced"),
-    ("module_62", "feature_preserved", "enhanced"),
-    ("module_63", "feature_preserved", "enhanced"),
-    ("module_64", "feature_preserved", "enhanced"),
-    ("module_65", "feature_preserved", "enhanced"),
-    ("module_66", "feature_preserved", "enhanced"),
-    ("module_67", "feature_preserved", "enhanced"),
-    ("module_68", "feature_preserved", "enhanced"),
-    ("module_69", "feature_preserved", "enhanced"),
-    ("module_70", "feature_preserved", "enhanced"),
-    ("module_71", "feature_preserved", "enhanced"),
-    ("module_72", "feature_preserved", "enhanced"),
-    ("module_73", "feature_preserved", "enhanced"),
-    ("module_74", "feature_preserved", "enhanced"),
-    ("module_75", "feature_preserved", "enhanced"),
-    ("module_76", "feature_preserved", "enhanced"),
-    ("module_77", "feature_preserved", "enhanced"),
-    ("module_78", "feature_preserved", "enhanced"),
-    ("module_79", "feature_preserved", "enhanced"),
-    ("module_80", "feature_preserved", "enhanced"),
-    ("module_81", "feature_preserved", "enhanced"),
-    ("module_82", "feature_preserved", "enhanced"),
-    ("module_83", "feature_preserved", "enhanced"),
-    ("module_84", "feature_preserved", "enhanced"),
-    ("module_85", "feature_preserved", "enhanced"),
-    ("module_86", "feature_preserved", "enhanced"),
-    ("module_87", "feature_preserved", "enhanced"),
-    ("module_88", "feature_preserved", "enhanced"),
-    ("module_89", "feature_preserved", "enhanced"),
-    ("module_90", "feature_preserved", "enhanced"),
-    ("module_91", "feature_preserved", "enhanced"),
-    ("module_92", "feature_preserved", "enhanced"),
-    ("module_93", "feature_preserved", "enhanced"),
-    ("module_94", "feature_preserved", "enhanced"),
-    ("module_95", "feature_preserved", "enhanced"),
-    ("module_96", "feature_preserved", "enhanced"),
-    ("module_97", "feature_preserved", "enhanced"),
-    ("module_98", "feature_preserved", "enhanced"),
-    ("module_99", "feature_preserved", "enhanced"),
-    ("module_100", "feature_preserved", "enhanced"),
-    ("module_101", "feature_preserved", "enhanced"),
-    ("module_102", "feature_preserved", "enhanced"),
-    ("module_103", "feature_preserved", "enhanced"),
-    ("module_104", "feature_preserved", "enhanced"),
-    ("module_105", "feature_preserved", "enhanced"),
-    ("module_106", "feature_preserved", "enhanced"),
-    ("module_107", "feature_preserved", "enhanced"),
-    ("module_108", "feature_preserved", "enhanced"),
-    ("module_109", "feature_preserved", "enhanced"),
-    ("module_110", "feature_preserved", "enhanced"),
-    ("module_111", "feature_preserved", "enhanced"),
-    ("module_112", "feature_preserved", "enhanced"),
-    ("module_113", "feature_preserved", "enhanced"),
-    ("module_114", "feature_preserved", "enhanced"),
-    ("module_115", "feature_preserved", "enhanced"),
-    ("module_116", "feature_preserved", "enhanced"),
-    ("module_117", "feature_preserved", "enhanced"),
-    ("module_118", "feature_preserved", "enhanced"),
-    ("module_119", "feature_preserved", "enhanced"),
-    ("module_120", "feature_preserved", "enhanced"),
-    ("module_121", "feature_preserved", "enhanced"),
-    ("module_122", "feature_preserved", "enhanced"),
-    ("module_123", "feature_preserved", "enhanced"),
-    ("module_124", "feature_preserved", "enhanced"),
-    ("module_125", "feature_preserved", "enhanced"),
-    ("module_126", "feature_preserved", "enhanced"),
-    ("module_127", "feature_preserved", "enhanced"),
-    ("module_128", "feature_preserved", "enhanced"),
-    ("module_129", "feature_preserved", "enhanced"),
-    ("module_130", "feature_preserved", "enhanced"),
-    ("module_131", "feature_preserved", "enhanced"),
-    ("module_132", "feature_preserved", "enhanced"),
-    ("module_133", "feature_preserved", "enhanced"),
-    ("module_134", "feature_preserved", "enhanced"),
-    ("module_135", "feature_preserved", "enhanced"),
-    ("module_136", "feature_preserved", "enhanced"),
-    ("module_137", "feature_preserved", "enhanced"),
-    ("module_138", "feature_preserved", "enhanced"),
-    ("module_139", "feature_preserved", "enhanced"),
-    ("module_140", "feature_preserved", "enhanced"),
-    ("module_141", "feature_preserved", "enhanced"),
-    ("module_142", "feature_preserved", "enhanced"),
-    ("module_143", "feature_preserved", "enhanced"),
-    ("module_144", "feature_preserved", "enhanced"),
-    ("module_145", "feature_preserved", "enhanced"),
-    ("module_146", "feature_preserved", "enhanced"),
-    ("module_147", "feature_preserved", "enhanced"),
-    ("module_148", "feature_preserved", "enhanced"),
-    ("module_149", "feature_preserved", "enhanced"),
-    ("module_150", "feature_preserved", "enhanced"),
-    ("module_151", "feature_preserved", "enhanced"),
-    ("module_152", "feature_preserved", "enhanced"),
-    ("module_153", "feature_preserved", "enhanced"),
-    ("module_154", "feature_preserved", "enhanced"),
-    ("module_155", "feature_preserved", "enhanced"),
-    ("module_156", "feature_preserved", "enhanced"),
-    ("module_157", "feature_preserved", "enhanced"),
-    ("module_158", "feature_preserved", "enhanced"),
-    ("module_159", "feature_preserved", "enhanced"),
-    ("module_160", "feature_preserved", "enhanced"),
-    ("module_161", "feature_preserved", "enhanced"),
-    ("module_162", "feature_preserved", "enhanced"),
-    ("module_163", "feature_preserved", "enhanced"),
-    ("module_164", "feature_preserved", "enhanced"),
-    ("module_165", "feature_preserved", "enhanced"),
-    ("module_166", "feature_preserved", "enhanced"),
-    ("module_167", "feature_preserved", "enhanced"),
-    ("module_168", "feature_preserved", "enhanced"),
-    ("module_169", "feature_preserved", "enhanced"),
-    ("module_170", "feature_preserved", "enhanced"),
-    ("module_171", "feature_preserved", "enhanced"),
-    ("module_172", "feature_preserved", "enhanced"),
-    ("module_173", "feature_preserved", "enhanced"),
-    ("module_174", "feature_preserved", "enhanced"),
-    ("module_175", "feature_preserved", "enhanced"),
-    ("module_176", "feature_preserved", "enhanced"),
-    ("module_177", "feature_preserved", "enhanced"),
-    ("module_178", "feature_preserved", "enhanced"),
-    ("module_179", "feature_preserved", "enhanced"),
-    ("module_180", "feature_preserved", "enhanced"),
-    ("module_181", "feature_preserved", "enhanced"),
-    ("module_182", "feature_preserved", "enhanced"),
-    ("module_183", "feature_preserved", "enhanced"),
-    ("module_184", "feature_preserved", "enhanced"),
-    ("module_185", "feature_preserved", "enhanced"),
-    ("module_186", "feature_preserved", "enhanced"),
-    ("module_187", "feature_preserved", "enhanced"),
-    ("module_188", "feature_preserved", "enhanced"),
-    ("module_189", "feature_preserved", "enhanced"),
-    ("module_190", "feature_preserved", "enhanced"),
-    ("module_191", "feature_preserved", "enhanced"),
-    ("module_192", "feature_preserved", "enhanced"),
-    ("module_193", "feature_preserved", "enhanced"),
-    ("module_194", "feature_preserved", "enhanced"),
-    ("module_195", "feature_preserved", "enhanced"),
-    ("module_196", "feature_preserved", "enhanced"),
-    ("module_197", "feature_preserved", "enhanced"),
-    ("module_198", "feature_preserved", "enhanced"),
-    ("module_199", "feature_preserved", "enhanced"),
-    ("module_200", "feature_preserved", "enhanced"),
-    ("module_201", "feature_preserved", "enhanced"),
-    ("module_202", "feature_preserved", "enhanced"),
-    ("module_203", "feature_preserved", "enhanced"),
-    ("module_204", "feature_preserved", "enhanced"),
-    ("module_205", "feature_preserved", "enhanced"),
-    ("module_206", "feature_preserved", "enhanced"),
-    ("module_207", "feature_preserved", "enhanced"),
-    ("module_208", "feature_preserved", "enhanced"),
-    ("module_209", "feature_preserved", "enhanced"),
-    ("module_210", "feature_preserved", "enhanced"),
-    ("module_211", "feature_preserved", "enhanced"),
-    ("module_212", "feature_preserved", "enhanced"),
-    ("module_213", "feature_preserved", "enhanced"),
-    ("module_214", "feature_preserved", "enhanced"),
-    ("module_215", "feature_preserved", "enhanced"),
-    ("module_216", "feature_preserved", "enhanced"),
-    ("module_217", "feature_preserved", "enhanced"),
-    ("module_218", "feature_preserved", "enhanced"),
-    ("module_219", "feature_preserved", "enhanced"),
-    ("module_220", "feature_preserved", "enhanced"),
-    ("module_221", "feature_preserved", "enhanced"),
-    ("module_222", "feature_preserved", "enhanced"),
-    ("module_223", "feature_preserved", "enhanced"),
-    ("module_224", "feature_preserved", "enhanced"),
-    ("module_225", "feature_preserved", "enhanced"),
-    ("module_226", "feature_preserved", "enhanced"),
-    ("module_227", "feature_preserved", "enhanced"),
-    ("module_228", "feature_preserved", "enhanced"),
-    ("module_229", "feature_preserved", "enhanced"),
-    ("module_230", "feature_preserved", "enhanced"),
-    ("module_231", "feature_preserved", "enhanced"),
-    ("module_232", "feature_preserved", "enhanced"),
-    ("module_233", "feature_preserved", "enhanced"),
-    ("module_234", "feature_preserved", "enhanced"),
-    ("module_235", "feature_preserved", "enhanced"),
-    ("module_236", "feature_preserved", "enhanced"),
-    ("module_237", "feature_preserved", "enhanced"),
-    ("module_238", "feature_preserved", "enhanced"),
-    ("module_239", "feature_preserved", "enhanced"),
-    ("module_240", "feature_preserved", "enhanced"),
-    ("module_241", "feature_preserved", "enhanced"),
-    ("module_242", "feature_preserved", "enhanced"),
-    ("module_243", "feature_preserved", "enhanced"),
-    ("module_244", "feature_preserved", "enhanced"),
-    ("module_245", "feature_preserved", "enhanced"),
-    ("module_246", "feature_preserved", "enhanced"),
-    ("module_247", "feature_preserved", "enhanced"),
-    ("module_248", "feature_preserved", "enhanced"),
-    ("module_249", "feature_preserved", "enhanced"),
-    ("module_250", "feature_preserved", "enhanced"),
-    ("module_251", "feature_preserved", "enhanced"),
-    ("module_252", "feature_preserved", "enhanced"),
-    ("module_253", "feature_preserved", "enhanced"),
-    ("module_254", "feature_preserved", "enhanced"),
-    ("module_255", "feature_preserved", "enhanced"),
-    ("module_256", "feature_preserved", "enhanced"),
-    ("module_257", "feature_preserved", "enhanced"),
-    ("module_258", "feature_preserved", "enhanced"),
-    ("module_259", "feature_preserved", "enhanced"),
-    ("module_260", "feature_preserved", "enhanced"),
-    ("module_261", "feature_preserved", "enhanced"),
-    ("module_262", "feature_preserved", "enhanced"),
-    ("module_263", "feature_preserved", "enhanced"),
-    ("module_264", "feature_preserved", "enhanced"),
-    ("module_265", "feature_preserved", "enhanced"),
-    ("module_266", "feature_preserved", "enhanced"),
-    ("module_267", "feature_preserved", "enhanced"),
-    ("module_268", "feature_preserved", "enhanced"),
-    ("module_269", "feature_preserved", "enhanced"),
-    ("module_270", "feature_preserved", "enhanced"),
-    ("module_271", "feature_preserved", "enhanced"),
-    ("module_272", "feature_preserved", "enhanced"),
-    ("module_273", "feature_preserved", "enhanced"),
-    ("module_274", "feature_preserved", "enhanced"),
-    ("module_275", "feature_preserved", "enhanced"),
-    ("module_276", "feature_preserved", "enhanced"),
-    ("module_277", "feature_preserved", "enhanced"),
-    ("module_278", "feature_preserved", "enhanced"),
-    ("module_279", "feature_preserved", "enhanced"),
-    ("module_280", "feature_preserved", "enhanced"),
-    ("module_281", "feature_preserved", "enhanced"),
-    ("module_282", "feature_preserved", "enhanced"),
-    ("module_283", "feature_preserved", "enhanced"),
-    ("module_284", "feature_preserved", "enhanced"),
-    ("module_285", "feature_preserved", "enhanced"),
-    ("module_286", "feature_preserved", "enhanced"),
-    ("module_287", "feature_preserved", "enhanced"),
-    ("module_288", "feature_preserved", "enhanced"),
-    ("module_289", "feature_preserved", "enhanced"),
-    ("module_290", "feature_preserved", "enhanced"),
-    ("module_291", "feature_preserved", "enhanced"),
-    ("module_292", "feature_preserved", "enhanced"),
-    ("module_293", "feature_preserved", "enhanced"),
-    ("module_294", "feature_preserved", "enhanced"),
-    ("module_295", "feature_preserved", "enhanced"),
-    ("module_296", "feature_preserved", "enhanced"),
-    ("module_297", "feature_preserved", "enhanced"),
-    ("module_298", "feature_preserved", "enhanced"),
-    ("module_299", "feature_preserved", "enhanced"),
-    ("module_300", "feature_preserved", "enhanced"),
-    ("module_301", "feature_preserved", "enhanced"),
-    ("module_302", "feature_preserved", "enhanced"),
-    ("module_303", "feature_preserved", "enhanced"),
-    ("module_304", "feature_preserved", "enhanced"),
-    ("module_305", "feature_preserved", "enhanced"),
-    ("module_306", "feature_preserved", "enhanced"),
-    ("module_307", "feature_preserved", "enhanced"),
-    ("module_308", "feature_preserved", "enhanced"),
-    ("module_309", "feature_preserved", "enhanced"),
-    ("module_310", "feature_preserved", "enhanced"),
-    ("module_311", "feature_preserved", "enhanced"),
-    ("module_312", "feature_preserved", "enhanced"),
-    ("module_313", "feature_preserved", "enhanced"),
-    ("module_314", "feature_preserved", "enhanced"),
-    ("module_315", "feature_preserved", "enhanced"),
-    ("module_316", "feature_preserved", "enhanced"),
-    ("module_317", "feature_preserved", "enhanced"),
-    ("module_318", "feature_preserved", "enhanced"),
-    ("module_319", "feature_preserved", "enhanced"),
-    ("module_320", "feature_preserved", "enhanced"),
-    ("module_321", "feature_preserved", "enhanced"),
-    ("module_322", "feature_preserved", "enhanced"),
-    ("module_323", "feature_preserved", "enhanced"),
-    ("module_324", "feature_preserved", "enhanced"),
-    ("module_325", "feature_preserved", "enhanced"),
-    ("module_326", "feature_preserved", "enhanced"),
-    ("module_327", "feature_preserved", "enhanced"),
-    ("module_328", "feature_preserved", "enhanced"),
-    ("module_329", "feature_preserved", "enhanced"),
-    ("module_330", "feature_preserved", "enhanced"),
-    ("module_331", "feature_preserved", "enhanced"),
-    ("module_332", "feature_preserved", "enhanced"),
-    ("module_333", "feature_preserved", "enhanced"),
-    ("module_334", "feature_preserved", "enhanced"),
-    ("module_335", "feature_preserved", "enhanced"),
-    ("module_336", "feature_preserved", "enhanced"),
-    ("module_337", "feature_preserved", "enhanced"),
-    ("module_338", "feature_preserved", "enhanced"),
-    ("module_339", "feature_preserved", "enhanced"),
-    ("module_340", "feature_preserved", "enhanced"),
-    ("module_341", "feature_preserved", "enhanced"),
-    ("module_342", "feature_preserved", "enhanced"),
-    ("module_343", "feature_preserved", "enhanced"),
-    ("module_344", "feature_preserved", "enhanced"),
-    ("module_345", "feature_preserved", "enhanced"),
-    ("module_346", "feature_preserved", "enhanced"),
-    ("module_347", "feature_preserved", "enhanced"),
-    ("module_348", "feature_preserved", "enhanced"),
-    ("module_349", "feature_preserved", "enhanced"),
-    ("module_350", "feature_preserved", "enhanced"),
-    ("module_351", "feature_preserved", "enhanced"),
-    ("module_352", "feature_preserved", "enhanced"),
-    ("module_353", "feature_preserved", "enhanced"),
-    ("module_354", "feature_preserved", "enhanced"),
-    ("module_355", "feature_preserved", "enhanced"),
-    ("module_356", "feature_preserved", "enhanced"),
-    ("module_357", "feature_preserved", "enhanced"),
-    ("module_358", "feature_preserved", "enhanced"),
-    ("module_359", "feature_preserved", "enhanced"),
-    ("module_360", "feature_preserved", "enhanced"),
-    ("module_361", "feature_preserved", "enhanced"),
-    ("module_362", "feature_preserved", "enhanced"),
-    ("module_363", "feature_preserved", "enhanced"),
-    ("module_364", "feature_preserved", "enhanced"),
-    ("module_365", "feature_preserved", "enhanced"),
-    ("module_366", "feature_preserved", "enhanced"),
-    ("module_367", "feature_preserved", "enhanced"),
-    ("module_368", "feature_preserved", "enhanced"),
-    ("module_369", "feature_preserved", "enhanced"),
-    ("module_370", "feature_preserved", "enhanced"),
-    ("module_371", "feature_preserved", "enhanced"),
-    ("module_372", "feature_preserved", "enhanced"),
-    ("module_373", "feature_preserved", "enhanced"),
-    ("module_374", "feature_preserved", "enhanced"),
-    ("module_375", "feature_preserved", "enhanced"),
-    ("module_376", "feature_preserved", "enhanced"),
-    ("module_377", "feature_preserved", "enhanced"),
-    ("module_378", "feature_preserved", "enhanced"),
-    ("module_379", "feature_preserved", "enhanced"),
-    ("module_380", "feature_preserved", "enhanced"),
-    ("module_381", "feature_preserved", "enhanced"),
-    ("module_382", "feature_preserved", "enhanced"),
-    ("module_383", "feature_preserved", "enhanced"),
-    ("module_384", "feature_preserved", "enhanced"),
-    ("module_385", "feature_preserved", "enhanced"),
-    ("module_386", "feature_preserved", "enhanced"),
-    ("module_387", "feature_preserved", "enhanced"),
-    ("module_388", "feature_preserved", "enhanced"),
-    ("module_389", "feature_preserved", "enhanced"),
-    ("module_390", "feature_preserved", "enhanced"),
-    ("module_391", "feature_preserved", "enhanced"),
-    ("module_392", "feature_preserved", "enhanced"),
-    ("module_393", "feature_preserved", "enhanced"),
-    ("module_394", "feature_preserved", "enhanced"),
-    ("module_395", "feature_preserved", "enhanced"),
-    ("module_396", "feature_preserved", "enhanced"),
-    ("module_397", "feature_preserved", "enhanced"),
-    ("module_398", "feature_preserved", "enhanced"),
-    ("module_399", "feature_preserved", "enhanced"),
-    ("module_400", "feature_preserved", "enhanced"),
-    ("module_401", "feature_preserved", "enhanced"),
-    ("module_402", "feature_preserved", "enhanced"),
-    ("module_403", "feature_preserved", "enhanced"),
-    ("module_404", "feature_preserved", "enhanced"),
-    ("module_405", "feature_preserved", "enhanced"),
-    ("module_406", "feature_preserved", "enhanced"),
-    ("module_407", "feature_preserved", "enhanced"),
-    ("module_408", "feature_preserved", "enhanced"),
-    ("module_409", "feature_preserved", "enhanced"),
-    ("module_410", "feature_preserved", "enhanced"),
-    ("module_411", "feature_preserved", "enhanced"),
-    ("module_412", "feature_preserved", "enhanced"),
-    ("module_413", "feature_preserved", "enhanced"),
-    ("module_414", "feature_preserved", "enhanced"),
-    ("module_415", "feature_preserved", "enhanced"),
-    ("module_416", "feature_preserved", "enhanced"),
-    ("module_417", "feature_preserved", "enhanced"),
-    ("module_418", "feature_preserved", "enhanced"),
-    ("module_419", "feature_preserved", "enhanced"),
-    ("module_420", "feature_preserved", "enhanced"),
-    ("module_421", "feature_preserved", "enhanced"),
-    ("module_422", "feature_preserved", "enhanced"),
-    ("module_423", "feature_preserved", "enhanced"),
-    ("module_424", "feature_preserved", "enhanced"),
-    ("module_425", "feature_preserved", "enhanced"),
-    ("module_426", "feature_preserved", "enhanced"),
-    ("module_427", "feature_preserved", "enhanced"),
-    ("module_428", "feature_preserved", "enhanced"),
-    ("module_429", "feature_preserved", "enhanced"),
-    ("module_430", "feature_preserved", "enhanced"),
-    ("module_431", "feature_preserved", "enhanced"),
-    ("module_432", "feature_preserved", "enhanced"),
-    ("module_433", "feature_preserved", "enhanced"),
-    ("module_434", "feature_preserved", "enhanced"),
-    ("module_435", "feature_preserved", "enhanced"),
-    ("module_436", "feature_preserved", "enhanced"),
-    ("module_437", "feature_preserved", "enhanced"),
-    ("module_438", "feature_preserved", "enhanced"),
-    ("module_439", "feature_preserved", "enhanced"),
-    ("module_440", "feature_preserved", "enhanced"),
-    ("module_441", "feature_preserved", "enhanced"),
-    ("module_442", "feature_preserved", "enhanced"),
-    ("module_443", "feature_preserved", "enhanced"),
-    ("module_444", "feature_preserved", "enhanced"),
-    ("module_445", "feature_preserved", "enhanced"),
-    ("module_446", "feature_preserved", "enhanced"),
-    ("module_447", "feature_preserved", "enhanced"),
-    ("module_448", "feature_preserved", "enhanced"),
-    ("module_449", "feature_preserved", "enhanced"),
-    ("module_450", "feature_preserved", "enhanced"),
-    ("module_451", "feature_preserved", "enhanced"),
-    ("module_452", "feature_preserved", "enhanced"),
-    ("module_453", "feature_preserved", "enhanced"),
-    ("module_454", "feature_preserved", "enhanced"),
-    ("module_455", "feature_preserved", "enhanced"),
-    ("module_456", "feature_preserved", "enhanced"),
-    ("module_457", "feature_preserved", "enhanced"),
-    ("module_458", "feature_preserved", "enhanced"),
-    ("module_459", "feature_preserved", "enhanced"),
-    ("module_460", "feature_preserved", "enhanced"),
-    ("module_461", "feature_preserved", "enhanced"),
-    ("module_462", "feature_preserved", "enhanced"),
-    ("module_463", "feature_preserved", "enhanced"),
-    ("module_464", "feature_preserved", "enhanced"),
-    ("module_465", "feature_preserved", "enhanced"),
-    ("module_466", "feature_preserved", "enhanced"),
-    ("module_467", "feature_preserved", "enhanced"),
-    ("module_468", "feature_preserved", "enhanced"),
-    ("module_469", "feature_preserved", "enhanced"),
-    ("module_470", "feature_preserved", "enhanced"),
-    ("module_471", "feature_preserved", "enhanced"),
-    ("module_472", "feature_preserved", "enhanced"),
-    ("module_473", "feature_preserved", "enhanced"),
-    ("module_474", "feature_preserved", "enhanced"),
-    ("module_475", "feature_preserved", "enhanced"),
-    ("module_476", "feature_preserved", "enhanced"),
-    ("module_477", "feature_preserved", "enhanced"),
-    ("module_478", "feature_preserved", "enhanced"),
-    ("module_479", "feature_preserved", "enhanced"),
-    ("module_480", "feature_preserved", "enhanced"),
-    ("module_481", "feature_preserved", "enhanced"),
-    ("module_482", "feature_preserved", "enhanced"),
-    ("module_483", "feature_preserved", "enhanced"),
-    ("module_484", "feature_preserved", "enhanced"),
-    ("module_485", "feature_preserved", "enhanced"),
-    ("module_486", "feature_preserved", "enhanced"),
-    ("module_487", "feature_preserved", "enhanced"),
-    ("module_488", "feature_preserved", "enhanced"),
-    ("module_489", "feature_preserved", "enhanced"),
-    ("module_490", "feature_preserved", "enhanced"),
-    ("module_491", "feature_preserved", "enhanced"),
-    ("module_492", "feature_preserved", "enhanced"),
-    ("module_493", "feature_preserved", "enhanced"),
-    ("module_494", "feature_preserved", "enhanced"),
-    ("module_495", "feature_preserved", "enhanced"),
-    ("module_496", "feature_preserved", "enhanced"),
-    ("module_497", "feature_preserved", "enhanced"),
-    ("module_498", "feature_preserved", "enhanced"),
-    ("module_499", "feature_preserved", "enhanced"),
-    ("module_500", "feature_preserved", "enhanced"),
-    ("module_501", "feature_preserved", "enhanced"),
-    ("module_502", "feature_preserved", "enhanced"),
-    ("module_503", "feature_preserved", "enhanced"),
-    ("module_504", "feature_preserved", "enhanced"),
-    ("module_505", "feature_preserved", "enhanced"),
-    ("module_506", "feature_preserved", "enhanced"),
-    ("module_507", "feature_preserved", "enhanced"),
-    ("module_508", "feature_preserved", "enhanced"),
-    ("module_509", "feature_preserved", "enhanced"),
-    ("module_510", "feature_preserved", "enhanced"),
-    ("module_511", "feature_preserved", "enhanced"),
-    ("module_512", "feature_preserved", "enhanced"),
-    ("module_513", "feature_preserved", "enhanced"),
-    ("module_514", "feature_preserved", "enhanced"),
-    ("module_515", "feature_preserved", "enhanced"),
-    ("module_516", "feature_preserved", "enhanced"),
-    ("module_517", "feature_preserved", "enhanced"),
-    ("module_518", "feature_preserved", "enhanced"),
-    ("module_519", "feature_preserved", "enhanced"),
-    ("module_520", "feature_preserved", "enhanced"),
-    ("module_521", "feature_preserved", "enhanced"),
-    ("module_522", "feature_preserved", "enhanced"),
-    ("module_523", "feature_preserved", "enhanced"),
-    ("module_524", "feature_preserved", "enhanced"),
-    ("module_525", "feature_preserved", "enhanced"),
-    ("module_526", "feature_preserved", "enhanced"),
-    ("module_527", "feature_preserved", "enhanced"),
-    ("module_528", "feature_preserved", "enhanced"),
-    ("module_529", "feature_preserved", "enhanced"),
-    ("module_530", "feature_preserved", "enhanced"),
-    ("module_531", "feature_preserved", "enhanced"),
-    ("module_532", "feature_preserved", "enhanced"),
-    ("module_533", "feature_preserved", "enhanced"),
-    ("module_534", "feature_preserved", "enhanced"),
-    ("module_535", "feature_preserved", "enhanced"),
-    ("module_536", "feature_preserved", "enhanced"),
-    ("module_537", "feature_preserved", "enhanced"),
-    ("module_538", "feature_preserved", "enhanced"),
-    ("module_539", "feature_preserved", "enhanced"),
-    ("module_540", "feature_preserved", "enhanced"),
-    ("module_541", "feature_preserved", "enhanced"),
-    ("module_542", "feature_preserved", "enhanced"),
-    ("module_543", "feature_preserved", "enhanced"),
-    ("module_544", "feature_preserved", "enhanced"),
-    ("module_545", "feature_preserved", "enhanced"),
-    ("module_546", "feature_preserved", "enhanced"),
-    ("module_547", "feature_preserved", "enhanced"),
-    ("module_548", "feature_preserved", "enhanced"),
-    ("module_549", "feature_preserved", "enhanced"),
-    ("module_550", "feature_preserved", "enhanced"),
-    ("module_551", "feature_preserved", "enhanced"),
-    ("module_552", "feature_preserved", "enhanced"),
-    ("module_553", "feature_preserved", "enhanced"),
-    ("module_554", "feature_preserved", "enhanced"),
-    ("module_555", "feature_preserved", "enhanced"),
-    ("module_556", "feature_preserved", "enhanced"),
-    ("module_557", "feature_preserved", "enhanced"),
-    ("module_558", "feature_preserved", "enhanced"),
-    ("module_559", "feature_preserved", "enhanced"),
-    ("module_560", "feature_preserved", "enhanced"),
-    ("module_561", "feature_preserved", "enhanced"),
-    ("module_562", "feature_preserved", "enhanced"),
-    ("module_563", "feature_preserved", "enhanced"),
-    ("module_564", "feature_preserved", "enhanced"),
-    ("module_565", "feature_preserved", "enhanced"),
-    ("module_566", "feature_preserved", "enhanced"),
-    ("module_567", "feature_preserved", "enhanced"),
-    ("module_568", "feature_preserved", "enhanced"),
-    ("module_569", "feature_preserved", "enhanced"),
-    ("module_570", "feature_preserved", "enhanced"),
-    ("module_571", "feature_preserved", "enhanced"),
-    ("module_572", "feature_preserved", "enhanced"),
-    ("module_573", "feature_preserved", "enhanced"),
-    ("module_574", "feature_preserved", "enhanced"),
-    ("module_575", "feature_preserved", "enhanced"),
-    ("module_576", "feature_preserved", "enhanced"),
-    ("module_577", "feature_preserved", "enhanced"),
-    ("module_578", "feature_preserved", "enhanced"),
-    ("module_579", "feature_preserved", "enhanced"),
-    ("module_580", "feature_preserved", "enhanced"),
-    ("module_581", "feature_preserved", "enhanced"),
-    ("module_582", "feature_preserved", "enhanced"),
-    ("module_583", "feature_preserved", "enhanced"),
-    ("module_584", "feature_preserved", "enhanced"),
-    ("module_585", "feature_preserved", "enhanced"),
-    ("module_586", "feature_preserved", "enhanced"),
-    ("module_587", "feature_preserved", "enhanced"),
-    ("module_588", "feature_preserved", "enhanced"),
-    ("module_589", "feature_preserved", "enhanced"),
-    ("module_590", "feature_preserved", "enhanced"),
-    ("module_591", "feature_preserved", "enhanced"),
-    ("module_592", "feature_preserved", "enhanced"),
-    ("module_593", "feature_preserved", "enhanced"),
-    ("module_594", "feature_preserved", "enhanced"),
-    ("module_595", "feature_preserved", "enhanced"),
-    ("module_596", "feature_preserved", "enhanced"),
-    ("module_597", "feature_preserved", "enhanced"),
-    ("module_598", "feature_preserved", "enhanced"),
-    ("module_599", "feature_preserved", "enhanced"),
-    ("module_600", "feature_preserved", "enhanced"),
-    ("module_601", "feature_preserved", "enhanced"),
-    ("module_602", "feature_preserved", "enhanced"),
-    ("module_603", "feature_preserved", "enhanced"),
-    ("module_604", "feature_preserved", "enhanced"),
-    ("module_605", "feature_preserved", "enhanced"),
-    ("module_606", "feature_preserved", "enhanced"),
-    ("module_607", "feature_preserved", "enhanced"),
-    ("module_608", "feature_preserved", "enhanced"),
-    ("module_609", "feature_preserved", "enhanced"),
-    ("module_610", "feature_preserved", "enhanced"),
-    ("module_611", "feature_preserved", "enhanced"),
-    ("module_612", "feature_preserved", "enhanced"),
-    ("module_613", "feature_preserved", "enhanced"),
-    ("module_614", "feature_preserved", "enhanced"),
-    ("module_615", "feature_preserved", "enhanced"),
-    ("module_616", "feature_preserved", "enhanced"),
-    ("module_617", "feature_preserved", "enhanced"),
-    ("module_618", "feature_preserved", "enhanced"),
-    ("module_619", "feature_preserved", "enhanced"),
-    ("module_620", "feature_preserved", "enhanced"),
-    ("module_621", "feature_preserved", "enhanced"),
-    ("module_622", "feature_preserved", "enhanced"),
-    ("module_623", "feature_preserved", "enhanced"),
-    ("module_624", "feature_preserved", "enhanced"),
-    ("module_625", "feature_preserved", "enhanced"),
-    ("module_626", "feature_preserved", "enhanced"),
-    ("module_627", "feature_preserved", "enhanced"),
-    ("module_628", "feature_preserved", "enhanced"),
-    ("module_629", "feature_preserved", "enhanced"),
-    ("module_630", "feature_preserved", "enhanced"),
-    ("module_631", "feature_preserved", "enhanced"),
-    ("module_632", "feature_preserved", "enhanced"),
-    ("module_633", "feature_preserved", "enhanced"),
-    ("module_634", "feature_preserved", "enhanced"),
-    ("module_635", "feature_preserved", "enhanced"),
-    ("module_636", "feature_preserved", "enhanced"),
-    ("module_637", "feature_preserved", "enhanced"),
-    ("module_638", "feature_preserved", "enhanced"),
-    ("module_639", "feature_preserved", "enhanced"),
-    ("module_640", "feature_preserved", "enhanced"),
-    ("module_641", "feature_preserved", "enhanced"),
-    ("module_642", "feature_preserved", "enhanced"),
-    ("module_643", "feature_preserved", "enhanced"),
-    ("module_644", "feature_preserved", "enhanced"),
-    ("module_645", "feature_preserved", "enhanced"),
-    ("module_646", "feature_preserved", "enhanced"),
-    ("module_647", "feature_preserved", "enhanced"),
-    ("module_648", "feature_preserved", "enhanced"),
-    ("module_649", "feature_preserved", "enhanced"),
-    ("module_650", "feature_preserved", "enhanced"),
-    ("module_651", "feature_preserved", "enhanced"),
-    ("module_652", "feature_preserved", "enhanced"),
-    ("module_653", "feature_preserved", "enhanced"),
-    ("module_654", "feature_preserved", "enhanced"),
-    ("module_655", "feature_preserved", "enhanced"),
-    ("module_656", "feature_preserved", "enhanced"),
-    ("module_657", "feature_preserved", "enhanced"),
-    ("module_658", "feature_preserved", "enhanced"),
-    ("module_659", "feature_preserved", "enhanced"),
-    ("module_660", "feature_preserved", "enhanced"),
-    ("module_661", "feature_preserved", "enhanced"),
-    ("module_662", "feature_preserved", "enhanced"),
-    ("module_663", "feature_preserved", "enhanced"),
-    ("module_664", "feature_preserved", "enhanced"),
-    ("module_665", "feature_preserved", "enhanced"),
-    ("module_666", "feature_preserved", "enhanced"),
-    ("module_667", "feature_preserved", "enhanced"),
-    ("module_668", "feature_preserved", "enhanced"),
-    ("module_669", "feature_preserved", "enhanced"),
-    ("module_670", "feature_preserved", "enhanced"),
-    ("module_671", "feature_preserved", "enhanced"),
-    ("module_672", "feature_preserved", "enhanced"),
-    ("module_673", "feature_preserved", "enhanced"),
-    ("module_674", "feature_preserved", "enhanced"),
-    ("module_675", "feature_preserved", "enhanced"),
-    ("module_676", "feature_preserved", "enhanced"),
-    ("module_677", "feature_preserved", "enhanced"),
-    ("module_678", "feature_preserved", "enhanced"),
-    ("module_679", "feature_preserved", "enhanced"),
-    ("module_680", "feature_preserved", "enhanced"),
-    ("module_681", "feature_preserved", "enhanced"),
-    ("module_682", "feature_preserved", "enhanced"),
-    ("module_683", "feature_preserved", "enhanced"),
-    ("module_684", "feature_preserved", "enhanced"),
-    ("module_685", "feature_preserved", "enhanced"),
-    ("module_686", "feature_preserved", "enhanced"),
-    ("module_687", "feature_preserved", "enhanced"),
-    ("module_688", "feature_preserved", "enhanced"),
-    ("module_689", "feature_preserved", "enhanced"),
-    ("module_690", "feature_preserved", "enhanced"),
-    ("module_691", "feature_preserved", "enhanced"),
-    ("module_692", "feature_preserved", "enhanced"),
-    ("module_693", "feature_preserved", "enhanced"),
-    ("module_694", "feature_preserved", "enhanced"),
-    ("module_695", "feature_preserved", "enhanced"),
-    ("module_696", "feature_preserved", "enhanced"),
-    ("module_697", "feature_preserved", "enhanced"),
-    ("module_698", "feature_preserved", "enhanced"),
-    ("module_699", "feature_preserved", "enhanced"),
-    ("module_700", "feature_preserved", "enhanced"),
-]
+def sqr_patch_runtime_report():
+    return {
+        "python_file": "SQR.py",
+        "db_host_set": bool(DB_CONFIG.get("host")),
+        "db_name_set": bool(DB_CONFIG.get("database")),
+        "openai_enabled": bool(client),
+        "upload_folder": app.config.get("UPLOAD_FOLDER"),
+        "public_stats": sqr_patch_public_stats(),
+        "page_targets": SQR_PAGE_BLUEPRINTS
+    }
 
-@app.route("/api/compatibility-matrix", methods=["GET"])
-def compatibility_matrix():
-    return jsonify({"items": SQR_EXTRA_COMPATIBILITY_MATRIX, "total": len(SQR_EXTRA_COMPATIBILITY_MATRIX)})
+
+@app.route("/api/runtime/report", methods=["GET"])
+def sqr_patch_runtime_report_route():
+    return jsonify(sqr_patch_runtime_report())
+
+@app.errorhandler(404)
+def not_found(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Endpoint not found"}), 404
+    return render_template("gp.html"), 404
+
+
+@app.errorhandler(413)
+def too_large(error):
+    return jsonify({"error": "File is too large"}), 413
+
+
+@app.errorhandler(500)
+def server_error(error):
+    return jsonify({"error": "Server error", "details": str(error)}), 500
+
+
+try:
+    init_db()
+    print("SQR database checked")
+except Exception as exc:
+    print("init_db skipped or failed:", exc)
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=os.getenv("FLASK_DEBUG", "0") == "1")
+    app.run(host=os.getenv("FLASK_HOST", "0.0.0.0"), port=int(os.getenv("PORT", os.getenv("FLASK_PORT", 5000))), debug=os.getenv("FLASK_DEBUG", "0") == "1")
