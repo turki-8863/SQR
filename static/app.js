@@ -188,7 +188,6 @@
   function blockAdminFromStudentPages() { return adminPageGuard(); }
 
   function navbar() {
-    if (byId("sqrNavbar")) return;
     const user = getUser();
     const logged = Boolean(user && getToken());
     const admin = logged && isAdminMode();
@@ -202,20 +201,26 @@
       ["Profile", route("profile")]
     ];
     const links = admin ? [["Admin", route("admin")]] : studentLinks;
+    const current = (location.pathname.split("/").pop() || "gp.html").toLowerCase();
     const html = `
-      <nav id="sqrNavbar" class="sqr-navbar">
+      <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
         <a href="${admin ? route("admin") : route("home")}" class="sqr-brand" aria-label="SQR Home">
           <span>SQR</span><small>Skill Quest Road</small>
         </a>
-        <button class="sqr-menu-btn" type="button" data-sqr-menu>☰</button>
+        <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
         <div class="sqr-nav-links">
-          ${links.map(([label, href]) => `<a href="${href}">${escapeHtml(label)}</a>`).join("")}
+          ${links.map(([label, href]) => {
+            const active = href.toLowerCase().split("?")[0] === current ? " active" : "";
+            return `<a class="${active}" href="${href}">${escapeHtml(label)}</a>`;
+          }).join("")}
         </div>
         <div class="sqr-nav-actions">
-          ${logged ? `<span class="sqr-nav-user">${escapeHtml(user.name || "User")}</span><button class="btn btn-danger" type="button" data-sqr-logout>Logout</button>` : `<a class="btn btn-soft" href="${route("signin")}">Sign In</a><a class="btn btn-primary" href="${route("signup")}">Sign Up</a>`}
+          ${logged ? `<span class="sqr-nav-user">${escapeHtml(user.name || "User")}</span><button class="btn btn-danger" type="button" data-sqr-logout>Logout</button>` : `<a class="btn btn-soft signin-link" href="${route("signin")}">Sign In</a><a class="btn btn-primary signup-link" href="${route("signup")}">Sign Up</a>`}
         </div>
       </nav>`;
-    if (document.body) document.body.insertAdjacentHTML("afterbegin", html);
+    const existing = byId("sqrNavbar");
+    if (existing) existing.outerHTML = html;
+    else if (document.body) document.body.insertAdjacentHTML("afterbegin", html);
     else document.write(html);
   }
   function logout() { clearAuth(); go(route("signin")); }
@@ -742,6 +747,7 @@
     });
   }
   function boot() {
+    navbar();
     adminPageGuard();
     bindGlobalClicks();
     setupSignup();
