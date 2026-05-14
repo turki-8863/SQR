@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SQR Skill Quest Road dynamic CS career guidance platform.">
+  <title>SQR | ATS Tools</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body class="page-body ats-body">
+  <main class="page-shell">
+    <div id="message"></div>
+
+    <section class="page-hero compact-hero gradient-blue">
+      <div>
+        <span class="eyebrow">ATS Resume Tools</span>
+        <h1>Upload PDF/DOCX resumes and generate ATS-friendly output.</h1>
+        <p>The checker uses uploaded files only. The generator creates resume text without sharing one user's data with another.</p>
+      </div>
+      <a href="profile.html" class="btn btn-light">View ATS history</a>
+    </section>
+
+    <section class="dashboard-layout ats-layout">
+      <div class="dashboard-main">
+        <form id="atsCheckForm" class="card form-card color-form" enctype="multipart/form-data">
+          <div class="section-heading left-heading compact-heading">
+            <span>Checker</span>
+            <h2>ATS resume checker</h2>
+            <p>Upload a PDF or DOCX resume and optionally paste a target job description.</p>
+          </div>
+          <label class="required" for="resumeFile">Resume file</label>
+          <input id="resumeFile" name="resume" type="file" accept=".pdf,.docx" required>
+          <label for="jobDescription">Target job description</label>
+          <textarea id="jobDescription" name="job_description" placeholder="Paste job description for better keyword matching."></textarea>
+          <button type="submit" class="btn btn-primary full-btn">Check resume</button>
+        </form>
+        <section id="atsResult" class="result-area hidden"></section>
+      </div>
+
+      <aside class="dashboard-side">
+        <form id="atsGenerateForm" class="card form-card color-form">
+          <div class="section-heading left-heading compact-heading">
+            <span>Generator</span>
+            <h2>ATS resume generator</h2>
+            <p>Fields marked with a red star are required.</p>
+          </div>
+          <label class="required" for="genName">Full name</label>
+          <input id="genName" name="name" required placeholder="Full name">
+          <label class="required" for="targetJob">Target job</label>
+          <input id="targetJob" name="target_job" required placeholder="Software Engineer, SOC Analyst...">
+          <label class="required" for="genEmail">Email</label>
+          <input id="genEmail" name="email" required placeholder="email@example.com">
+          <label for="genPhone">Phone</label>
+          <input id="genPhone" name="phone" placeholder="+966...">
+          <label class="required" for="genSummary">Summary</label>
+          <textarea id="genSummary" name="summary" required placeholder="Brief professional summary."></textarea>
+          <label class="required" for="genSkills">Skills</label>
+          <textarea id="genSkills" name="skills" required placeholder="Python, SQL, Java..."></textarea>
+          <label for="genEducation">Education</label>
+          <textarea id="genEducation" name="education" placeholder="College, degree, year..."></textarea>
+          <label for="genExperience">Experience</label>
+          <textarea id="genExperience" name="experience" placeholder="Internships, projects, work..."></textarea>
+          <label for="genProjects">Projects</label>
+          <textarea id="genProjects" name="projects" placeholder="Project name, tools, result..."></textarea>
+          <button type="submit" class="btn btn-primary full-btn">Generate resume</button>
+        </form>
+      </aside>
+    </section>
+    <section id="generatedResume" class="result-area hidden"></section>
+
+  </main>
+</body>
+</html>

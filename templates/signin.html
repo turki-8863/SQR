@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Sign in to SQR.">
+  <meta name="description" content="SQR Skill Quest Road dynamic CS career guidance platform.">
   <title>SQR | Sign In</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,88 +11,24 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body>
-  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
-    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
-      <span>SQR</span>
-      <small>Skill Quest Road</small>
-    </a>
-    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
-    <div class="sqr-nav-links">
-      <a href="gp.html">Home</a>
-      <a href="Specialization.html">Specializations</a>
-      <a href="Courses.html">Courses</a>
-      <a href="ATS.html">ATS</a>
-      <a href="jobs.html">Jobs</a>
-      <a href="recommendation.html">Recommendation</a>
-      <a href="profile.html">Profile</a>
-    </div>
-    <div class="sqr-nav-actions">
-      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
-      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
-    </div>
-  </nav>
-
-  <main class="page auth-page">
+<body class="page-body auth-body">
+  <main class="page-shell">
     <div id="message"></div>
 
-    <section class="auth-layout">
-      <aside class="auth-info-card">
-        <span class="hero-badge">Welcome back</span>
-        <h1>Sign in and continue your career roadmap.</h1>
-        <p>
-          Your dashboard stores course progress, quiz results, specialization enrollments,
-          ATS results, and recommendations.
-        </p>
-        <div class="auth-benefits">
-          <article>
-            <strong>Progress</strong>
-            <span>Track courses and specializations.</span>
-          </article>
-          <article>
-            <strong>ATS</strong>
-            <span>Check or generate resume content.</span>
-          </article>
-          <article>
-            <strong>Recommendation</strong>
-            <span>Get smarter career suggestions.</span>
-          </article>
-        </div>
-      </aside>
-
-      <section class="auth-card">
-        <div class="section-heading compact-heading">
-          <span>Account</span>
-          <h2>Sign In</h2>
-          <p>Use your student or admin account.</p>
-        </div>
-        <form id="signinForm" data-signin class="modern-form">
-          <label for="email">Email address <span class="required-star">*</span></label>
-          <input id="email" name="email" type="email" placeholder="student@example.com" autocomplete="email" required>
-
-          <label for="password">Password <span class="required-star">*</span></label>
-          <input id="password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required>
-
-          <button type="submit" class="btn btn-primary full-btn">Sign In</button>
-        </form>
-        <div class="auth-switch">
-          <span>Do not have an account?</span>
-          <a href="signup.html">Create one</a>
-        </div>
-      </section>
+    <section class="auth-shell">
+      <form id="signinForm" class="auth-card color-form">
+        <span class="eyebrow">Welcome back</span>
+        <h1>Sign in to SQR</h1>
+        <p>Access your profile, dynamic progress, quizzes, ATS tools, and recommendations.</p>
+        <label class="required" for="signinEmail">Email</label>
+        <input id="signinEmail" name="email" type="email" required placeholder="email@example.com">
+        <label class="required" for="signinPassword">Password</label>
+        <input id="signinPassword" name="password" type="password" required placeholder="Password">
+        <button type="submit" class="btn btn-primary full-btn">Sign In</button>
+        <p class="auth-link">No account? <a href="signup.html">Create one</a></p>
+      </form>
     </section>
+
   </main>
-  <footer class="sqr-footer">
-    <div>
-      <strong>SQR — Skill Quest Road</strong>
-      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
-    </div>
-    <div class="footer-links">
-      <a href="Specialization.html">Specializations</a>
-      <a href="Courses.html">Courses</a>
-      <a href="ATS.html">ATS</a>
-      <a href="profile.html">Profile</a>
-    </div>
-  </footer>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Browse recommended jobs in SQR.">
+  <meta name="description" content="SQR Skill Quest Road dynamic CS career guidance platform.">
   <title>SQR | Jobs</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,75 +11,26 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body>
-  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
-    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
-      <span>SQR</span>
-      <small>Skill Quest Road</small>
-    </a>
-    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
-    <div class="sqr-nav-links">
-      <a href="gp.html">Home</a>
-      <a href="Specialization.html">Specializations</a>
-      <a href="Courses.html">Courses</a>
-      <a href="ATS.html">ATS</a>
-      <a href="jobs.html">Jobs</a>
-      <a href="recommendation.html">Recommendation</a>
-      <a href="profile.html">Profile</a>
-    </div>
-    <div class="sqr-nav-actions">
-      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
-      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
-    </div>
-  </nav>
-
-  <main class="page jobs-page">
+<body class="page-body jobs-body">
+  <main class="page-shell">
     <div id="message"></div>
 
-    <section class="page-hero split-hero">
+    <section class="page-hero compact-hero gradient-blue">
       <div>
-        <span class="hero-badge">Jobs</span>
-        <h1>Browse jobs and match them to your profile.</h1>
-        <p>
-          Jobs can be added by admins and connected to specializations. Students can compare job skills
-          with their own profile and ATS resume keywords.
-        </p>
+        <span class="eyebrow">Jobs</span>
+        <h1>Explore jobs connected to specializations and skills.</h1>
+        <p>Jobs are database-driven and used by the recommendation engine.</p>
       </div>
-      <aside class="quick-panel">
-        <strong>Job matching</strong>
-        <p>Improve your profile skills and ATS resume to increase your match percentage.</p>
-      </aside>
+      <a href="recommendation.html" class="btn btn-light">Run recommendation</a>
+    </section>
+    <section class="section-block color-panel amber-panel">
+      <div class="section-heading left-heading">
+        <span>Career database</span>
+        <h2>Available jobs</h2>
+      </div>
+      <div id="jobsBox" class="grid cards-3 dynamic-grid"></div>
     </section>
 
-    <section class="toolbar-card">
-      <div>
-        <label for="jobSearch">Search jobs</label>
-        <input id="jobSearch" type="search" placeholder="SOC analyst, web developer, data analyst...">
-      </div>
-      <div>
-        <label for="jobSpecialization">Specialization</label>
-        <select id="jobSpecialization">
-          <option value="">All specializations</option>
-        </select>
-      </div>
-    </section>
-
-    <section id="jobsBox" class="card-grid"></section>
-    <section id="jobsGrid" class="card-grid hidden-helper"></section>
-    <section id="jobsList" class="card-grid hidden-helper"></section>
-    <section id="jobs" class="card-grid hidden-helper"></section>
   </main>
-  <footer class="sqr-footer">
-    <div>
-      <strong>SQR — Skill Quest Road</strong>
-      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
-    </div>
-    <div class="footer-links">
-      <a href="Specialization.html">Specializations</a>
-      <a href="Courses.html">Courses</a>
-      <a href="ATS.html">ATS</a>
-      <a href="profile.html">Profile</a>
-    </div>
-  </footer>
 </body>
 </html>
