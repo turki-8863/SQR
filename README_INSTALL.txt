@@ -1,36 +1,29 @@
-SQR full fixed files
+SQR full enhanced project package v2
 
-Upload these files to the same paths in your GitHub repo:
+Files included:
+- SQR.py
+- static/app.js
+- static/styles.css
+- templates/*.html
+- requirements.txt
+- Procfile
+- render.yaml
+- .python-version
+- sql/sqr_railway_no_drop_v2.sql
 
-SQR.py
-static/app.js
-static/styles.css
-templates/recommendation.html
-
-SQL files:
-sql/sqr_full_schema_no_drop.sql
-sql/railway_progress_enroll_fix.sql
-
-Recommended order:
-1. Upload/replace SQR.py, static/app.js, static/styles.css, and templates/recommendation.html.
-2. Commit and push to GitHub.
-3. Let Render/Railway redeploy.
-4. Run sql/sqr_full_schema_no_drop.sql in Railway MySQL.
-5. If you already had old progress/enrollment rows, also run sql/railway_progress_enroll_fix.sql.
-6. Sign in as a STUDENT account, not admin, then open a course.
-7. Check Railway:
-   SELECT * FROM course_enrollments ORDER BY enrolled_at DESC LIMIT 10;
-   SELECT * FROM specialization_enrollments ORDER BY enrolled_at DESC LIMIT 10;
-   SELECT * FROM progress ORDER BY updated_at DESC LIMIT 10;
+Install:
+1. Upload the full folder contents to GitHub.
+2. Run sql/sqr_railway_no_drop_v2.sql in Railway MySQL.
+3. On Render set Health Check Path to /healthz.
+4. Use the included Procfile or this start command:
+   gunicorn SQR:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 --max-requests 500 --max-requests-jitter 50 --access-logfile - --error-logfile -
+5. Set PYTHON_VERSION=3.11.11 or keep the included .python-version file.
 
 Important behavior:
-- Admin role is redirected to admin.html and blocked from student APIs.
-- Student can access courses, ATS, recommendation, jobs, quizzes, profile.
-- Opening a course auto-enrolls the student and gives 50% progress.
-- Passing quizzes completes the remaining 50%.
-- If a course has no quizzes, opening/enrolling it marks it complete.
-- Mark Completed buttons are removed from the UI.
-- ATS checker accepts PDF, DOCX, and TXT upload.
-- ATS generator does not save generated user info unless SQR_SAVE_ATS=1 is set in environment.
-
-Do not upload the whole folder itself. Upload the files into matching GitHub folders.
+- Admin mode is blocked from student pages and redirected to admin.html.
+- Student users cannot access admin.html.
+- Opening a course or course media tracks progress.
+- Course opened/enrolled = 50%, passed course quizzes complete the remaining 50%.
+- ATS checker only requires upload PDF/DOCX/TXT and optional job description.
+- ATS generator does not save personal resume data unless SQR_SAVE_ATS=1.
+- The SQL script is no-drop and does not delete your data.

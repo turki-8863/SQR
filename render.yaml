@@ -2,10 +2,10 @@ services:
   - type: web
     name: sqr
     env: python
+    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn SQR:app
+    startCommand: gunicorn SQR:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 --max-requests 500 --max-requests-jitter 50 --access-logfile - --error-logfile -
+    healthCheckPath: /healthz
     envVars:
-      - key: FLASK_HOST
-        value: 0.0.0.0
-      - key: FLASK_DEBUG
-        value: 0
+      - key: PYTHON_VERSION
+        value: 3.11.11
