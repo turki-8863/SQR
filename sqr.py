@@ -1536,6 +1536,2304 @@ def switch_mode():
     return jsonify({"message": "Mode updated", "token": generate_token(user), "user": clean_user(user)})
 
 
+
+# =====================================================
+# SQR LONG DYNAMIC PATCH LAYER
+# Non-destructive extension: adds dynamic bootstrap, diagnostics,
+# recommendation question bank, and rich profile/admin summary routes.
+# =====================================================
+
+SQR_RECOMMENDATION_QUESTION_BANK = [
+    {
+        "id": "cybersecurity_interest",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "interest",
+        "question": "How interested are you in Cybersecurity tasks such as linux, networking, and security?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_skill",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "skill",
+        "question": "How confident are you with linux, networking, or security for a Cybersecurity path?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_work_style",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves linux, networking, and practical problem solving for Cybersecurity?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_project",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using linux, networking, and security?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_career",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Cybersecurity and skills like linux and networking?",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_interest",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "interest",
+        "question": "How interested are you in Digital Forensics tasks such as forensics, evidence, and malware?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_skill",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "skill",
+        "question": "How confident are you with forensics, evidence, or malware for a Digital Forensics path?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_work_style",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves forensics, evidence, and practical problem solving for Digital Forensics?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_project",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using forensics, evidence, and malware?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "digital_forensics_career",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Digital Forensics and skills like forensics and evidence?",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_interest",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "interest",
+        "question": "How interested are you in Software Engineering tasks such as java, python, and testing?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_skill",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "skill",
+        "question": "How confident are you with java, python, or testing for a Software Engineering path?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_work_style",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves java, python, and practical problem solving for Software Engineering?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_project",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using java, python, and testing?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "software_engineering_career",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Software Engineering and skills like java and python?",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_interest",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "interest",
+        "question": "How interested are you in Web Development tasks such as html, css, and javascript?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_skill",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "skill",
+        "question": "How confident are you with html, css, or javascript for a Web Development path?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_work_style",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves html, css, and practical problem solving for Web Development?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_project",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using html, css, and javascript?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "web_development_career",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Web Development and skills like html and css?",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_interest",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "interest",
+        "question": "How interested are you in Data Science tasks such as python, sql, and statistics?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_skill",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "skill",
+        "question": "How confident are you with python, sql, or statistics for a Data Science path?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_work_style",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves python, sql, and practical problem solving for Data Science?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_project",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using python, sql, and statistics?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "data_science_career",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Data Science and skills like python and sql?",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_interest",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "interest",
+        "question": "How interested are you in AI and Machine Learning tasks such as python, machine learning, and deep learning?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_skill",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "skill",
+        "question": "How confident are you with python, machine learning, or deep learning for a AI and Machine Learning path?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_work_style",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves python, machine learning, and practical problem solving for AI and Machine Learning?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_project",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using python, machine learning, and deep learning?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "ai_ml_career",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to AI and Machine Learning and skills like python and machine learning?",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_interest",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "interest",
+        "question": "How interested are you in Cloud and DevOps tasks such as aws, docker, and linux?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_skill",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "skill",
+        "question": "How confident are you with aws, docker, or linux for a Cloud and DevOps path?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_work_style",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves aws, docker, and practical problem solving for Cloud and DevOps?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_project",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using aws, docker, and linux?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cloud_devops_career",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Cloud and DevOps and skills like aws and docker?",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_interest",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "interest",
+        "question": "How interested are you in Database Systems tasks such as sql, mysql, and postgresql?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_skill",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "skill",
+        "question": "How confident are you with sql, mysql, or postgresql for a Database Systems path?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_work_style",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves sql, mysql, and practical problem solving for Database Systems?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_project",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using sql, mysql, and postgresql?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "database_career",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Database Systems and skills like sql and mysql?",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_interest",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "interest",
+        "question": "How interested are you in Mobile App Development tasks such as flutter, swift, and kotlin?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_skill",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "skill",
+        "question": "How confident are you with flutter, swift, or kotlin for a Mobile App Development path?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_work_style",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves flutter, swift, and practical problem solving for Mobile App Development?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_project",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using flutter, swift, and kotlin?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "mobile_career",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Mobile App Development and skills like flutter and swift?",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_interest",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "interest",
+        "question": "How interested are you in Computer Networks tasks such as routing, tcp/ip, and switching?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_skill",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "skill",
+        "question": "How confident are you with routing, tcp/ip, or switching for a Computer Networks path?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_work_style",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves routing, tcp/ip, and practical problem solving for Computer Networks?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_project",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using routing, tcp/ip, and switching?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "networks_career",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Computer Networks and skills like routing and tcp/ip?",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_interest",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "interest",
+        "question": "How interested are you in UI/UX Engineering tasks such as design, accessibility, and prototyping?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_skill",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "skill",
+        "question": "How confident are you with design, accessibility, or prototyping for a UI/UX Engineering path?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_work_style",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves design, accessibility, and practical problem solving for UI/UX Engineering?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_project",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using design, accessibility, and prototyping?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "uiux_career",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to UI/UX Engineering and skills like design and accessibility?",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_interest",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "interest",
+        "question": "How interested are you in Game Development tasks such as c++, unity, and graphics?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_skill",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "skill",
+        "question": "How confident are you with c++, unity, or graphics for a Game Development path?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_work_style",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "work_style",
+        "question": "Do you prefer work that involves c++, unity, and practical problem solving for Game Development?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_project",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "project",
+        "question": "Would you enjoy building portfolio projects using c++, unity, and graphics?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "game_career",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "career",
+        "question": "Would you consider a future job connected to Game Development and skills like c++ and unity?",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 5
+    },
+    {
+        "id": "cybersecurity_scenario_1",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a beginner scenario that uses networking and security.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cybersecurity_scenario_2",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a intermediate scenario that uses security and incident response.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cybersecurity_scenario_3",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a advanced scenario that uses incident response and linux.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cybersecurity_scenario_4",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a project scenario that uses linux and networking.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cybersecurity_scenario_5",
+        "specialization_key": "cybersecurity",
+        "specialization": "Cybersecurity",
+        "dimension": "scenario",
+        "question": "For Cybersecurity, choose how much you like a career scenario that uses networking and security.",
+        "keywords": [
+            "linux",
+            "networking",
+            "security",
+            "incident response"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_1",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a beginner scenario that uses evidence and malware.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_2",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a intermediate scenario that uses malware and investigation.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_3",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a advanced scenario that uses investigation and forensics.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_4",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a project scenario that uses forensics and evidence.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "digital_forensics_scenario_5",
+        "specialization_key": "digital_forensics",
+        "specialization": "Digital Forensics",
+        "dimension": "scenario",
+        "question": "For Digital Forensics, choose how much you like a career scenario that uses evidence and malware.",
+        "keywords": [
+            "forensics",
+            "evidence",
+            "malware",
+            "investigation"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_1",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a beginner scenario that uses python and testing.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_2",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a intermediate scenario that uses testing and architecture.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_3",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a advanced scenario that uses architecture and java.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_4",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a project scenario that uses java and python.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "software_engineering_scenario_5",
+        "specialization_key": "software_engineering",
+        "specialization": "Software Engineering",
+        "dimension": "scenario",
+        "question": "For Software Engineering, choose how much you like a career scenario that uses python and testing.",
+        "keywords": [
+            "java",
+            "python",
+            "testing",
+            "architecture"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_1",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a beginner scenario that uses css and javascript.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_2",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a intermediate scenario that uses javascript and react.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_3",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a advanced scenario that uses react and html.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_4",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a project scenario that uses html and css.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "web_development_scenario_5",
+        "specialization_key": "web_development",
+        "specialization": "Web Development",
+        "dimension": "scenario",
+        "question": "For Web Development, choose how much you like a career scenario that uses css and javascript.",
+        "keywords": [
+            "html",
+            "css",
+            "javascript",
+            "react"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_1",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a beginner scenario that uses sql and statistics.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_2",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a intermediate scenario that uses statistics and machine learning.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_3",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a advanced scenario that uses machine learning and python.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_4",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a project scenario that uses python and sql.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "data_science_scenario_5",
+        "specialization_key": "data_science",
+        "specialization": "Data Science",
+        "dimension": "scenario",
+        "question": "For Data Science, choose how much you like a career scenario that uses sql and statistics.",
+        "keywords": [
+            "python",
+            "sql",
+            "statistics",
+            "machine learning"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_1",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a beginner scenario that uses machine learning and deep learning.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_2",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a intermediate scenario that uses deep learning and models.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_3",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a advanced scenario that uses models and python.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_4",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a project scenario that uses python and machine learning.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "ai_ml_scenario_5",
+        "specialization_key": "ai_ml",
+        "specialization": "AI and Machine Learning",
+        "dimension": "scenario",
+        "question": "For AI and Machine Learning, choose how much you like a career scenario that uses machine learning and deep learning.",
+        "keywords": [
+            "python",
+            "machine learning",
+            "deep learning",
+            "models"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_1",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a beginner scenario that uses docker and linux.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_2",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a intermediate scenario that uses linux and ci/cd.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_3",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a advanced scenario that uses ci/cd and aws.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_4",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a project scenario that uses aws and docker.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "cloud_devops_scenario_5",
+        "specialization_key": "cloud_devops",
+        "specialization": "Cloud and DevOps",
+        "dimension": "scenario",
+        "question": "For Cloud and DevOps, choose how much you like a career scenario that uses docker and linux.",
+        "keywords": [
+            "aws",
+            "docker",
+            "linux",
+            "ci/cd"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_1",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a beginner scenario that uses mysql and postgresql.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_2",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a intermediate scenario that uses postgresql and data modeling.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_3",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a advanced scenario that uses data modeling and sql.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_4",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a project scenario that uses sql and mysql.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "database_scenario_5",
+        "specialization_key": "database",
+        "specialization": "Database Systems",
+        "dimension": "scenario",
+        "question": "For Database Systems, choose how much you like a career scenario that uses mysql and postgresql.",
+        "keywords": [
+            "sql",
+            "mysql",
+            "postgresql",
+            "data modeling"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_1",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a beginner scenario that uses swift and kotlin.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_2",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a intermediate scenario that uses kotlin and ui.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_3",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a advanced scenario that uses ui and flutter.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_4",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a project scenario that uses flutter and swift.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "mobile_scenario_5",
+        "specialization_key": "mobile",
+        "specialization": "Mobile App Development",
+        "dimension": "scenario",
+        "question": "For Mobile App Development, choose how much you like a career scenario that uses swift and kotlin.",
+        "keywords": [
+            "flutter",
+            "swift",
+            "kotlin",
+            "ui"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_1",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a beginner scenario that uses tcp/ip and switching.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_2",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a intermediate scenario that uses switching and security.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_3",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a advanced scenario that uses security and routing.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_4",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a project scenario that uses routing and tcp/ip.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "networks_scenario_5",
+        "specialization_key": "networks",
+        "specialization": "Computer Networks",
+        "dimension": "scenario",
+        "question": "For Computer Networks, choose how much you like a career scenario that uses tcp/ip and switching.",
+        "keywords": [
+            "routing",
+            "tcp/ip",
+            "switching",
+            "security"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_1",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a beginner scenario that uses accessibility and prototyping.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_2",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a intermediate scenario that uses prototyping and frontend.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_3",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a advanced scenario that uses frontend and design.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_4",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a project scenario that uses design and accessibility.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "uiux_scenario_5",
+        "specialization_key": "uiux",
+        "specialization": "UI/UX Engineering",
+        "dimension": "scenario",
+        "question": "For UI/UX Engineering, choose how much you like a career scenario that uses accessibility and prototyping.",
+        "keywords": [
+            "design",
+            "accessibility",
+            "prototyping",
+            "frontend"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_1",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a beginner scenario that uses unity and graphics.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_2",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a intermediate scenario that uses graphics and logic.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_3",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a advanced scenario that uses logic and c++.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_4",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a project scenario that uses c++ and unity.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    },
+    {
+        "id": "game_scenario_5",
+        "specialization_key": "game",
+        "specialization": "Game Development",
+        "dimension": "scenario",
+        "question": "For Game Development, choose how much you like a career scenario that uses unity and graphics.",
+        "keywords": [
+            "c++",
+            "unity",
+            "graphics",
+            "logic"
+        ],
+        "weight": 4
+    }
+]
+
+SQR_PAGE_BLUEPRINTS = {
+    "home": [
+        "homeSpecializations",
+        "homeCourses",
+        "homeJobs"
+    ],
+    "profile": [
+        "profileSummary",
+        "profileProgressBars",
+        "profileQuizHistory",
+        "profileAtsHistory"
+    ],
+    "specializations": [
+        "specializationDetails",
+        "specializationsBox"
+    ],
+    "courses": [
+        "courseDetails",
+        "coursesBox"
+    ],
+    "quiz": [
+        "quizDetails",
+        "quizResult",
+        "quizzesBox"
+    ],
+    "ats": [
+        "atsCheckForm",
+        "atsGenerateForm",
+        "atsResult",
+        "generatedResume"
+    ],
+    "jobs": [
+        "jobsBox",
+        "jobDetails"
+    ],
+    "recommendation": [
+        "recommendationForm",
+        "recommendationResult",
+        "recommendationQuestionBank"
+    ],
+    "admin": [
+        "adminStatsBox",
+        "adminSpecializationsList",
+        "adminCoursesList",
+        "adminJobsList",
+        "adminQuizzesList",
+        "adminCertificatesList",
+        "adminUsersList"
+    ]
+}
+
+SQR_COLOR_THEME_TOKENS = {
+    "background": "#020617",
+    "surface": "rgba(15,23,42,0.82)",
+    "cyan": "#22d3ee",
+    "blue": "#3b82f6",
+    "purple": "#8b5cf6",
+    "pink": "#ec4899",
+    "green": "#22c55e",
+    "orange": "#f97316",
+    "red": "#ef4444"
+}
+
+
+def sqr_patch_safe_count(table_name):
+    try:
+        if not table_exists(table_name):
+            return 0
+        row = query_db(f"SELECT COUNT(*) AS total FROM `{table_name}`", fetchone=True)
+        return int(row.get("total") or 0) if row else 0
+    except Exception:
+        return 0
+
+
+def sqr_patch_table_columns(table_name):
+    try:
+        if not DB_CONFIG.get("database"):
+            return []
+        rows = query_db(
+            """
+            SELECT COLUMN_NAME AS name
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+            ORDER BY ORDINAL_POSITION
+            """,
+            (DB_CONFIG.get("database"), table_name),
+            fetchall=True
+        ) or []
+        return [r.get("name") for r in rows if r.get("name")]
+    except Exception:
+        return []
+
+
+def sqr_patch_select_rows(table_name, limit=8, order_col="created_at"):
+    try:
+        if not table_exists(table_name):
+            return []
+        columns = sqr_patch_table_columns(table_name)
+        order_sql = f" ORDER BY `{order_col}` DESC" if order_col in columns else ""
+        safe_limit = max(1, min(int(limit or 8), 50))
+        return query_db(f"SELECT * FROM `{table_name}`{order_sql} LIMIT {safe_limit}", fetchall=True) or []
+    except Exception:
+        return []
+
+
+def sqr_patch_normalize_rows(table_name, rows):
+    normalized = []
+    for row in rows or []:
+        try:
+            if table_name == "specializations":
+                normalized.append(normalize_specialization(row))
+            elif table_name == "courses":
+                normalized.append(normalize_course(row))
+            elif table_name == "jobs":
+                normalized.append(normalize_job(row))
+            elif table_name == "quizzes":
+                normalized.append(normalize_quiz(row))
+            else:
+                normalized.append(dict(row))
+        except Exception:
+            normalized.append(dict(row))
+    return normalized
+
+
+def sqr_patch_public_stats():
+    return {
+        "users": sqr_patch_safe_count("users"),
+        "specializations": sqr_patch_safe_count("specializations"),
+        "courses": sqr_patch_safe_count("courses"),
+        "quizzes": sqr_patch_safe_count("quizzes"),
+        "jobs": sqr_patch_safe_count("jobs"),
+        "certificates": sqr_patch_safe_count("certificates"),
+        "ats_results": sqr_patch_safe_count("ats_results"),
+        "quiz_attempts": sqr_patch_safe_count("quiz_attempts")
+    }
+
+
+def sqr_patch_keyword_list(text):
+    source = safe_text(text).lower()
+    found = []
+    for skill in TECH_SKILLS:
+        if skill.lower() in source and skill not in found:
+            found.append(skill)
+    return found
+
+
+def sqr_patch_score_text_against_keywords(text, keywords):
+    body = safe_text(text).lower()
+    keys = [safe_text(k).lower() for k in (keywords or []) if safe_text(k)]
+    if not keys:
+        return 0, []
+    matched = [k for k in keys if k in body]
+    score = round((len(matched) / max(len(keys), 1)) * 100)
+    return min(100, score), matched
+
+
+def sqr_patch_recommend_from_text(text, limit=5):
+    profile_text = safe_text(text)
+    specs = sqr_patch_normalize_rows("specializations", sqr_patch_select_rows("specializations", 50))
+    jobs = sqr_patch_normalize_rows("jobs", sqr_patch_select_rows("jobs", 50))
+    spec_matches = []
+    for spec in specs:
+        keywords = sqr_patch_keyword_list(" ".join([safe_text(spec.get("name")), safe_text(spec.get("description")), safe_text(spec.get("skills"))]))
+        score, matched = sqr_patch_score_text_against_keywords(profile_text, keywords)
+        if score or safe_text(spec.get("name")).lower() in profile_text.lower():
+            spec_matches.append({
+                "id": spec.get("id"),
+                "name": spec.get("name"),
+                "match_percentage": max(score, 20 if safe_text(spec.get("name")).lower() in profile_text.lower() else 0),
+                "matched_skills": matched,
+                "reason": "Matched profile text with specialization keywords."
+            })
+    job_matches = []
+    for job in jobs:
+        keywords = sqr_patch_keyword_list(" ".join([safe_text(job.get("title")), safe_text(job.get("description")), safe_text(job.get("skills")), safe_text(job.get("required_skills"))]))
+        score, matched = sqr_patch_score_text_against_keywords(profile_text, keywords)
+        if score or safe_text(job.get("title")).lower() in profile_text.lower():
+            job_matches.append({
+                "id": job.get("id"),
+                "title": job.get("title"),
+                "match_percentage": max(score, 20 if safe_text(job.get("title")).lower() in profile_text.lower() else 0),
+                "matched_skills": matched,
+                "reason": "Matched profile text with job skills."
+            })
+    spec_matches.sort(key=lambda item: item.get("match_percentage", 0), reverse=True)
+    job_matches.sort(key=lambda item: item.get("match_percentage", 0), reverse=True)
+    return {
+        "recommended_specializations": spec_matches[:limit],
+        "recommended_jobs": job_matches[:limit],
+        "detected_skills": sqr_patch_keyword_list(profile_text),
+        "roadmap": [
+            "Choose the highest matching specialization.",
+            "Open linked courses to start progress tracking.",
+            "Complete course quizzes to raise profile progress.",
+            "Use ATS tools for the target job.",
+            "Apply first to jobs with stronger skill matches."
+        ]
+    }
+
+
+def sqr_patch_profile_text(user):
+    if not user:
+        return ""
+    return " ".join([
+        safe_text(user.get("name")),
+        safe_text(user.get("skills")),
+        safe_text(user.get("interests")),
+        safe_text(user.get("goal")),
+        safe_text(user.get("work_style")) if isinstance(user, dict) else ""
+    ])
+
+
+def sqr_patch_user_activity(user_id):
+    data = {"opened_courses": 0, "quiz_attempts": 0, "ats_results": 0}
+    try:
+        if table_exists("course_enrollments"):
+            row = query_db("SELECT COUNT(*) AS total FROM course_enrollments WHERE user_id=%s", (user_id,), fetchone=True)
+            data["opened_courses"] = int(row.get("total") or 0) if row else 0
+        elif table_exists("progress"):
+            row = query_db("SELECT COUNT(*) AS total FROM progress WHERE user_id=%s", (user_id,), fetchone=True)
+            data["opened_courses"] = int(row.get("total") or 0) if row else 0
+    except Exception:
+        pass
+    try:
+        if table_exists("quiz_attempts"):
+            row = query_db("SELECT COUNT(*) AS total FROM quiz_attempts WHERE user_id=%s", (user_id,), fetchone=True)
+            data["quiz_attempts"] = int(row.get("total") or 0) if row else 0
+    except Exception:
+        pass
+    try:
+        if table_exists("ats_results"):
+            row = query_db("SELECT COUNT(*) AS total FROM ats_results WHERE user_id=%s", (user_id,), fetchone=True)
+            data["ats_results"] = int(row.get("total") or 0) if row else 0
+    except Exception:
+        pass
+    return data
+
+
+@app.route("/api/public/bootstrap", methods=["GET"])
+def sqr_patch_public_bootstrap():
+    return jsonify({
+        "message": "SQR dynamic bootstrap loaded",
+        "stats": sqr_patch_public_stats(),
+        "specializations": sqr_patch_normalize_rows("specializations", sqr_patch_select_rows("specializations", 6)),
+        "courses": sqr_patch_normalize_rows("courses", sqr_patch_select_rows("courses", 6)),
+        "jobs": sqr_patch_normalize_rows("jobs", sqr_patch_select_rows("jobs", 6)),
+        "theme": SQR_COLOR_THEME_TOKENS,
+        "pages": SQR_PAGE_BLUEPRINTS
+    })
+
+
+@app.route("/api/home/dashboard", methods=["GET"])
+def sqr_patch_home_dashboard():
+    return jsonify({
+        "stats": sqr_patch_public_stats(),
+        "latest_specializations": sqr_patch_normalize_rows("specializations", sqr_patch_select_rows("specializations", 9)),
+        "latest_courses": sqr_patch_normalize_rows("courses", sqr_patch_select_rows("courses", 9)),
+        "latest_jobs": sqr_patch_normalize_rows("jobs", sqr_patch_select_rows("jobs", 9))
+    })
+
+
+@app.route("/api/recommendation/questions", methods=["GET"])
+def sqr_patch_recommendation_questions():
+    specialization_key = safe_text(request.args.get("specialization_key")).lower()
+    dimension = safe_text(request.args.get("dimension")).lower()
+    questions = []
+    for question in SQR_RECOMMENDATION_QUESTION_BANK:
+        if specialization_key and safe_text(question.get("specialization_key")).lower() != specialization_key:
+            continue
+        if dimension and safe_text(question.get("dimension")).lower() != dimension:
+            continue
+        questions.append(question)
+    return jsonify({"questions": questions, "count": len(questions)})
+
+
+@app.route("/api/catalog/search", methods=["GET"])
+def sqr_patch_catalog_search():
+    term = safe_text(request.args.get("q")).lower()
+    limit = max(1, min(int(request.args.get("limit", 12) or 12), 40))
+    results = {"specializations": [], "courses": [], "jobs": [], "quizzes": []}
+    if not term:
+        return jsonify(results)
+    for table_name, key in [("specializations", "specializations"), ("courses", "courses"), ("jobs", "jobs"), ("quizzes", "quizzes")]:
+        rows = sqr_patch_normalize_rows(table_name, sqr_patch_select_rows(table_name, 50))
+        filtered = []
+        for row in rows:
+            body = " ".join(safe_text(v) for v in row.values()).lower()
+            if term in body:
+                filtered.append(row)
+        results[key] = filtered[:limit]
+    return jsonify(results)
+
+
+@app.route("/api/profile/dashboard/advanced", methods=["GET"])
+@login_required
+def sqr_patch_profile_dashboard_advanced():
+    user = clean_user(request.current_user)
+    user_id = user.get("id") or user.get("user_id")
+    recommendation = sqr_patch_recommend_from_text(sqr_patch_profile_text(user), 5)
+    activity = sqr_patch_user_activity(user_id)
+    progress_payload = []
+    try:
+        if "profile_progress" in globals():
+            pass
+    except Exception:
+        pass
+    return jsonify({
+        "user": user,
+        "activity": activity,
+        "recommendation_preview": recommendation,
+        "profile_completeness": sqr_patch_profile_completeness(user),
+        "stats": sqr_patch_public_stats(),
+        "progress_hint": "Use /api/profile/progress for real progress bars shown only on profile.html."
+    })
+
+
+def sqr_patch_profile_completeness(user):
+    fields = ["name", "email", "skills", "interests", "goal"]
+    if not user:
+        return 0
+    filled = sum(1 for field in fields if safe_text(user.get(field)))
+    return round((filled / len(fields)) * 100)
+
+
+@app.route("/api/admin/dashboard/advanced", methods=["GET"])
+@admin_required
+def sqr_patch_admin_dashboard_advanced():
+    return jsonify({
+        "stats": sqr_patch_public_stats(),
+        "tables": {
+            name: sqr_patch_table_columns(name)
+            for name in ["users", "specializations", "courses", "quizzes", "quiz_questions", "jobs", "certificates", "ats_results", "course_enrollments", "quiz_attempts"]
+        },
+        "recent": {
+            "specializations": sqr_patch_normalize_rows("specializations", sqr_patch_select_rows("specializations", 5)),
+            "courses": sqr_patch_normalize_rows("courses", sqr_patch_select_rows("courses", 5)),
+            "jobs": sqr_patch_normalize_rows("jobs", sqr_patch_select_rows("jobs", 5)),
+            "quizzes": sqr_patch_normalize_rows("quizzes", sqr_patch_select_rows("quizzes", 5))
+        }
+    })
+
+
+@app.route("/api/schema/check", methods=["GET"])
+def sqr_patch_schema_check():
+    tables = ["users", "admins", "specializations", "courses", "quizzes", "quiz_questions", "jobs", "certificates", "course_enrollments", "quiz_attempts", "ats_results", "assessments"]
+    return jsonify({
+        "database": DB_CONFIG.get("database"),
+        "connected": bool(pool),
+        "tables": [
+            {"name": table, "exists": table_exists(table), "columns": sqr_patch_table_columns(table)}
+            for table in tables
+        ]
+    })
+
+
+@app.route("/api/static/page-blueprint/<page_name>", methods=["GET"])
+def sqr_patch_page_blueprint(page_name):
+    key = safe_text(page_name).replace(".html", "").lower()
+    return jsonify({"page": key, "dynamic_targets": SQR_PAGE_BLUEPRINTS.get(key, []), "theme": SQR_COLOR_THEME_TOKENS})
+
+
+@app.route("/api/recommendations/preview", methods=["POST"])
+@login_required
+def sqr_patch_recommendations_preview():
+    data = get_json()
+    text = " ".join([
+        safe_text(data.get("interests")),
+        safe_text(data.get("skills")),
+        safe_text(data.get("work_style")),
+        safe_text(data.get("goal")),
+        sqr_patch_profile_text(request.current_user)
+    ])
+    return jsonify(sqr_patch_recommend_from_text(text, 8))
+
+
+# Extra backend view-model helpers used by the colorful templates.
+# These routes are intentionally unique so they do not replace existing project features.
+@app.route("/api/view-model/home", methods=["GET"])
+def sqr_patch_view_model_home():
+    payload = sqr_patch_public_stats()
+    return jsonify({
+        "page": "home",
+        "title": "Skill Quest Road",
+        "counts": payload,
+        "sections": SQR_PAGE_BLUEPRINTS.get("home", []),
+        "colors": SQR_COLOR_THEME_TOKENS
+    })
+
+
+@app.route("/api/view-model/profile", methods=["GET"])
+@login_required
+def sqr_patch_view_model_profile():
+    user = clean_user(request.current_user)
+    return jsonify({
+        "page": "profile",
+        "user": user,
+        "activity": sqr_patch_user_activity(user.get("id") or user.get("user_id")),
+        "completeness": sqr_patch_profile_completeness(user),
+        "sections": SQR_PAGE_BLUEPRINTS.get("profile", [])
+    })
+
+SQR_DYNAMIC_CONTAINER_REGISTRY = [
+    {
+        "page": "home",
+        "target": "homeSpecializations",
+        "priority": 1,
+        "purpose": "Dynamic container homeSpecializations on home page"
+    },
+    {
+        "page": "home",
+        "target": "homeCourses",
+        "priority": 2,
+        "purpose": "Dynamic container homeCourses on home page"
+    },
+    {
+        "page": "home",
+        "target": "homeJobs",
+        "priority": 3,
+        "purpose": "Dynamic container homeJobs on home page"
+    },
+    {
+        "page": "profile",
+        "target": "profileSummary",
+        "priority": 1,
+        "purpose": "Dynamic container profileSummary on profile page"
+    },
+    {
+        "page": "profile",
+        "target": "profileProgressBars",
+        "priority": 2,
+        "purpose": "Dynamic container profileProgressBars on profile page"
+    },
+    {
+        "page": "profile",
+        "target": "profileQuizHistory",
+        "priority": 3,
+        "purpose": "Dynamic container profileQuizHistory on profile page"
+    },
+    {
+        "page": "profile",
+        "target": "profileAtsHistory",
+        "priority": 4,
+        "purpose": "Dynamic container profileAtsHistory on profile page"
+    },
+    {
+        "page": "specializations",
+        "target": "specializationDetails",
+        "priority": 1,
+        "purpose": "Dynamic container specializationDetails on specializations page"
+    },
+    {
+        "page": "specializations",
+        "target": "specializationsBox",
+        "priority": 2,
+        "purpose": "Dynamic container specializationsBox on specializations page"
+    },
+    {
+        "page": "courses",
+        "target": "courseDetails",
+        "priority": 1,
+        "purpose": "Dynamic container courseDetails on courses page"
+    },
+    {
+        "page": "courses",
+        "target": "coursesBox",
+        "priority": 2,
+        "purpose": "Dynamic container coursesBox on courses page"
+    },
+    {
+        "page": "quiz",
+        "target": "quizDetails",
+        "priority": 1,
+        "purpose": "Dynamic container quizDetails on quiz page"
+    },
+    {
+        "page": "quiz",
+        "target": "quizResult",
+        "priority": 2,
+        "purpose": "Dynamic container quizResult on quiz page"
+    },
+    {
+        "page": "quiz",
+        "target": "quizzesBox",
+        "priority": 3,
+        "purpose": "Dynamic container quizzesBox on quiz page"
+    },
+    {
+        "page": "ats",
+        "target": "atsCheckForm",
+        "priority": 1,
+        "purpose": "Dynamic container atsCheckForm on ats page"
+    },
+    {
+        "page": "ats",
+        "target": "atsGenerateForm",
+        "priority": 2,
+        "purpose": "Dynamic container atsGenerateForm on ats page"
+    },
+    {
+        "page": "ats",
+        "target": "atsResult",
+        "priority": 3,
+        "purpose": "Dynamic container atsResult on ats page"
+    },
+    {
+        "page": "ats",
+        "target": "generatedResume",
+        "priority": 4,
+        "purpose": "Dynamic container generatedResume on ats page"
+    },
+    {
+        "page": "jobs",
+        "target": "jobsBox",
+        "priority": 1,
+        "purpose": "Dynamic container jobsBox on jobs page"
+    },
+    {
+        "page": "jobs",
+        "target": "jobDetails",
+        "priority": 2,
+        "purpose": "Dynamic container jobDetails on jobs page"
+    },
+    {
+        "page": "recommendation",
+        "target": "recommendationForm",
+        "priority": 1,
+        "purpose": "Dynamic container recommendationForm on recommendation page"
+    },
+    {
+        "page": "recommendation",
+        "target": "recommendationResult",
+        "priority": 2,
+        "purpose": "Dynamic container recommendationResult on recommendation page"
+    },
+    {
+        "page": "recommendation",
+        "target": "recommendationQuestionBank",
+        "priority": 3,
+        "purpose": "Dynamic container recommendationQuestionBank on recommendation page"
+    },
+    {
+        "page": "admin",
+        "target": "adminStatsBox",
+        "priority": 1,
+        "purpose": "Dynamic container adminStatsBox on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminSpecializationsList",
+        "priority": 2,
+        "purpose": "Dynamic container adminSpecializationsList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminCoursesList",
+        "priority": 3,
+        "purpose": "Dynamic container adminCoursesList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminJobsList",
+        "priority": 4,
+        "purpose": "Dynamic container adminJobsList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminQuizzesList",
+        "priority": 5,
+        "purpose": "Dynamic container adminQuizzesList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminCertificatesList",
+        "priority": 6,
+        "purpose": "Dynamic container adminCertificatesList on admin page"
+    },
+    {
+        "page": "admin",
+        "target": "adminUsersList",
+        "priority": 7,
+        "purpose": "Dynamic container adminUsersList on admin page"
+    }
+]
+
+
+@app.route("/api/static/dynamic-containers", methods=["GET"])
+def sqr_patch_dynamic_containers():
+    page = safe_text(request.args.get("page")).replace(".html", "").lower()
+    rows = [row for row in SQR_DYNAMIC_CONTAINER_REGISTRY if not page or row.get("page") == page]
+    return jsonify({"containers": rows, "count": len(rows)})
+
+
+def sqr_patch_runtime_report():
+    return {
+        "python_file": "SQR.py",
+        "db_host_set": bool(DB_CONFIG.get("host")),
+        "db_name_set": bool(DB_CONFIG.get("database")),
+        "openai_enabled": bool(client),
+        "upload_folder": app.config.get("UPLOAD_FOLDER"),
+        "public_stats": sqr_patch_public_stats(),
+        "page_targets": SQR_PAGE_BLUEPRINTS
+    }
+
+
+@app.route("/api/runtime/report", methods=["GET"])
+def sqr_patch_runtime_report_route():
+    return jsonify(sqr_patch_runtime_report())
+
 @app.errorhandler(404)
 def not_found(error):
     if request.path.startswith("/api/"):
