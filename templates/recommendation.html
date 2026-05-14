@@ -1,14 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>SQR | Recommendation</title>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Get CS specialization and job recommendations.">
+  <title>SQR | Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-<div id="message"></div>
-<main class="recommendation-page"><section class="rec-hero"><div class="rec-hero-main"><span class="eyebrow">Career Path Finder</span><h1>Find the best CS specialization for you</h1><p>Answer the questions and write your interests, skills, goal, and work style. SQR recommends specializations, jobs, and learning steps.</p></div><div class="rec-hero-side"><strong>What you get</strong><span>Specialization match</span><span>Related jobs</span><span>Skills to improve</span><span>Courses to start</span></div></section><section class="rec-layout"><form id="recForm" class="rec-card"><div class="section-title"><h2>Your answers</h2><p>Use simple sentences or keywords.</p></div><div class="rec-field"><label for="interests">Topics you enjoy</label><textarea id="interests" name="interests" rows="4" placeholder="cybersecurity, AI, web development, databases"></textarea></div><div class="rec-field"><label for="skills">Your current skills</label><textarea id="skills" name="skills" rows="4" placeholder="Python, Java, SQL, Linux, HTML"></textarea></div><div class="rec-field"><label for="work_style">Preferred work style</label><textarea id="work_style" name="work_style" rows="4" placeholder="I like building apps, solving problems, investigating issues, or analyzing data"></textarea></div><div class="rec-field"><label for="goal">Career goal</label><textarea id="goal" name="goal" rows="4" placeholder="I want a practical role with good job opportunities"></textarea></div><button class="btn btn-primary" type="submit">Get recommendation</button></form><aside class="rec-card"><div class="section-title"><h2>Result</h2><p>Your recommendation will appear here.</p></div><div id="recommendationResult" class="rec-empty"><div class="rec-empty-icon">⌁</div><h3>No result yet</h3><p>Fill the form and click get recommendation.</p></div></aside></section></main>
+  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
+    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
+      <span>SQR</span>
+      <small>Skill Quest Road</small>
+    </a>
+    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
+    <div class="sqr-nav-links">
+      <a href="gp.html">Home</a>
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="jobs.html">Jobs</a>
+      <a href="recommendation.html">Recommendation</a>
+      <a href="profile.html">Profile</a>
+    </div>
+    <div class="sqr-nav-actions">
+      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
+      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
+    </div>
+  </nav>
+
+  <main class="page recommendation-page recommendation-polished">
+    <div id="message"></div>
+
+    <section class="rec-hero modern-rec-hero">
+      <div>
+        <span class="hero-badge">Career Path Finder</span>
+        <h1>Find the best CS specialization for you.</h1>
+        <p>
+          Answer a few focused questions. SQR will recommend specializations, related jobs,
+          detected skills, and a practical roadmap based on your interests and work style.
+        </p>
+        <div class="page-actions">
+          <a href="Specialization.html" class="btn btn-soft">View all specializations</a>
+          <a href="jobs.html" class="btn btn-soft">View jobs</a>
+        </div>
+      </div>
+      <aside class="rec-hero-card">
+        <strong>Recommendation output</strong>
+        <span>Specialization match</span>
+        <span>Job match percentage</span>
+        <span>Detected skills</span>
+        <span>Learning roadmap</span>
+      </aside>
+    </section>
+
+    <section class="rec-layout">
+      <form id="recForm" class="rec-card modern-form">
+        <div class="section-heading compact-heading">
+          <span>Your answers</span>
+          <h2>Career recommendation test</h2>
+          <p>Write natural answers. Keywords and short sentences both work.</p>
+        </div>
+
+        <label for="interests">What topics do you enjoy? <span class="required-star">*</span></label>
+        <textarea id="interests" name="interests" rows="5" placeholder="Cybersecurity, AI, web development, data analysis, cloud..." required></textarea>
+
+        <label for="skills">What skills do you already have?</label>
+        <textarea id="skills" name="skills" rows="5" placeholder="Python, SQL, Java, HTML, networking, problem solving..."></textarea>
+
+        <label for="work_style">How do you prefer to work?</label>
+        <textarea id="work_style" name="work_style" rows="5" placeholder="I like investigating issues, building apps, analyzing data, designing systems..."></textarea>
+
+        <label for="goal">What kind of role do you want?</label>
+        <textarea id="goal" name="goal" rows="5" placeholder="I want a practical job with strong opportunities in security..."></textarea>
+
+        <button type="submit" class="btn btn-primary full-btn">Get recommendation</button>
+      </form>
+
+      <aside class="rec-card rec-result-card">
+        <div class="section-heading compact-heading">
+          <span>Result</span>
+          <h2>Your recommendation</h2>
+          <p>Results will appear here after submitting the test.</p>
+        </div>
+        <div id="recommendationResult" class="rec-empty">
+          <div class="rec-empty-icon">⌁</div>
+          <h3>No result yet</h3>
+          <p>Complete the form and click get recommendation.</p>
+        </div>
+        <div id="recResult" class="hidden-helper"></div>
+        <div id="recQuizBox" class="hidden-helper"></div>
+      </aside>
+    </section>
+  </main>
+  <footer class="sqr-footer">
+    <div>
+      <strong>SQR — Skill Quest Road</strong>
+      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
+    </div>
+    <div class="footer-links">
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="profile.html">Profile</a>
+    </div>
+  </footer>
 </body>
 </html>

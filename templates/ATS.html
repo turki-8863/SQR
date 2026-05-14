@@ -1,14 +1,124 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>SQR | ATS</title>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Check and generate ATS-friendly resumes.">
+  <title>SQR | ATS Resume Tools</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-<div id="message"></div>
-<section class="sqr-page-title"><h1>ATS Resume Tools</h1><p>Upload PDF/DOCX/TXT for checking, or generate an ATS-friendly resume.</p></section><main class="sqr-shell"><section class="rec-layout"><form id="atsCheckForm" class="rec-card" enctype="multipart/form-data"><h2>ATS Checker</h2><div class="rec-field"><label for="resume_file">Resume file</label><input id="resume_file" name="resume_file" type="file" accept=".pdf,.docx,.txt" required></div><div class="rec-field"><label for="job_description">Job description</label><textarea id="job_description" name="job_description" rows="6"></textarea></div><button class="btn btn-primary" type="submit">Check Resume</button></form><form id="atsGenerateForm" class="rec-card"><h2>ATS Generator</h2><div class="rec-field"><label for="name">Full name</label><input id="name" name="name" required></div><div class="rec-field"><label for="target_job">Target job</label><input id="target_job" name="target_job" required></div><div class="rec-field"><label for="email">Email</label><input id="email" name="email"></div><div class="rec-field"><label for="phone">Phone</label><input id="phone" name="phone"></div><div class="rec-field"><label for="summary">Summary</label><textarea id="summary" name="summary" rows="3"></textarea></div><div class="rec-field"><label for="skills">Skills</label><textarea id="skills" name="skills" rows="3" required></textarea></div><div class="rec-field"><label for="education">Education</label><textarea id="education" name="education" rows="3"></textarea></div><div class="rec-field"><label for="experience">Experience</label><textarea id="experience" name="experience" rows="3"></textarea></div><div class="rec-field"><label for="projects">Projects</label><textarea id="projects" name="projects" rows="3"></textarea></div><button class="btn btn-primary" type="submit">Generate Resume</button></form></section><section id="atsResult"></section><section id="atsGenerateResult"></section></main>
+  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
+    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
+      <span>SQR</span>
+      <small>Skill Quest Road</small>
+    </a>
+    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
+    <div class="sqr-nav-links">
+      <a href="gp.html">Home</a>
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="jobs.html">Jobs</a>
+      <a href="recommendation.html">Recommendation</a>
+      <a href="profile.html">Profile</a>
+    </div>
+    <div class="sqr-nav-actions">
+      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
+      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
+    </div>
+  </nav>
+
+  <main class="page ats-page">
+    <div id="message"></div>
+
+    <section class="page-hero split-hero">
+      <div>
+        <span class="hero-badge">ATS Resume Tools</span>
+        <h1>Check or generate an ATS-friendly resume.</h1>
+        <p>
+          Use the checker to upload PDF, DOCX, or TXT resumes. Use the generator to create a clean resume
+          based on your target role, education, skills, projects, and experience.
+        </p>
+      </div>
+      <aside class="quick-panel">
+        <strong>Upload only checker</strong>
+        <p>The checker accepts file upload instead of random resume text fields.</p>
+      </aside>
+    </section>
+
+    <section class="ats-layout">
+      <form id="atsCheckForm" class="tool-card modern-form" enctype="multipart/form-data">
+        <div class="section-heading compact-heading">
+          <span>Checker</span>
+          <h2>ATS Resume Checker</h2>
+          <p>Upload a resume and paste the target job description.</p>
+        </div>
+        <label for="resumeFile">Resume file <span class="required-star">*</span></label>
+        <input id="resumeFile" name="resume" type="file" accept=".pdf,.docx,.txt" required>
+
+        <label for="jobDescription">Job description</label>
+        <textarea id="jobDescription" name="job_description" rows="8" placeholder="Paste the job description here..."></textarea>
+
+        <button type="submit" class="btn btn-primary full-btn">Check Resume</button>
+        <div id="atsCheckResult" class="result-box"></div>
+        <div id="atsResult" class="result-box"></div>
+      </form>
+
+      <form id="atsGenerateForm" class="tool-card modern-form">
+        <div class="section-heading compact-heading">
+          <span>Generator</span>
+          <h2>ATS Resume Generator</h2>
+          <p>Fields marked with a red star are required.</p>
+        </div>
+        <label for="full_name">Full name <span class="required-star">*</span></label>
+        <input id="full_name" name="name" type="text" placeholder="Your full name" required>
+
+        <label for="target_job">Target job <span class="required-star">*</span></label>
+        <input id="target_job" name="target_job" type="text" placeholder="Software Engineer, SOC Analyst..." required>
+
+        <label for="email_field">Email <span class="required-star">*</span></label>
+        <input id="email_field" name="email" type="email" placeholder="email@example.com" required>
+
+        <label for="phone">Phone</label>
+        <input id="phone" name="phone" type="text" placeholder="+966...">
+
+        <label for="summary">Professional summary</label>
+        <textarea id="summary" name="summary" rows="4" placeholder="Short summary or let the AI improve it..."></textarea>
+
+        <label for="education">Education <span class="required-star">*</span></label>
+        <textarea id="education" name="education" rows="4" placeholder="Degree, college, graduation year" required></textarea>
+
+        <label for="skills_field">Skills <span class="required-star">*</span></label>
+        <textarea id="skills_field" name="skills" rows="4" placeholder="Python, SQL, Java, Linux, Flask..." required></textarea>
+
+        <label for="experience">Experience</label>
+        <textarea id="experience" name="experience" rows="5" placeholder="Internships, training, work experience..."></textarea>
+
+        <label for="projects">Projects</label>
+        <textarea id="projects" name="projects" rows="5" placeholder="Project name, tools, result..."></textarea>
+
+        <button type="submit" class="btn btn-primary full-btn">Generate Resume</button>
+        <div id="atsGenerateResult" class="result-box"></div>
+        <div id="generatedResume" class="result-box"></div>
+      </form>
+    </section>
+  </main>
+  <footer class="sqr-footer">
+    <div>
+      <strong>SQR — Skill Quest Road</strong>
+      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
+    </div>
+    <div class="footer-links">
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="profile.html">Profile</a>
+    </div>
+  </footer>
 </body>
 </html>

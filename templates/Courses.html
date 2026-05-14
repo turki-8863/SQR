@@ -1,14 +1,115 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>SQR | Courses</title>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Browse and open courses in SQR.">
+  <title>SQR | Courses</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-<div id="message"></div>
-<section class="sqr-page-title"><h1>Courses</h1><p>Opening a course or playing a video auto-enrolls you and updates progress. No manual mark-completed button.</p></section><main class="sqr-shell"><section id="coursesBox"></section></main>
+  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
+    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
+      <span>SQR</span>
+      <small>Skill Quest Road</small>
+    </a>
+    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
+    <div class="sqr-nav-links">
+      <a href="gp.html">Home</a>
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="jobs.html">Jobs</a>
+      <a href="recommendation.html">Recommendation</a>
+      <a href="profile.html">Profile</a>
+    </div>
+    <div class="sqr-nav-actions">
+      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
+      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
+    </div>
+  </nav>
+
+  <main class="page catalog-page courses-page">
+    <div id="message"></div>
+
+    <section class="page-hero split-hero">
+      <div>
+        <span class="hero-badge">Courses</span>
+        <h1>Open a course to enroll and update progress.</h1>
+        <p>
+          Courses are connected to specializations. When a student opens a course, the system auto-enrolls them,
+          saves progress, and keeps the profile dashboard updated.
+        </p>
+        <div class="page-actions">
+          <a href="Specialization.html" class="btn btn-soft">Choose specialization</a>
+          <a href="Quiz.html" class="btn btn-primary">Open quizzes</a>
+        </div>
+      </div>
+      <aside class="quick-panel">
+        <strong>No manual completion</strong>
+        <p>Course completion depends on opening content and passing linked quizzes, not a fake mark-completed button.</p>
+      </aside>
+    </section>
+
+    <section class="toolbar-card">
+      <div>
+        <label for="courseSearch">Search courses</label>
+        <input id="courseSearch" type="search" placeholder="Python, security, database, cloud...">
+      </div>
+      <div>
+        <label for="courseLevel">Difficulty</label>
+        <select id="courseLevel">
+          <option value="">All levels</option>
+          <option value="beginner">Beginner</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+        </select>
+      </div>
+      <div>
+        <label for="courseSpecialization">Specialization</label>
+        <select id="courseSpecialization">
+          <option value="">All specializations</option>
+        </select>
+      </div>
+    </section>
+
+    <section id="courseDetails" class="detail-container"></section>
+    <section id="coursesBox" class="card-grid"></section>
+    <section id="coursesGrid" class="card-grid hidden-helper"></section>
+    <section id="coursesList" class="card-grid hidden-helper"></section>
+    <section id="courses" class="card-grid hidden-helper"></section>
+    <section id="courseProgressBox" class="progress-panel"></section>
+
+    <section class="tips-grid">
+      <article>
+        <h3>Auto-enroll</h3>
+        <p>Opening a course from here should create or update a row in course_enrollments.</p>
+      </article>
+      <article>
+        <h3>Course media</h3>
+        <p>Admin-uploaded images and videos appear in course cards and details.</p>
+      </article>
+      <article>
+        <h3>Quiz connection</h3>
+        <p>Course-linked quizzes calculate the second half of progress.</p>
+      </article>
+    </section>
+  </main>
+  <footer class="sqr-footer">
+    <div>
+      <strong>SQR — Skill Quest Road</strong>
+      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
+    </div>
+    <div class="footer-links">
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="profile.html">Profile</a>
+    </div>
+  </footer>
 </body>
 </html>

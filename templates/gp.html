@@ -1,14 +1,200 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>SQR | Skill Quest Road</title>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SQR career guidance platform for CS students.">
+  <title>SQR | Skill Quest Road</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-<div id="message"></div>
-<section class="sqr-page-title"><h1>SQR — Skill Quest Road</h1><p>Career guidance, specializations, courses, quizzes, ATS tools, recommendations, and progress tracking in one platform.</p></section><main class="sqr-shell"><section class="card-grid"><article class="feature-card interactive-card" data-open-url="Specialization.html"><h3>Specializations</h3><p>Choose a CS path and follow courses linked to it.</p></article><article class="feature-card interactive-card" data-open-url="Courses.html"><h3>Courses</h3><p>Open courses to auto-enroll and update progress.</p></article><article class="feature-card interactive-card" data-open-url="recommendation.html"><h3>Recommendation</h3><p>Get a specialization and job recommendation from your interests.</p></article><article class="feature-card interactive-card" data-open-url="ATS.html"><h3>ATS</h3><p>Check or generate an ATS-friendly resume.</p></article></section></main>
+  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
+    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
+      <span>SQR</span>
+      <small>Skill Quest Road</small>
+    </a>
+    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
+    <div class="sqr-nav-links">
+      <a href="gp.html">Home</a>
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="jobs.html">Jobs</a>
+      <a href="recommendation.html">Recommendation</a>
+      <a href="profile.html">Profile</a>
+    </div>
+    <div class="sqr-nav-actions">
+      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
+      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
+    </div>
+  </nav>
+
+  <main class="page home-page">
+    <div id="message"></div>
+
+    <section class="home-hero premium-hero">
+      <div class="hero-copy">
+        <span class="hero-badge">CS Career Guidance Platform</span>
+        <h1>Build your computer science career with a clear road map.</h1>
+        <p>
+          SQR connects specializations, courses, quizzes, ATS resume tools, profile progress,
+          and career recommendations in one student-focused platform.
+        </p>
+        <div class="hero-actions">
+          <a href="Specialization.html" class="btn btn-primary">Explore Specializations</a>
+          <a href="recommendation.html" class="btn btn-soft">Take Recommendation Test</a>
+          <a href="ATS.html" class="btn btn-soft">Open ATS Tools</a>
+        </div>
+        <div class="hero-mini-stats">
+          <article>
+            <strong>01</strong>
+            <span>Choose a path</span>
+          </article>
+          <article>
+            <strong>02</strong>
+            <span>Complete courses</span>
+          </article>
+          <article>
+            <strong>03</strong>
+            <span>Track progress</span>
+          </article>
+        </div>
+      </div>
+      <aside class="hero-dashboard-card">
+        <div class="dashboard-topline">
+          <span>Student dashboard</span>
+          <strong>Live progress</strong>
+        </div>
+        <div class="dashboard-track">
+          <span>Cybersecurity</span>
+          <div class="progress"><div class="progress-fill" style="width:72%"></div></div>
+          <strong>72%</strong>
+        </div>
+        <div class="dashboard-track">
+          <span>Software Engineering</span>
+          <div class="progress"><div class="progress-fill" style="width:54%"></div></div>
+          <strong>54%</strong>
+        </div>
+        <div class="dashboard-track">
+          <span>Data Science</span>
+          <div class="progress"><div class="progress-fill" style="width:38%"></div></div>
+          <strong>38%</strong>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section-heading wide-heading">
+      <span>Platform sections</span>
+      <h2>Everything connected instead of separated pages.</h2>
+      <p>
+        Students can move from specializations to courses, from courses to quizzes,
+        and from profile progress to ATS and job recommendations without getting lost.
+      </p>
+    </section>
+
+    <section class="card-grid feature-grid home-feature-grid">
+      <article class="feature-card interactive-card" data-open-url="Specialization.html">
+        <div class="feature-icon">🎯</div>
+        <h3>Specializations</h3>
+        <p>Choose a computer science path and see courses, certificates, and career outcomes linked to it.</p>
+        <a href="Specialization.html" class="btn btn-soft">Open Specializations</a>
+      </article>
+      <article class="feature-card interactive-card" data-open-url="Courses.html">
+        <div class="feature-icon">📚</div>
+        <h3>Courses</h3>
+        <p>Open courses to auto-enroll and update progress. No manual mark-completed button is needed.</p>
+        <a href="Courses.html" class="btn btn-soft">Open Courses</a>
+      </article>
+      <article class="feature-card interactive-card" data-open-url="Quiz.html">
+        <div class="feature-icon">🧠</div>
+        <h3>Quizzes</h3>
+        <p>Take course-linked quizzes and show your score with clean circular statistics.</p>
+        <a href="Quiz.html" class="btn btn-soft">Open Quizzes</a>
+      </article>
+      <article class="feature-card interactive-card" data-open-url="ATS.html">
+        <div class="feature-icon">📄</div>
+        <h3>ATS Resume Tools</h3>
+        <p>Upload PDF or DOCX resumes, check keyword matching, and generate ATS-friendly resumes.</p>
+        <a href="ATS.html" class="btn btn-soft">Open ATS</a>
+      </article>
+      <article class="feature-card interactive-card" data-open-url="recommendation.html">
+        <div class="feature-icon">✨</div>
+        <h3>Recommendation</h3>
+        <p>Answer a modern career test to get recommended specializations, jobs, and a practical roadmap.</p>
+        <a href="recommendation.html" class="btn btn-soft">Get Recommendation</a>
+      </article>
+      <article class="feature-card interactive-card" data-open-url="profile.html">
+        <div class="feature-icon">📊</div>
+        <h3>Profile Dashboard</h3>
+        <p>Track opened courses, quiz progress, specialization progress, ATS results, skills, and interests.</p>
+        <a href="profile.html" class="btn btn-soft">Open Profile</a>
+      </article>
+    </section>
+
+    <section class="roadmap-section">
+      <div class="section-heading">
+        <span>Student flow</span>
+        <h2>How SQR should be used.</h2>
+        <p>The website works as a complete process, not just independent static pages.</p>
+      </div>
+      <div class="timeline-grid">
+        <article>
+          <strong>1</strong>
+          <h3>Create account</h3>
+          <p>Students sign up with secure authentication and get a profile dashboard.</p>
+        </article>
+        <article>
+          <strong>2</strong>
+          <h3>Pick specialization</h3>
+          <p>The platform shows specialization cards, details, careers, and linked courses.</p>
+        </article>
+        <article>
+          <strong>3</strong>
+          <h3>Open courses</h3>
+          <p>Opening course content auto-enrolls the student and saves progress in the database.</p>
+        </article>
+        <article>
+          <strong>4</strong>
+          <h3>Pass quizzes</h3>
+          <p>Quiz attempts complete the remaining course progress and update specialization progress.</p>
+        </article>
+        <article>
+          <strong>5</strong>
+          <h3>Use ATS tools</h3>
+          <p>Students check resume files and generate cleaner ATS-friendly resumes.</p>
+        </article>
+        <article>
+          <strong>6</strong>
+          <h3>Apply smarter</h3>
+          <p>Job recommendations and match percentages help students plan their next step.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="cta-panel">
+      <div>
+        <span class="eyebrow">Ready</span>
+        <h2>Start by choosing your specialization.</h2>
+        <p>Then SQR will connect courses, quizzes, progress tracking, and recommendations around that path.</p>
+      </div>
+      <a href="Specialization.html" class="btn btn-primary">Start now</a>
+    </section>
+  </main>
+  <footer class="sqr-footer">
+    <div>
+      <strong>SQR — Skill Quest Road</strong>
+      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
+    </div>
+    <div class="footer-links">
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="profile.html">Profile</a>
+    </div>
+  </footer>
 </body>
 </html>

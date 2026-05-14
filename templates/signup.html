@@ -1,14 +1,104 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>SQR | Sign Up</title>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Create a student account in SQR.">
+  <title>SQR | Sign Up</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-<div id="message"></div>
-<section class="sqr-page-title"><h1>Create Student Account</h1><p>Students sign up as students. Only existing admins can grant admin access.</p></section><main class="sqr-shell"><form id="signupForm" class="rec-card"><div class="rec-field"><label for="name">Full name</label><input id="name" name="name" required></div><div class="rec-field"><label for="username">Username</label><input id="username" name="username"></div><div class="rec-field"><label for="email">Email</label><input id="email" name="email" type="email" required></div><div class="rec-field"><label for="password">Password</label><input id="password" name="password" type="password" required></div><div class="rec-field"><label for="confirm_password">Confirm password</label><input id="confirm_password" name="confirm_password" type="password"></div><button class="btn btn-primary" type="submit">Create Account</button></form></main>
+  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
+    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
+      <span>SQR</span>
+      <small>Skill Quest Road</small>
+    </a>
+    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
+    <div class="sqr-nav-links">
+      <a href="gp.html">Home</a>
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="jobs.html">Jobs</a>
+      <a href="recommendation.html">Recommendation</a>
+      <a href="profile.html">Profile</a>
+    </div>
+    <div class="sqr-nav-actions">
+      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
+      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
+    </div>
+  </nav>
+
+  <main class="page auth-page">
+    <div id="message"></div>
+
+    <section class="auth-layout reverse-auth">
+      <section class="auth-card">
+        <div class="section-heading compact-heading">
+          <span>New account</span>
+          <h2>Create your SQR profile</h2>
+          <p>Students sign up as students. Admin access is controlled by the database owner.</p>
+        </div>
+        <form id="signupForm" data-signup class="modern-form">
+          <label for="name">Full name <span class="required-star">*</span></label>
+          <input id="name" name="name" type="text" placeholder="Your full name" autocomplete="name" required>
+
+          <label for="email">Email address <span class="required-star">*</span></label>
+          <input id="email" name="email" type="email" placeholder="student@example.com" autocomplete="email" required>
+
+          <label for="password">Password <span class="required-star">*</span></label>
+          <input id="password" name="password" type="password" placeholder="Uppercase, lowercase, number, symbol" autocomplete="new-password" required>
+
+          <label for="confirm_password">Confirm password <span class="required-star">*</span></label>
+          <input id="confirm_password" name="confirm_password" type="password" placeholder="Repeat password" autocomplete="new-password" required>
+
+          <button type="submit" class="btn btn-primary full-btn">Create Account</button>
+        </form>
+        <div class="auth-switch">
+          <span>Already have an account?</span>
+          <a href="signin.html">Sign in</a>
+        </div>
+      </section>
+
+      <aside class="auth-info-card">
+        <span class="hero-badge">Student mode</span>
+        <h1>Your account connects all SQR features.</h1>
+        <p>
+          After signing up, your profile can track specializations, opened courses,
+          quiz attempts, ATS reports, and recommendation history.
+        </p>
+        <div class="auth-benefits">
+          <article>
+            <strong>Secure role</strong>
+            <span>Students cannot choose admin during signup.</span>
+          </article>
+          <article>
+            <strong>Connected data</strong>
+            <span>Progress is linked to your user ID.</span>
+          </article>
+          <article>
+            <strong>Career dashboard</strong>
+            <span>One place for learning and planning.</span>
+          </article>
+        </div>
+      </aside>
+    </section>
+  </main>
+  <footer class="sqr-footer">
+    <div>
+      <strong>SQR — Skill Quest Road</strong>
+      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
+    </div>
+    <div class="footer-links">
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="profile.html">Profile</a>
+    </div>
+  </footer>
 </body>
 </html>

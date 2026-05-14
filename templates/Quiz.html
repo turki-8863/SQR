@@ -1,14 +1,88 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>SQR | Quizzes</title>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Take quizzes linked to courses in SQR.">
+  <title>SQR | Quizzes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-<div id="message"></div>
-<section class="sqr-page-title"><h1>Quiz Center</h1><p>Quizzes are linked to courses and update your progress after submission.</p></section><main class="sqr-shell"><section id="quizzesBox"></section><section id="quizBox"></section></main>
+  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
+    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
+      <span>SQR</span>
+      <small>Skill Quest Road</small>
+    </a>
+    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
+    <div class="sqr-nav-links">
+      <a href="gp.html">Home</a>
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="jobs.html">Jobs</a>
+      <a href="recommendation.html">Recommendation</a>
+      <a href="profile.html">Profile</a>
+    </div>
+    <div class="sqr-nav-actions">
+      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
+      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
+    </div>
+  </nav>
+
+  <main class="page quiz-page">
+    <div id="message"></div>
+
+    <section class="page-hero split-hero">
+      <div>
+        <span class="hero-badge">Quizzes</span>
+        <h1>Test your skills and update your progress.</h1>
+        <p>
+          Quizzes are linked to courses. Passing a quiz updates quiz attempts,
+          course progress, and specialization progress.
+        </p>
+      </div>
+      <aside class="quick-panel">
+        <strong>Circle statistics</strong>
+        <p>Your score appears as a clean circular percentage after submission.</p>
+      </aside>
+    </section>
+
+    <section id="quizBox" class="quiz-container"></section>
+    <section id="quizDetails" class="quiz-container hidden-helper"></section>
+    <section id="quizContainer" class="quiz-container hidden-helper"></section>
+    <section id="quizzesBox" class="card-grid hidden-helper"></section>
+    <section id="quizResult" class="result-panel"></section>
+
+    <section class="tips-grid">
+      <article>
+        <h3>Question source</h3>
+        <p>Questions are loaded from the database through the backend quiz routes.</p>
+      </article>
+      <article>
+        <h3>Attempts</h3>
+        <p>Each submission should save a quiz_attempts row with score, total, percentage, and pass status.</p>
+      </article>
+      <article>
+        <h3>Progress</h3>
+        <p>Passing course quizzes contributes to course completion.</p>
+      </article>
+    </section>
+  </main>
+  <footer class="sqr-footer">
+    <div>
+      <strong>SQR — Skill Quest Road</strong>
+      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
+    </div>
+    <div class="footer-links">
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="profile.html">Profile</a>
+    </div>
+  </footer>
 </body>
 </html>

@@ -1,14 +1,116 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>SQR | Specializations</title>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Browse CS specializations in SQR.">
+  <title>SQR | Specializations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-<div id="message"></div>
-<section class="sqr-page-title"><h1>Specializations</h1><p>Explore dynamic specializations added by the admin.</p></section><main class="sqr-shell"><section id="specializationsBox"></section></main>
+  <nav id="sqrNavbar" class="sqr-navbar" aria-label="Main navigation">
+    <a href="gp.html" class="sqr-brand" aria-label="SQR Home">
+      <span>SQR</span>
+      <small>Skill Quest Road</small>
+    </a>
+    <button class="sqr-menu-btn" type="button" data-sqr-menu aria-label="Open menu">☰</button>
+    <div class="sqr-nav-links">
+      <a href="gp.html">Home</a>
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="jobs.html">Jobs</a>
+      <a href="recommendation.html">Recommendation</a>
+      <a href="profile.html">Profile</a>
+    </div>
+    <div class="sqr-nav-actions">
+      <a class="btn btn-soft signin-link" href="signin.html">Sign In</a>
+      <a class="btn btn-primary signup-link" href="signup.html">Sign Up</a>
+    </div>
+  </nav>
+
+  <main class="page catalog-page">
+    <div id="message"></div>
+
+    <section class="page-hero split-hero">
+      <div>
+        <span class="hero-badge">Specializations</span>
+        <h1>Choose the CS path that fits your goals.</h1>
+        <p>
+          Each specialization connects to courses, certificates, quizzes, and career outcomes.
+          Admin-added specializations appear here dynamically.
+        </p>
+        <div class="page-actions">
+          <a href="recommendation.html" class="btn btn-primary">Need help choosing?</a>
+          <a href="Courses.html" class="btn btn-soft">Browse courses</a>
+        </div>
+      </div>
+      <aside class="quick-panel">
+        <strong>Progress logic</strong>
+        <p>Enroll in a specialization, open its courses, pass quizzes, and your progress updates automatically.</p>
+      </aside>
+    </section>
+
+    <section class="toolbar-card">
+      <div>
+        <label for="specializationSearch">Search specializations</label>
+        <input id="specializationSearch" type="search" placeholder="Cybersecurity, AI, Data Science...">
+      </div>
+      <div>
+        <label for="specializationSort">Sort</label>
+        <select id="specializationSort">
+          <option value="newest">Newest first</option>
+          <option value="name">Name</option>
+          <option value="progress">Progress</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="section-heading inline-heading">
+      <div>
+        <span>Available paths</span>
+        <h2>Specialization catalog</h2>
+      </div>
+      <a href="profile.html" class="btn btn-soft">View my progress</a>
+    </section>
+
+    <section id="progressBox" class="progress-panel"></section>
+    <section id="specializationsBox" class="card-grid"></section>
+    <section id="specializationsGrid" class="card-grid hidden-helper"></section>
+    <section id="specializationsList" class="card-grid hidden-helper"></section>
+    <section id="specializationList" class="card-grid hidden-helper"></section>
+    <section id="specializations" class="card-grid hidden-helper"></section>
+
+    <section class="tips-grid">
+      <article>
+        <h3>How to choose</h3>
+        <p>Start with your interests, compare course difficulty, and check job outcomes.</p>
+      </article>
+      <article>
+        <h3>How progress works</h3>
+        <p>Course opening gives initial progress. Passing quizzes completes the remaining part.</p>
+      </article>
+      <article>
+        <h3>Admin content</h3>
+        <p>New specializations added by admin should automatically appear here without hard-coded cards.</p>
+      </article>
+    </section>
+  </main>
+  <footer class="sqr-footer">
+    <div>
+      <strong>SQR — Skill Quest Road</strong>
+      <p>Guiding CS students through specializations, courses, quizzes, ATS tools, recommendations, and progress tracking.</p>
+    </div>
+    <div class="footer-links">
+      <a href="Specialization.html">Specializations</a>
+      <a href="Courses.html">Courses</a>
+      <a href="ATS.html">ATS</a>
+      <a href="profile.html">Profile</a>
+    </div>
+  </footer>
 </body>
 </html>
