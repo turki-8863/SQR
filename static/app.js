@@ -1618,3 +1618,317 @@
     syncHomeCountsFromCards();
   });
 })();
+
+
+/* SQR long non-destructive dynamic enhancement layer */
+(function () {
+  "use strict";
+
+  const SQRX = window.SQRX || (window.SQRX = {});
+  const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
+
+  function ready(fn) {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
+    else fn();
+  }
+
+  function pageName() {
+    return (location.pathname.split("/").pop() || "gp.html").toLowerCase();
+  }
+
+  function getApiBase() {
+    if (window.SQR && window.SQR.API) return window.SQR.API;
+    if (window.SQR_API_OVERRIDE) return String(window.SQR_API_OVERRIDE).replace(/\/$/, "");
+    if (LOCAL_HOSTS.has(location.hostname)) return "http://127.0.0.1:5000";
+    if (location.hostname.includes("github.io") || location.hostname.includes("netlify") || location.hostname.includes("vercel")) return "https://sqr-ba83.onrender.com";
+    return location.origin || "https://sqr-ba83.onrender.com";
+  }
+
+  function qs(selector, root) { return (root || document).querySelector(selector); }
+  function qsa(selector, root) { return Array.from((root || document).querySelectorAll(selector)); }
+  function byId(id) { return document.getElementById(id); }
+  function clean(value) { return String(value === undefined || value === null ? "" : value).trim(); }
+  function toNumber(value) { const n = Number(value); return Number.isFinite(n) ? n : 0; }
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+  function percent(value) { return clamp(Math.round(toNumber(value)), 0, 100); }
+  function html(value) { return clean(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
+  function token() { return localStorage.getItem("sqr_token") || localStorage.getItem("token") || ""; }
+  function authHeaders() { return token() ? { Authorization: "Bearer " + token() } : {}; }
+
+  async function getJson(path, options) {
+    const base = getApiBase();
+    const response = await fetch(/^https?:\/\//i.test(path) ? path : base + path, Object.assign({ headers: authHeaders() }, options || {}));
+    const text = await response.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { message: text }; }
+    if (!response.ok) throw new Error(data.error || data.message || "Request failed");
+    return data;
+  }
+
+  function setText(id, value) {
+    const el = byId(id);
+    if (el) el.textContent = value;
+  }
+
+  function asset(value) {
+    const v = clean(value);
+    if (!v) return "";
+    if (/^https?:\/\//i.test(v) || v.startsWith("data:")) return v;
+    if (v.startsWith("/")) return getApiBase() + v;
+    if (v.startsWith("uploads/") || v.startsWith("static/")) return getApiBase() + "/" + v;
+    return v;
+  }
+
+  function pick(item, keys, fallback) {
+    for (const key of keys) {
+      if (item && item[key] !== undefined && item[key] !== null && item[key] !== "") return item[key];
+    }
+    return fallback || "";
+  }
+
+  function idOf(item) {
+    return pick(item, ["id", "specialization_id", "spec_id", "course_id", "job_id", "quiz_id"], "");
+  }
+
+  function emptyCard(title, text) {
+    return '<article class="card empty-state"><h3>' + html(title) + '</h3><p>' + html(text) + '</p></article>';
+  }
+
+  function miniCard(title, text, href, item) {
+    const img = asset(pick(item || {}, ["image_url", "image", "thumbnail", "cover"], ""));
+    return '<article class="card colorful-card clickable" data-link="' + html(href || "#") + '">' +
+      (img ? '<img class="card-media" src="' + html(img) + '" alt="' + html(title) + '" loading="lazy">' : '<div class="card-media media-placeholder"><span>SQR</span></div>') +
+      '<h3>' + html(title) + '</h3><p>' + html(text) + '</p>' +
+      (href ? '<a class="btn btn-secondary" href="' + html(href) + '">Open</a>' : '') +
+      '</article>';
+  }
+
+  function routeFor(type, item) {
+    const id = idOf(item);
+    if (type === "specialization") return "Specialization.html" + (id ? "?id=" + encodeURIComponent(id) : "");
+    if (type === "course") return "Courses.html" + (id ? "?id=" + encodeURIComponent(id) : "");
+    if (type === "job") return "JobDetails.html" + (id ? "?id=" + encodeURIComponent(id) : "");
+    if (type === "quiz") return "Quiz.html" + (id ? "?id=" + encodeURIComponent(id) : "");
+    return "#";
+  }
+
+  function renderList(box, items, type) {
+    if (!box) return;
+    if (!Array.isArray(items) || !items.length) {
+      box.innerHTML = emptyCard(box.dataset.empty || "No data yet", "Add content from the admin dashboard and refresh this page.");
+      return;
+    }
+    box.innerHTML = items.map(function (item) {
+      if (type === "specialization") return miniCard(item.name || item.title || "Specialization", item.description || item.skills || "Open this path to view linked courses.", routeFor(type, item), item);
+      if (type === "course") return miniCard(item.title || item.name || "Course", (item.description || "Open this course to start progress.") + (item.level ? " • " + item.level : ""), routeFor(type, item), item);
+      if (type === "job") return miniCard(item.title || item.name || "Job", item.description || item.skills || item.specialization || "Open job details.", routeFor(type, item), item);
+      if (type === "quiz") return miniCard(item.title || item.name || "Quiz", item.description || item.course_title || "Open this quiz.", routeFor(type, item), item);
+      return miniCard(item.title || item.name || "Item", item.description || "Open details.", "#", item);
+    }).join("");
+    installClickableCards(box);
+  }
+
+  function arrayFrom(data, keys) {
+    if (Array.isArray(data)) return data;
+    for (const key of keys) if (Array.isArray(data && data[key])) return data[key];
+    return [];
+  }
+
+  async function hydratePublicBootstrap() {
+    if (!["gp.html", "index.html", ""].includes(pageName())) return;
+    try {
+      const data = await getJson("/api/public/bootstrap");
+      const stats = data.stats || {};
+      setText("homeSpecCount", stats.specializations || arrayFrom(data, ["specializations"]).length || 0);
+      setText("homeCourseCount", stats.courses || arrayFrom(data, ["courses"]).length || 0);
+      setText("homeJobCount", stats.jobs || arrayFrom(data, ["jobs"]).length || 0);
+      renderList(byId("homeSpecializations"), arrayFrom(data, ["specializations"]).slice(0, 6), "specialization");
+      renderList(byId("homeCourses"), arrayFrom(data, ["courses"]).slice(0, 6), "course");
+      renderList(byId("homeJobs"), arrayFrom(data, ["jobs"]).slice(0, 6), "job");
+      const status = byId("homeBackendStatus");
+      if (status) {
+        status.innerHTML = '<span class="panel-kicker">Live platform</span><h2>Connected to database</h2><p>Loaded ' +
+          html(stats.specializations || 0) + ' specializations, ' + html(stats.courses || 0) + ' courses, and ' + html(stats.jobs || 0) + ' jobs.</p>' +
+          '<div class="status-pill success">Backend connected</div>';
+      }
+    } catch (err) {
+      const status = byId("homeBackendStatus");
+      if (status) {
+        status.innerHTML = '<span class="panel-kicker">Backend status</span><h2>Database not loading</h2><p>' + html(err.message) + '</p><div class="status-pill danger">Check Render/Railway DB variables</div>';
+      }
+    }
+  }
+
+  async function hydrateQuestionBank() {
+    const box = byId("recommendationQuestionBank");
+    if (!box) return;
+    try {
+      const data = await getJson("/api/recommendation/questions");
+      const questions = arrayFrom(data, ["questions"]).slice(0, 6);
+      box.innerHTML = questions.map(function (q, index) {
+        return '<article class="mini-question"><strong>' + (index + 1) + '</strong><span>' + html(q.question || q.text || "Question") + '</span></article>';
+      }).join("");
+    } catch (_) {
+      box.innerHTML = '<p class="muted">Write your interests and skills. SQR will still recommend from your answer.</p>';
+    }
+  }
+
+  function removeFooterNavigation() {
+    qsa("footer .footer-links, .footer-links, .bottom-nav, .mobile-bottom-nav").forEach(function (el) {
+      el.remove();
+    });
+    qsa("footer").forEach(function (footer) {
+      if (clean(footer.textContent).split(/\s+/).length < 20) footer.remove();
+    });
+  }
+
+  function protectProgressOnlyProfile() {
+    if (pageName() === "profile.html") return;
+    qsa(".dashboard-track, .fake-progress, [data-fake-progress]").forEach(function (el) { el.remove(); });
+    qsa(".progress-block").forEach(function (el) {
+      if (!el.closest("#profileProgressBars") && !el.closest("#profileSummary") && !el.closest(".score-circle")) el.classList.add("hidden-outside-profile");
+    });
+  }
+
+  function setupPageSearch() {
+    qsa(".page-search[data-filter-target]").forEach(function (input) {
+      if (input.dataset.sqrxReady) return;
+      input.dataset.sqrxReady = "1";
+      input.addEventListener("input", function () {
+        const target = byId(input.dataset.filterTarget);
+        const term = clean(input.value).toLowerCase();
+        if (!target) return;
+        qsa("article, .card", target).forEach(function (card) {
+          if (card.classList.contains("skeleton-card")) return;
+          const text = clean(card.textContent).toLowerCase();
+          card.style.display = !term || text.includes(term) ? "" : "none";
+        });
+      });
+    });
+  }
+
+  function installClickableCards(root) {
+    qsa(".clickable[data-link], .interactive-card[data-open-url]", root || document).forEach(function (card) {
+      if (card.dataset.sqrxClickReady) return;
+      card.dataset.sqrxClickReady = "1";
+      card.tabIndex = 0;
+      card.setAttribute("role", "link");
+      card.addEventListener("click", function (event) {
+        if (event.target.closest("a, button, input, select, textarea, video")) return;
+        const href = card.dataset.link || card.dataset.openUrl;
+        if (href) location.href = href;
+      });
+      card.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        if (event.target.closest("a, button, input, select, textarea")) return;
+        event.preventDefault();
+        const href = card.dataset.link || card.dataset.openUrl;
+        if (href) location.href = href;
+      });
+    });
+  }
+
+  function addRequiredStars() {
+    qsa("input[required], textarea[required], select[required]").forEach(function (input) {
+      const id = input.id;
+      let label = id ? qs('label[for="' + CSS.escape(id) + '"]') : input.closest("label");
+      if (!label) label = input.parentElement && input.parentElement.tagName === "LABEL" ? input.parentElement : null;
+      if (!label || label.dataset.sqrxStar) return;
+      label.dataset.sqrxStar = "1";
+      if (!label.querySelector(".required-star")) label.insertAdjacentHTML("beforeend", ' <span class="required-star">*</span>');
+    });
+  }
+
+  function decorateForms() {
+    qsa("form").forEach(function (form) {
+      form.classList.add("sqr-enhanced-form");
+      qsa("input, textarea, select", form).forEach(function (field) {
+        field.addEventListener("focus", function () { field.closest("label, .field")?.classList.add("field-focus"); });
+        field.addEventListener("blur", function () { field.closest("label, .field")?.classList.remove("field-focus"); });
+      });
+    });
+  }
+
+  function addBreadcrumbs() {
+    const main = qs("main.page-shell");
+    if (!main || byId("sqrBreadcrumbs")) return;
+    const name = pageName().replace(".html", "") || "home";
+    const map = { gp: "Home", index: "Home", specializations: "Specializations", specialization: "Specializations", courses: "Courses", quiz: "Quizzes", ats: "ATS", jobs: "Jobs", jobdetails: "Job Details", recommendation: "Recommendation", profile: "Profile", admin: "Admin", signin: "Sign In", signup: "Sign Up" };
+    const label = map[name.toLowerCase()] || name.replace(/[-_]/g, " ");
+    const nav = document.createElement("nav");
+    nav.id = "sqrBreadcrumbs";
+    nav.className = "sqr-breadcrumbs";
+    nav.innerHTML = '<a href="gp.html">SQR</a><span>/</span><strong>' + html(label) + '</strong>';
+    main.prepend(nav);
+  }
+
+  function animateMetricCards() {
+    qsa(".metric-card strong, .stat-card strong").forEach(function (el) {
+      const value = toNumber(el.textContent);
+      if (!value || el.dataset.sqrxAnimated) return;
+      el.dataset.sqrxAnimated = "1";
+      let current = 0;
+      const steps = 18;
+      const inc = Math.max(1, Math.ceil(value / steps));
+      const timer = setInterval(function () {
+        current = Math.min(value, current + inc);
+        el.textContent = current;
+        if (current >= value) clearInterval(timer);
+      }, 28);
+    });
+  }
+
+  function fixImageFallbacks() {
+    qsa("img").forEach(function (img) {
+      if (img.dataset.sqrxImageReady) return;
+      img.dataset.sqrxImageReady = "1";
+      img.addEventListener("error", function () {
+        const placeholder = document.createElement("div");
+        placeholder.className = img.className + " media-placeholder";
+        placeholder.innerHTML = "<span>SQR</span>";
+        img.replaceWith(placeholder);
+      });
+    });
+  }
+
+  function applyColorfulPageClass() {
+    document.documentElement.classList.add("sqr-colorful-root");
+    document.body.classList.add("sqr-colorful-ready");
+    document.body.dataset.pageName = pageName().replace(".html", "") || "home";
+  }
+
+  function observeDynamicContent() {
+    const observer = new MutationObserver(function () {
+      setupPageSearch();
+      installClickableCards();
+      addRequiredStars();
+      fixImageFallbacks();
+      animateMetricCards();
+      protectProgressOnlyProfile();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function runAll() {
+    applyColorfulPageClass();
+    removeFooterNavigation();
+    protectProgressOnlyProfile();
+    setupPageSearch();
+    installClickableCards();
+    addRequiredStars();
+    decorateForms();
+    addBreadcrumbs();
+    fixImageFallbacks();
+    hydratePublicBootstrap();
+    hydrateQuestionBank();
+    animateMetricCards();
+    observeDynamicContent();
+  }
+
+  SQRX.runAll = runAll;
+  SQRX.getApiBase = getApiBase;
+  SQRX.getJson = getJson;
+  SQRX.renderList = renderList;
+  SQRX.protectProgressOnlyProfile = protectProgressOnlyProfile;
+  ready(runAll);
+})();
