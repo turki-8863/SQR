@@ -11,19 +11,106 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body class="page-body jobs-body">
-  <main class="page-shell">
-    <div id="message"></div>
+<body class="page-body jobs-body colorful-page" data-page="job-details">
+  <main class="page-shell jobs-shell">
+    <div id="message" class="message-holder"></div>
+    <section class="page-hero compact-hero gradient-green"><div><span class="eyebrow">Job details</span><h1>View one database job.</h1><p>The details below come from the backend using the job ID in the URL.</p></div><a href="jobs.html" class="btn btn-light">Back to Jobs</a></section>
+    <section id="jobDetails" class="detail-zone colorful-detail"><article class="card skeleton-card"><div class="skeleton-line wide"></div><div class="skeleton-line"></div><div class="skeleton-line short"></div></article></section>
 
-    <section class="page-hero compact-hero gradient-blue">
-      <div>
-        <span class="eyebrow">Job Details</span>
-        <h1>Review skills, salary, specialization, and job link.</h1>
-        <p>Use this page to compare a job with the user profile and ATS resume direction.</p>
-      </div>
-      <a href="jobs.html" class="btn btn-light">Back to jobs</a>
+
+    <section class="hidden-template-bank" hidden aria-hidden="true">
+      <template data-template="database-card">
+        <article class="card colorful-card dynamic-card clickable">
+          <div class="card-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="card-content">
+            <span class="badge">Dynamic</span>
+            <h3 data-field="title"></h3>
+            <p data-field="description"></p>
+            <div class="details-actions">
+              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="empty-state">
+        <article class="card empty-state">
+          <div class="empty-state-icon">◇</div>
+          <h3 data-field="title">No data yet</h3>
+          <p data-field="description">Admin content will appear here after it is added to the database.</p>
+        </article>
+      </template>
+
+      <template data-template="loading-card">
+        <article class="card skeleton-card">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </template>
+
+      <template data-template="detail-view">
+        <article class="card colorful-card detail-card">
+          <div class="detail-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="detail-content">
+            <span class="badge" data-field="type">Details</span>
+            <h2 data-field="title"></h2>
+            <p data-field="description"></p>
+            <div class="detail-meta">
+              <span data-field="meta_one"></span>
+              <span data-field="meta_two"></span>
+              <span data-field="meta_three"></span>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="progress-profile-only">
+        <article class="profile-progress-item only-profile-progress">
+          <div class="progress-head">
+            <div>
+              <h3 data-field="specialization"></h3>
+              <p data-field="summary"></p>
+            </div>
+            <strong data-field="percentage">0%</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" data-field="fill" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span data-field="courses"></span>
+            <span data-field="quizzes"></span>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="admin-row">
+        <article class="admin-row">
+          <div>
+            <strong data-field="title"></strong>
+            <span data-field="subtitle"></span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="circle-stat">
+        <div class="score-circle" style="--score:0">
+          <div class="score-circle-inner">
+            <strong data-field="score">0%</strong>
+            <span data-field="label">Score</span>
+          </div>
+        </div>
+      </template>
     </section>
-    <section id="jobDetails" class="detail-zone"></section>
 
   </main>
 </body>

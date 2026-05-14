@@ -11,66 +11,245 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body class="page-body home-body">
-  <main class="page-shell">
-    <div id="message"></div>
+<body class="page-body home-body colorful-page" data-page="home">
+  <main class="page-shell home-shell">
+    <div id="message" class="message-holder"></div>
 
-    <section class="hero hero-colorful">
+    <section class="hero hero-colorful hero-orb hero-grid">
       <div class="hero-copy">
         <span class="eyebrow">Skill Quest Road</span>
         <h1>Build your CS career path from real SQR database content.</h1>
-        <p>Specializations, courses, jobs, quizzes, ATS tools, and recommendations load dynamically from the backend. No fake progress numbers are shown on the home page.</p>
+        <p>
+          SQR connects specializations, courses, jobs, quizzes, ATS tools, and recommendations.
+          The home page shows live database content only. Progress bars are kept inside the profile dashboard.
+        </p>
         <div class="hero-actions">
           <a href="Specialization.html" class="btn btn-primary">Explore Specializations</a>
           <a href="Courses.html" class="btn btn-secondary">Browse Courses</a>
           <a href="recommendation.html" class="btn btn-glass">Take Recommendation Test</a>
         </div>
       </div>
-      <div class="hero-orbit" aria-label="Live database counters">
-        <div class="orbit-card orbit-one"><strong id="homeSpecCount">0</strong><span>Specializations</span></div>
-        <div class="orbit-card orbit-two"><strong id="homeCourseCount">0</strong><span>Courses</span></div>
-        <div class="orbit-card orbit-three"><strong id="homeJobCount">0</strong><span>Jobs</span></div>
+      <aside class="hero-side color-card home-status-card" id="homeBackendStatus">
+        <span class="panel-kicker">Live platform</span>
+        <h2>Database loading</h2>
+        <p>Specializations, courses, and jobs will appear from the backend after the page loads.</p>
+        <div class="status-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+      </aside>
+    </section>
+
+    <section class="home-metrics grid cards-3" aria-label="Live platform counts">
+      <article class="metric-card cyan-card">
+        <span>Specializations</span>
+        <strong id="homeSpecCount">0</strong>
+        <p>Added by admin and loaded from the database.</p>
+      </article>
+      <article class="metric-card purple-card">
+        <span>Courses</span>
+        <strong id="homeCourseCount">0</strong>
+        <p>Course media, links, and levels come from admin content.</p>
+      </article>
+      <article class="metric-card orange-card">
+        <span>Jobs</span>
+        <strong id="homeJobCount">0</strong>
+        <p>Jobs are matched later through profile and recommendation data.</p>
+      </article>
+    </section>
+
+    <section class="section-block color-panel blue-panel">
+      <div class="section-heading split-heading">
+        <div>
+          <span>Database specializations</span>
+          <h2>Choose a path that was actually added to SQR.</h2>
+          <p>No fake percentage cards are used here. Open Profile to see real progress calculated from courses and quizzes.</p>
+        </div>
+        <a href="profile.html" class="btn btn-light">Open Profile Progress</a>
+      </div>
+      <div id="homeSpecializations" class="grid cards-3 dynamic-grid" data-empty="No specializations yet">
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
       </div>
     </section>
 
-    <section class="section-block color-panel cyan-panel">
-      <div class="section-heading left-heading split-heading">
+    <section class="section-block color-panel violet-panel">
+      <div class="section-heading split-heading">
         <div>
-          <span>Database loaded</span>
-          <h2>Specializations added by admin</h2>
-          <p>This section updates automatically when records are added, edited, or deleted in the database.</p>
+          <span>Recent learning content</span>
+          <h2>Courses loaded from your MySQL database.</h2>
+          <p>Opening a course can auto-enroll the signed-in student and update profile progress through backend routes.</p>
         </div>
-        <a href="Specialization.html" class="btn btn-light">View all</a>
+        <a href="Courses.html" class="btn btn-light">View All Courses</a>
       </div>
-      <div id="homeSpecializations" class="grid cards-3 dynamic-grid">
-        <article class="skeleton-card"></article>
-        <article class="skeleton-card"></article>
-        <article class="skeleton-card"></article>
+      <div id="homeCourses" class="grid cards-3 dynamic-grid" data-empty="No courses yet">
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
       </div>
     </section>
 
-    <section class="section-block color-panel purple-panel">
-      <div class="section-heading left-heading split-heading">
+    <section class="section-block color-panel green-panel">
+      <div class="section-heading split-heading">
         <div>
-          <span>Learning</span>
-          <h2>Latest courses</h2>
-          <p>Opening course content updates the student progress records. The progress bars remain only on the profile page.</p>
+          <span>Career direction</span>
+          <h2>Jobs from the admin dashboard.</h2>
+          <p>Jobs appear here dynamically and can be opened for details and recommendation matching.</p>
         </div>
-        <a href="Courses.html" class="btn btn-light">Open courses</a>
+        <a href="jobs.html" class="btn btn-light">View Jobs</a>
       </div>
-      <div id="homeCourses" class="grid cards-3 dynamic-grid"></div>
+      <div id="homeJobs" class="grid cards-3 dynamic-grid" data-empty="No jobs yet">
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </div>
     </section>
 
-    <section class="section-block color-panel amber-panel">
-      <div class="section-heading left-heading split-heading">
-        <div>
-          <span>Career</span>
-          <h2>Latest jobs</h2>
-          <p>Jobs connect to specializations and recommendations so students can move from learning to career planning.</p>
-        </div>
-        <a href="jobs.html" class="btn btn-light">View jobs</a>
+    <section class="cta-panel color-cta">
+      <div>
+        <span class="eyebrow">Profile-only progress</span>
+        <h2>Real progress belongs in the student profile.</h2>
+        <p>The home page stays clean and only introduces database content. The profile page calculates live progress from opened courses and quiz attempts.</p>
       </div>
-      <div id="homeJobs" class="grid cards-3 dynamic-grid"></div>
+      <a href="profile.html" class="btn btn-primary">Go to Profile</a>
+    </section>
+
+
+    <section class="hidden-template-bank" hidden aria-hidden="true">
+      <template data-template="database-card">
+        <article class="card colorful-card dynamic-card clickable">
+          <div class="card-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="card-content">
+            <span class="badge">Dynamic</span>
+            <h3 data-field="title"></h3>
+            <p data-field="description"></p>
+            <div class="details-actions">
+              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="empty-state">
+        <article class="card empty-state">
+          <div class="empty-state-icon">◇</div>
+          <h3 data-field="title">No data yet</h3>
+          <p data-field="description">Admin content will appear here after it is added to the database.</p>
+        </article>
+      </template>
+
+      <template data-template="loading-card">
+        <article class="card skeleton-card">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </template>
+
+      <template data-template="detail-view">
+        <article class="card colorful-card detail-card">
+          <div class="detail-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="detail-content">
+            <span class="badge" data-field="type">Details</span>
+            <h2 data-field="title"></h2>
+            <p data-field="description"></p>
+            <div class="detail-meta">
+              <span data-field="meta_one"></span>
+              <span data-field="meta_two"></span>
+              <span data-field="meta_three"></span>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="progress-profile-only">
+        <article class="profile-progress-item only-profile-progress">
+          <div class="progress-head">
+            <div>
+              <h3 data-field="specialization"></h3>
+              <p data-field="summary"></p>
+            </div>
+            <strong data-field="percentage">0%</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" data-field="fill" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span data-field="courses"></span>
+            <span data-field="quizzes"></span>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="admin-row">
+        <article class="admin-row">
+          <div>
+            <strong data-field="title"></strong>
+            <span data-field="subtitle"></span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="circle-stat">
+        <div class="score-circle" style="--score:0">
+          <div class="score-circle-inner">
+            <strong data-field="score">0%</strong>
+            <span data-field="label">Score</span>
+          </div>
+        </div>
+      </template>
     </section>
 
   </main>

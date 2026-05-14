@@ -11,23 +11,13 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body class="page-body admin-body">
-  <main class="page-shell">
-    <div id="message"></div>
-
-    <section class="page-hero compact-hero gradient-blue">
-      <div>
-        <span class="eyebrow">Admin Dashboard</span>
-        <h1>Manage SQR database content.</h1>
-        <p>Add and update specializations, courses, quizzes, jobs, certificates, and users without hard-coded frontend data.</p>
-      </div>
-      <a href="profile.html" class="btn btn-light">Profile</a>
-    </section>
-
-    <section id="adminStatsBox" class="admin-stats-grid"></section>
-
-    <section class="admin-layout">
-      <aside class="admin-menu card">
+<body class="page-body admin-body colorful-page" data-page="admin">
+  <main class="page-shell admin-shell">
+    <div id="message" class="message-holder"></div>
+    <section class="page-hero compact-hero gradient-admin"><div><span class="eyebrow">Admin Dashboard</span><h1>Manage the dynamic SQR website.</h1><p>Admins add content, upload media, manage users, and keep the student pages database-driven.</p></div><button type="button" class="btn btn-light" data-switch-mode="student">Switch to Student Mode</button></section>
+    <section id="adminStatsBox" class="admin-stats grid cards-6"><article class="card skeleton-card"><div class="skeleton-line wide"></div></article></section>
+    <section class="admin-layout section-block">
+      <aside class="admin-menu color-card">
         <button type="button" class="active" data-admin-tab="specializations">Specializations</button>
         <button type="button" data-admin-tab="courses">Courses</button>
         <button type="button" data-admin-tab="quizzes">Quizzes</button>
@@ -35,84 +25,172 @@
         <button type="button" data-admin-tab="certificates">Certificates</button>
         <button type="button" data-admin-tab="users">Users</button>
       </aside>
-
       <div class="admin-content">
-        <section class="admin-panel active" data-admin-panel="specializations">
-          <form id="adminSpecializationForm" class="card form-card color-form" enctype="multipart/form-data">
-            <h2>Add specialization</h2>
-            <label class="required">Name</label><input name="name" required>
-            <label>Description</label><textarea name="description"></textarea>
-            <label>Skills</label><textarea name="skills"></textarea>
-            <label>Roadmap</label><textarea name="roadmap"></textarea>
-            <label>Image</label><input name="image" type="file" accept="image/*">
-            <button type="submit" class="btn btn-primary">Save specialization</button>
+        <section id="admin-specializations" class="admin-section active color-card">
+          <h2>Add specialization</h2>
+          <form id="adminSpecializationForm" class="stack-form" enctype="multipart/form-data">
+            <label class="required">Name<input name="name" required placeholder="Cybersecurity"></label>
+            <label>Description<textarea name="description" placeholder="Describe the path"></textarea></label>
+            <label>Skills<textarea name="skills" placeholder="Linux, networks, security..."></textarea></label>
+            <label>Roadmap<textarea name="roadmap" placeholder="Beginner steps, intermediate steps, advanced steps"></textarea></label>
+            <label>Career paths<textarea name="career_paths" placeholder="SOC analyst, security engineer..."></textarea></label>
+            <label>Image<input type="file" name="image" accept="image/*"></label>
+            <button class="btn btn-primary" type="submit">Save Specialization</button>
           </form>
           <div id="adminSpecializationsList" class="admin-list"></div>
         </section>
-
-        <section class="admin-panel" data-admin-panel="courses">
-          <form id="adminCourseForm" class="card form-card color-form" enctype="multipart/form-data">
-            <h2>Add course</h2>
-            <label class="required">Specialization</label><select name="spec_id" id="adminCourseSpec" required></select>
-            <label class="required">Title</label><input name="title" required>
-            <label>Description</label><textarea name="description"></textarea>
-            <label>Level</label><select name="level"><option>beginner</option><option>intermediate</option><option>advanced</option></select>
-            <label>Course link</label><input name="link" placeholder="https://...">
-            <label>Image</label><input name="image" type="file" accept="image/*">
-            <label>Video</label><input name="video" type="file" accept="video/*">
-            <button type="submit" class="btn btn-primary">Save course</button>
+        <section id="admin-courses" class="admin-section color-card">
+          <h2>Add course</h2>
+          <form id="adminCourseForm" class="stack-form" enctype="multipart/form-data">
+            <label class="required">Course title<input name="title" required placeholder="Network Security Basics"></label>
+            <label class="required">Specialization<select id="adminCourseSpecSelect" name="spec_id" required><option value="">Loading...</option></select></label>
+            <label>Description<textarea name="description"></textarea></label>
+            <label>Level<select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
+            <label>Course link<input name="link" placeholder="https://..."></label>
+            <label>Image<input type="file" name="image" accept="image/*"></label>
+            <label>Video<input type="file" name="video" accept="video/*"></label>
+            <button class="btn btn-primary" type="submit">Save Course</button>
           </form>
           <div id="adminCoursesList" class="admin-list"></div>
         </section>
-
-        <section class="admin-panel" data-admin-panel="quizzes">
-          <form id="adminQuizForm" class="card form-card color-form">
-            <h2>Add quiz with questions</h2>
-            <label>Course</label><select name="course_id" id="adminQuizCourse"></select>
-            <label class="required">Quiz title</label><input name="title" required>
-            <label>Description</label><textarea name="description"></textarea>
-            <label>Question</label><textarea name="question"></textarea>
-            <label>Option 1</label><input name="option1">
-            <label>Option 2</label><input name="option2">
-            <label>Option 3</label><input name="option3">
-            <label>Option 4</label><input name="option4">
-            <label>Correct answer</label><input name="answer" placeholder="A, B, C, D or answer text">
-            <button type="submit" class="btn btn-primary">Save quiz</button>
+        <section id="admin-quizzes" class="admin-section color-card">
+          <h2>Add quiz</h2>
+          <form id="adminQuizForm" class="stack-form">
+            <label class="required">Quiz title<input name="title" required placeholder="Module 1 Quiz"></label>
+            <label>Course<select id="adminQuizCourseSelect" name="course_id"><option value="">Loading...</option></select></label>
+            <label>Description<textarea name="description"></textarea></label>
+            <label>Questions JSON<textarea name="questions_json" placeholder='[{"question":"...","option1":"...","option2":"...","option3":"...","option4":"...","answer":"option1"}]'></textarea></label>
+            <button class="btn btn-primary" type="submit">Save Quiz</button>
           </form>
           <div id="adminQuizzesList" class="admin-list"></div>
         </section>
-
-        <section class="admin-panel" data-admin-panel="jobs">
-          <form id="adminJobForm" class="card form-card color-form">
-            <h2>Add job</h2>
-            <label>Specialization</label><select name="specialization_id" id="adminJobSpec"></select>
-            <label class="required">Title</label><input name="title" required>
-            <label>Description</label><textarea name="description"></textarea>
-            <label>Required skills</label><textarea name="skills"></textarea>
-            <label>Salary</label><input name="salary">
-            <label>Link</label><input name="link" placeholder="https://...">
-            <button type="submit" class="btn btn-primary">Save job</button>
+        <section id="admin-jobs" class="admin-section color-card">
+          <h2>Add job</h2>
+          <form id="adminJobForm" class="stack-form">
+            <label class="required">Job title<input name="title" required placeholder="SOC Analyst"></label>
+            <label>Specialization<select id="adminJobSpecSelect" name="specialization_id"><option value="">Loading...</option></select></label>
+            <label>Description<textarea name="description"></textarea></label>
+            <label>Required skills<textarea name="skills" placeholder="SIEM, Linux, Network Security"></textarea></label>
+            <label>Average salary<input name="salary" placeholder="Optional"></label>
+            <label>Job link<input name="link" placeholder="https://..."></label>
+            <button class="btn btn-primary" type="submit">Save Job</button>
           </form>
           <div id="adminJobsList" class="admin-list"></div>
         </section>
-
-        <section class="admin-panel" data-admin-panel="certificates">
-          <form id="adminCertificateForm" class="card form-card color-form">
-            <h2>Add certificate</h2>
-            <label>Specialization</label><select name="specialization_id" id="adminCertSpec"></select>
-            <label class="required">Name</label><input name="name" required>
-            <label>Description</label><textarea name="description"></textarea>
-            <label>Link</label><input name="link" placeholder="https://...">
-            <button type="submit" class="btn btn-primary">Save certificate</button>
+        <section id="admin-certificates" class="admin-section color-card">
+          <h2>Add certificate</h2>
+          <form id="adminCertificateForm" class="stack-form">
+            <label class="required">Name<input name="name" required placeholder="CompTIA Security+"></label>
+            <label>Specialization<select id="adminCertificateSpecSelect" name="spec_id"><option value="">Loading...</option></select></label>
+            <label>Description<textarea name="description"></textarea></label>
+            <label>Link<input name="link" placeholder="https://..."></label>
+            <label>Price<input name="price" placeholder="Optional"></label>
+            <label>Type<select name="type"><option value="both">Both</option><option value="practical">Practical</option><option value="theoretical">Theoretical</option></select></label>
+            <button class="btn btn-primary" type="submit">Save Certificate</button>
           </form>
           <div id="adminCertificatesList" class="admin-list"></div>
         </section>
-
-        <section class="admin-panel" data-admin-panel="users">
-          <div class="card colorful-card"><h2>Users</h2><p>Manage roles and banned status.</p></div>
+        <section id="admin-users" class="admin-section color-card">
+          <h2>Manage users</h2>
+          <p>Only admins can promote, demote, ban, or unban users.</p>
           <div id="adminUsersList" class="admin-list"></div>
         </section>
       </div>
+    </section>
+
+
+    <section class="hidden-template-bank" hidden aria-hidden="true">
+      <template data-template="database-card">
+        <article class="card colorful-card dynamic-card clickable">
+          <div class="card-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="card-content">
+            <span class="badge">Dynamic</span>
+            <h3 data-field="title"></h3>
+            <p data-field="description"></p>
+            <div class="details-actions">
+              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="empty-state">
+        <article class="card empty-state">
+          <div class="empty-state-icon">◇</div>
+          <h3 data-field="title">No data yet</h3>
+          <p data-field="description">Admin content will appear here after it is added to the database.</p>
+        </article>
+      </template>
+
+      <template data-template="loading-card">
+        <article class="card skeleton-card">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </template>
+
+      <template data-template="detail-view">
+        <article class="card colorful-card detail-card">
+          <div class="detail-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="detail-content">
+            <span class="badge" data-field="type">Details</span>
+            <h2 data-field="title"></h2>
+            <p data-field="description"></p>
+            <div class="detail-meta">
+              <span data-field="meta_one"></span>
+              <span data-field="meta_two"></span>
+              <span data-field="meta_three"></span>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="progress-profile-only">
+        <article class="profile-progress-item only-profile-progress">
+          <div class="progress-head">
+            <div>
+              <h3 data-field="specialization"></h3>
+              <p data-field="summary"></p>
+            </div>
+            <strong data-field="percentage">0%</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" data-field="fill" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span data-field="courses"></span>
+            <span data-field="quizzes"></span>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="admin-row">
+        <article class="admin-row">
+          <div>
+            <strong data-field="title"></strong>
+            <span data-field="subtitle"></span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="circle-stat">
+        <div class="score-circle" style="--score:0">
+          <div class="score-circle-inner">
+            <strong data-field="score">0%</strong>
+            <span data-field="label">Score</span>
+          </div>
+        </div>
+      </template>
     </section>
 
   </main>

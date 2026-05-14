@@ -11,66 +11,154 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body class="page-body ats-body">
-  <main class="page-shell">
-    <div id="message"></div>
+<body class="page-body ats-body colorful-page" data-page="ats">
+  <main class="page-shell ats-shell">
+    <div id="message" class="message-holder"></div>
 
-    <section class="page-hero compact-hero gradient-blue">
+    <section class="page-hero compact-hero gradient-cyan">
       <div>
         <span class="eyebrow">ATS Resume Tools</span>
-        <h1>Upload PDF/DOCX resumes and generate ATS-friendly output.</h1>
-        <p>The checker uses uploaded files only. The generator creates resume text without sharing one user's data with another.</p>
+        <h1>Check uploaded resumes and generate ATS-friendly versions.</h1>
+        <p>The checker accepts PDF, DOCX, or TXT upload. The generator creates a clean resume based on user input and target job.</p>
       </div>
-      <a href="profile.html" class="btn btn-light">View ATS history</a>
+      <div class="hero-actions"><a href="profile.html" class="btn btn-light">Profile</a><a href="jobs.html" class="btn btn-glass">Jobs</a></div>
     </section>
 
-    <section class="dashboard-layout ats-layout">
-      <div class="dashboard-main">
-        <form id="atsCheckForm" class="card form-card color-form" enctype="multipart/form-data">
-          <div class="section-heading left-heading compact-heading">
-            <span>Checker</span>
-            <h2>ATS resume checker</h2>
-            <p>Upload a PDF or DOCX resume and optionally paste a target job description.</p>
-          </div>
-          <label class="required" for="resumeFile">Resume file</label>
-          <input id="resumeFile" name="resume" type="file" accept=".pdf,.docx" required>
-          <label for="jobDescription">Target job description</label>
-          <textarea id="jobDescription" name="job_description" placeholder="Paste job description for better keyword matching."></textarea>
-          <button type="submit" class="btn btn-primary full-btn">Check resume</button>
+    <section class="ats-layout section-block">
+      <article class="card color-card ats-panel">
+        <span class="panel-kicker">Checker</span>
+        <h2>Upload resume for ATS check</h2>
+        <p>Fields marked with a red star are required. The result is rendered as a circle score and keyword report.</p>
+        <form id="atsCheckForm" class="stack-form" enctype="multipart/form-data">
+          <label class="required" for="target_job_check">Target job or job description</label>
+          <textarea id="target_job_check" name="target_job" required placeholder="Paste target job title or job description"></textarea>
+          <label class="required" for="resume_file">Resume file</label>
+          <input id="resume_file" name="resume" type="file" accept=".pdf,.docx,.txt" required>
+          <button type="submit" class="btn btn-primary">Check Resume</button>
         </form>
-        <section id="atsResult" class="result-area hidden"></section>
-      </div>
+      </article>
 
-      <aside class="dashboard-side">
-        <form id="atsGenerateForm" class="card form-card color-form">
-          <div class="section-heading left-heading compact-heading">
-            <span>Generator</span>
-            <h2>ATS resume generator</h2>
-            <p>Fields marked with a red star are required.</p>
-          </div>
-          <label class="required" for="genName">Full name</label>
-          <input id="genName" name="name" required placeholder="Full name">
-          <label class="required" for="targetJob">Target job</label>
-          <input id="targetJob" name="target_job" required placeholder="Software Engineer, SOC Analyst...">
-          <label class="required" for="genEmail">Email</label>
-          <input id="genEmail" name="email" required placeholder="email@example.com">
-          <label for="genPhone">Phone</label>
-          <input id="genPhone" name="phone" placeholder="+966...">
-          <label class="required" for="genSummary">Summary</label>
-          <textarea id="genSummary" name="summary" required placeholder="Brief professional summary."></textarea>
-          <label class="required" for="genSkills">Skills</label>
-          <textarea id="genSkills" name="skills" required placeholder="Python, SQL, Java..."></textarea>
-          <label for="genEducation">Education</label>
-          <textarea id="genEducation" name="education" placeholder="College, degree, year..."></textarea>
-          <label for="genExperience">Experience</label>
-          <textarea id="genExperience" name="experience" placeholder="Internships, projects, work..."></textarea>
-          <label for="genProjects">Projects</label>
-          <textarea id="genProjects" name="projects" placeholder="Project name, tools, result..."></textarea>
-          <button type="submit" class="btn btn-primary full-btn">Generate resume</button>
+      <article class="card color-card ats-panel">
+        <span class="panel-kicker">Generator</span>
+        <h2>Generate ATS resume</h2>
+        <p>Use real details only. SQR formats and improves wording for ATS readability.</p>
+        <form id="atsGenerateForm" class="stack-form">
+          <label class="required" for="name">Full name</label>
+          <input id="name" name="name" required placeholder="Your full name">
+          <label class="required" for="target_job">Target job</label>
+          <input id="target_job" name="target_job" required placeholder="Software Engineer, SOC Analyst...">
+          <label class="required" for="summary">Professional summary</label>
+          <textarea id="summary" name="summary" required placeholder="Short summary about your background"></textarea>
+          <label class="required" for="skills">Skills</label>
+          <textarea id="skills" name="skills" required placeholder="Python, SQL, Linux, React..."></textarea>
+          <label for="education">Education</label>
+          <textarea id="education" name="education" placeholder="Degree, college, graduation year"></textarea>
+          <label for="experience">Experience</label>
+          <textarea id="experience" name="experience" placeholder="Internships, work, training"></textarea>
+          <label for="projects">Projects</label>
+          <textarea id="projects" name="projects" placeholder="Project names, technologies, results"></textarea>
+          <button type="submit" class="btn btn-primary">Generate Resume</button>
         </form>
-      </aside>
+      </article>
     </section>
-    <section id="generatedResume" class="result-area hidden"></section>
+
+    <section id="atsResult" class="result-zone hidden"></section>
+    <section id="generatedResume" class="result-zone hidden"></section>
+
+
+    <section class="hidden-template-bank" hidden aria-hidden="true">
+      <template data-template="database-card">
+        <article class="card colorful-card dynamic-card clickable">
+          <div class="card-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="card-content">
+            <span class="badge">Dynamic</span>
+            <h3 data-field="title"></h3>
+            <p data-field="description"></p>
+            <div class="details-actions">
+              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="empty-state">
+        <article class="card empty-state">
+          <div class="empty-state-icon">◇</div>
+          <h3 data-field="title">No data yet</h3>
+          <p data-field="description">Admin content will appear here after it is added to the database.</p>
+        </article>
+      </template>
+
+      <template data-template="loading-card">
+        <article class="card skeleton-card">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </template>
+
+      <template data-template="detail-view">
+        <article class="card colorful-card detail-card">
+          <div class="detail-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="detail-content">
+            <span class="badge" data-field="type">Details</span>
+            <h2 data-field="title"></h2>
+            <p data-field="description"></p>
+            <div class="detail-meta">
+              <span data-field="meta_one"></span>
+              <span data-field="meta_two"></span>
+              <span data-field="meta_three"></span>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="progress-profile-only">
+        <article class="profile-progress-item only-profile-progress">
+          <div class="progress-head">
+            <div>
+              <h3 data-field="specialization"></h3>
+              <p data-field="summary"></p>
+            </div>
+            <strong data-field="percentage">0%</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" data-field="fill" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span data-field="courses"></span>
+            <span data-field="quizzes"></span>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="admin-row">
+        <article class="admin-row">
+          <div>
+            <strong data-field="title"></strong>
+            <span data-field="subtitle"></span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="circle-stat">
+        <div class="score-circle" style="--score:0">
+          <div class="score-circle-inner">
+            <strong data-field="score">0%</strong>
+            <span data-field="label">Score</span>
+          </div>
+        </div>
+      </template>
+    </section>
 
   </main>
 </body>

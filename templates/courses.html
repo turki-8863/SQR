@@ -11,31 +11,169 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body class="page-body courses-body">
-  <main class="page-shell">
-    <div id="message"></div>
+<body class="page-body courses-body colorful-page" data-page="courses">
+  <main class="page-shell courses-shell">
+    <div id="message" class="message-holder"></div>
 
-    <section class="page-hero compact-hero gradient-blue">
+    <section class="page-hero compact-hero gradient-purple">
       <div>
         <span class="eyebrow">Courses</span>
-        <h1>Open courses to automatically start real progress tracking.</h1>
-        <p>No manual mark-completed button. Progress is updated when a user opens the course content and submits linked quizzes.</p>
+        <h1>Open courses to start real tracking automatically.</h1>
+        <p>Students do not manually mark completion. The backend updates progress when course content is opened and quizzes are completed.</p>
       </div>
-      <a href="profile.html" class="btn btn-light">View profile progress</a>
+      <div class="hero-actions"><a href="profile.html" class="btn btn-light">View Profile Progress</a><a href="Quiz.html" class="btn btn-glass">Take Quizzes</a></div>
     </section>
 
-    <section id="courseDetails" class="detail-zone"></section>
+    <section id="courseDetails" class="detail-zone colorful-detail"></section>
 
-    <section class="section-block color-panel purple-panel">
-      <div class="section-heading left-heading split-heading">
+    <section class="section-block color-panel violet-panel">
+      <div class="section-heading split-heading">
         <div>
           <span>Learning catalog</span>
           <h2>Database courses</h2>
-          <p>Courses can include an uploaded image, video, link, level, and specialization connection.</p>
+          <p>Courses can include uploaded images, videos, links, difficulty, and specialization connections.</p>
         </div>
-        <a href="Quiz.html" class="btn btn-light">Open quizzes</a>
+        <div class="section-actions"><input type="search" class="page-search" data-filter-target="coursesBox" placeholder="Search courses..."></div>
       </div>
-      <div id="coursesBox" class="grid cards-3 dynamic-grid"></div>
+      <div id="coursesBox" class="grid cards-3 dynamic-grid">
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="info-strip color-strip">
+      <article><strong>Auto-enroll</strong><span>Opening content can create course enrollment.</span></article>
+      <article><strong>Media</strong><span>Images and videos come from admin uploads.</span></article>
+      <article><strong>Profile progress</strong><span>Calculated in profile, not hard-coded.</span></article>
+    </section>
+
+
+    <section class="hidden-template-bank" hidden aria-hidden="true">
+      <template data-template="database-card">
+        <article class="card colorful-card dynamic-card clickable">
+          <div class="card-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="card-content">
+            <span class="badge">Dynamic</span>
+            <h3 data-field="title"></h3>
+            <p data-field="description"></p>
+            <div class="details-actions">
+              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="empty-state">
+        <article class="card empty-state">
+          <div class="empty-state-icon">◇</div>
+          <h3 data-field="title">No data yet</h3>
+          <p data-field="description">Admin content will appear here after it is added to the database.</p>
+        </article>
+      </template>
+
+      <template data-template="loading-card">
+        <article class="card skeleton-card">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </template>
+
+      <template data-template="detail-view">
+        <article class="card colorful-card detail-card">
+          <div class="detail-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="detail-content">
+            <span class="badge" data-field="type">Details</span>
+            <h2 data-field="title"></h2>
+            <p data-field="description"></p>
+            <div class="detail-meta">
+              <span data-field="meta_one"></span>
+              <span data-field="meta_two"></span>
+              <span data-field="meta_three"></span>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="progress-profile-only">
+        <article class="profile-progress-item only-profile-progress">
+          <div class="progress-head">
+            <div>
+              <h3 data-field="specialization"></h3>
+              <p data-field="summary"></p>
+            </div>
+            <strong data-field="percentage">0%</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" data-field="fill" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span data-field="courses"></span>
+            <span data-field="quizzes"></span>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="admin-row">
+        <article class="admin-row">
+          <div>
+            <strong data-field="title"></strong>
+            <span data-field="subtitle"></span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="circle-stat">
+        <div class="score-circle" style="--score:0">
+          <div class="score-circle-inner">
+            <strong data-field="score">0%</strong>
+            <span data-field="label">Score</span>
+          </div>
+        </div>
+      </template>
     </section>
 
   </main>

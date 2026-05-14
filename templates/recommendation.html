@@ -11,36 +11,131 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body class="page-body recommendation-body">
-  <main class="page-shell">
-    <div id="message"></div>
-
-    <section class="page-hero compact-hero gradient-blue">
-      <div>
-        <span class="eyebrow">Recommendation</span>
-        <h1>Get a specialization and job recommendation from your answers.</h1>
-        <p>The system uses your written request, skills, interests, work style, and database content.</p>
-      </div>
-      <a href="Specialization.html" class="btn btn-light">Explore paths</a>
+<body class="page-body recommendation-body colorful-page" data-page="recommendation">
+  <main class="page-shell recommendation-shell">
+    <div id="message" class="message-holder"></div>
+    <section class="page-hero compact-hero gradient-pink"><div><span class="eyebrow">Recommendation</span><h1>Get specialization and job suggestions from your answers.</h1><p>The system compares your interests, skills, work style, and target direction with database specializations and jobs.</p></div><a href="profile.html" class="btn btn-light">Update Profile</a></section>
+    <section class="recommendation-layout section-block">
+      <article class="card color-card">
+        <span class="panel-kicker">Career test</span>
+        <h2>Write your real preferences</h2>
+        <form id="recommendationForm" class="stack-form">
+          <label class="required" for="interests">Interests</label>
+          <textarea id="interests" name="interests" required placeholder="Security, AI, web apps, data, networks..."></textarea>
+          <label class="required" for="skills_input">Current skills</label>
+          <textarea id="skills_input" name="skills" required placeholder="Python, SQL, Linux, JavaScript..."></textarea>
+          <label for="work_style">Preferred work style</label>
+          <textarea id="work_style" name="work_style" placeholder="Write how you like to work: investigation, building, analysis, teamwork, problem solving..."></textarea>
+          <label for="goal">Career direction</label>
+          <textarea id="goal" name="goal" placeholder="Optional: what do you want SQR to adapt to?"></textarea>
+          <label for="answers">Extra answers</label>
+          <textarea id="answers" name="answers" placeholder="Write anything else that should affect the recommendation."></textarea>
+          <button type="submit" class="btn btn-primary">Get Recommendation</button>
+        </form>
+      </article>
+      <article class="card color-card test-bank-card">
+        <span class="panel-kicker">How it works</span>
+        <h2>Database matching</h2>
+        <p>SQR reads your answer text and compares it with specialization skills, job skills, course topics, and profile data.</p>
+        <div id="recommendationQuestionBank" class="mini-list"><p class="muted">Optional question bank loads if the backend route is available.</p></div>
+      </article>
     </section>
+    <section id="recommendationResult" class="result-zone hidden"></section>
 
-    <form id="recommendationForm" class="card form-card color-form wide-form">
-      <div class="section-heading left-heading compact-heading">
-        <span>Career test</span>
-        <h2>Tell SQR what you want</h2>
-        <p>Write freely. The AI/local recommendation adapts to the user's request instead of forcing random static fields.</p>
-      </div>
-      <label class="required" for="recInterests">Interests</label>
-      <textarea id="recInterests" name="interests" required placeholder="Example: security, AI, web apps, databases..."></textarea>
-      <label class="required" for="recSkills">Skills</label>
-      <textarea id="recSkills" name="skills" required placeholder="Example: Python, SQL, Java, Linux..."></textarea>
-      <label for="recWorkStyle">Work style</label>
-      <textarea id="recWorkStyle" name="work_style" placeholder="Example: I like investigation, problem solving, teamwork, building apps..."></textarea>
-      <label for="recGoal">Goal or request</label>
-      <textarea id="recGoal" name="goal" placeholder="Example: I want a path that helps me become a SOC analyst..."></textarea>
-      <button type="submit" class="btn btn-primary full-btn">Get recommendation</button>
-    </form>
-    <section id="recommendationResult" class="result-area hidden"></section>
+
+    <section class="hidden-template-bank" hidden aria-hidden="true">
+      <template data-template="database-card">
+        <article class="card colorful-card dynamic-card clickable">
+          <div class="card-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="card-content">
+            <span class="badge">Dynamic</span>
+            <h3 data-field="title"></h3>
+            <p data-field="description"></p>
+            <div class="details-actions">
+              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="empty-state">
+        <article class="card empty-state">
+          <div class="empty-state-icon">◇</div>
+          <h3 data-field="title">No data yet</h3>
+          <p data-field="description">Admin content will appear here after it is added to the database.</p>
+        </article>
+      </template>
+
+      <template data-template="loading-card">
+        <article class="card skeleton-card">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </template>
+
+      <template data-template="detail-view">
+        <article class="card colorful-card detail-card">
+          <div class="detail-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="detail-content">
+            <span class="badge" data-field="type">Details</span>
+            <h2 data-field="title"></h2>
+            <p data-field="description"></p>
+            <div class="detail-meta">
+              <span data-field="meta_one"></span>
+              <span data-field="meta_two"></span>
+              <span data-field="meta_three"></span>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="progress-profile-only">
+        <article class="profile-progress-item only-profile-progress">
+          <div class="progress-head">
+            <div>
+              <h3 data-field="specialization"></h3>
+              <p data-field="summary"></p>
+            </div>
+            <strong data-field="percentage">0%</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" data-field="fill" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span data-field="courses"></span>
+            <span data-field="quizzes"></span>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="admin-row">
+        <article class="admin-row">
+          <div>
+            <strong data-field="title"></strong>
+            <span data-field="subtitle"></span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="circle-stat">
+        <div class="score-circle" style="--score:0">
+          <div class="score-circle-inner">
+            <strong data-field="score">0%</strong>
+            <span data-field="label">Score</span>
+          </div>
+        </div>
+      </template>
+    </section>
 
   </main>
 </body>

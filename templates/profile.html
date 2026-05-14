@@ -11,69 +11,208 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body class="page-body profile-body">
-  <main class="page-shell">
-    <div id="message"></div>
+<body class="page-body profile-body colorful-page" data-page="profile">
+  <main class="page-shell profile-shell">
+    <div id="message" class="message-holder"></div>
 
-    <section class="page-hero compact-hero gradient-blue">
+    <section class="page-hero compact-hero gradient-profile">
       <div>
-        <span class="eyebrow">Profile Dashboard</span>
-        <h1>Your real progress, quiz results, ATS history, and profile data.</h1>
-        <p>Progress is calculated only from opened courses and submitted quizzes saved in the database.</p>
+        <span class="eyebrow">Student dashboard</span>
+        <h1>Your profile is the only page that shows progress bars.</h1>
+        <p>Progress is dynamic. It is calculated from real opened/enrolled courses and submitted quiz attempts saved in the database.</p>
       </div>
-      <a href="Courses.html" class="btn btn-light">Continue learning</a>
+      <div class="hero-actions"><a href="Courses.html" class="btn btn-light">Continue Learning</a><a href="Quiz.html" class="btn btn-glass">Take Quizzes</a></div>
     </section>
 
-    <section class="dashboard-layout">
-      <div class="dashboard-main">
-        <section class="card colorful-card user-card">
-          <div id="profileSummary" class="profile-summary loading-box">Loading profile...</div>
-        </section>
+    <section id="profileSummary" class="profile-summary-grid grid cards-3">
+      <article class="card skeleton-card"><div class="skeleton-line wide"></div><div class="skeleton-line"></div></article>
+      <article class="card skeleton-card"><div class="skeleton-line wide"></div><div class="skeleton-line"></div></article>
+      <article class="card skeleton-card"><div class="skeleton-line wide"></div><div class="skeleton-line"></div></article>
+    </section>
 
-        <section class="card colorful-card progress-card only-profile-progress">
-          <div class="section-heading left-heading compact-heading">
-            <span>Dynamic progress</span>
-            <h2>Specialization progress</h2>
-            <p>No random percentages. These bars come from your database records.</p>
-          </div>
-          <div id="profileProgressBars" class="profile-progress-list"></div>
-        </section>
-
-        <section class="card colorful-card">
-          <div class="section-heading left-heading compact-heading">
-            <span>Quizzes</span>
-            <h2>Quiz history</h2>
-          </div>
-          <div id="profileQuizHistory" class="history-list"></div>
-        </section>
-
-        <section class="card colorful-card">
-          <div class="section-heading left-heading compact-heading">
-            <span>ATS</span>
-            <h2>ATS resume history</h2>
-          </div>
-          <div id="profileAtsHistory" class="history-list"></div>
-        </section>
-      </div>
-
-      <aside class="dashboard-side">
-        <form id="profileForm" class="card form-card color-form">
-          <div class="section-heading left-heading compact-heading">
-            <span>Edit profile</span>
-            <h2>Improve recommendations</h2>
-            <p>Skills, interests, and goals help the recommendation engine adapt to the user.</p>
-          </div>
+    <section class="section-block profile-two-column">
+      <article class="card color-card profile-form-card">
+        <span class="panel-kicker">Profile information</span>
+        <h2>Update your skills and interests</h2>
+        <p>Recommendation and job matching use this information together with the database content.</p>
+        <form id="profileForm" class="stack-form">
           <label for="profileName">Name</label>
-          <input id="profileName" name="name" type="text" placeholder="Your name">
+          <input id="profileName" name="name" placeholder="Your name">
           <label for="profileSkills">Skills</label>
-          <textarea id="profileSkills" name="skills" placeholder="Python, SQL, Java, Linux..."></textarea>
+          <textarea id="profileSkills" name="skills" placeholder="Python, Java, SQL, Linux, React..."></textarea>
           <label for="profileInterests">Interests</label>
-          <textarea id="profileInterests" name="interests" placeholder="Cybersecurity, AI, software engineering..."></textarea>
-          <label for="profileGoal">Goal</label>
-          <textarea id="profileGoal" name="goal" placeholder="I want to become..."></textarea>
-          <button type="submit" class="btn btn-primary full-btn">Save profile</button>
+          <textarea id="profileInterests" name="interests" placeholder="Cybersecurity, AI, backend, cloud..."></textarea>
+          <label for="profileGoal">Career direction</label>
+          <textarea id="profileGoal" name="goal" placeholder="Write what you want SQR to adapt to."></textarea>
+          <button type="submit" class="btn btn-primary">Save Profile</button>
         </form>
-      </aside>
+      </article>
+
+      <article class="card color-card profile-progress-card only-profile-progress">
+        <span class="panel-kicker">Live progress</span>
+        <h2>Specialization progress</h2>
+        <p>Each bar is generated from database activity, not from fixed numbers.</p>
+        <div id="profileProgressBars" class="profile-progress-list">
+          <p class="muted">Loading real progress...</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="section-block color-panel purple-panel">
+      <div class="section-heading split-heading">
+        <div>
+          <span>Quiz history</span>
+          <h2>Your recent quiz activity</h2>
+          <p>Scores shown here come from submitted attempts.</p>
+        </div>
+        <a href="Quiz.html" class="btn btn-light">Open Quizzes</a>
+      </div>
+      <div id="profileQuizHistory" class="grid cards-3 dynamic-grid">
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section-block color-panel orange-panel">
+      <div class="section-heading split-heading">
+        <div>
+          <span>ATS activity</span>
+          <h2>Resume checks and generated resumes</h2>
+          <p>ATS results are separated per user account and shown only for the signed-in profile.</p>
+        </div>
+        <a href="ATS.html" class="btn btn-light">Open ATS Tools</a>
+      </div>
+      <div id="profileAtsHistory" class="grid cards-3 dynamic-grid">
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </div>
+    </section>
+
+
+    <section class="hidden-template-bank" hidden aria-hidden="true">
+      <template data-template="database-card">
+        <article class="card colorful-card dynamic-card clickable">
+          <div class="card-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="card-content">
+            <span class="badge">Dynamic</span>
+            <h3 data-field="title"></h3>
+            <p data-field="description"></p>
+            <div class="details-actions">
+              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="empty-state">
+        <article class="card empty-state">
+          <div class="empty-state-icon">◇</div>
+          <h3 data-field="title">No data yet</h3>
+          <p data-field="description">Admin content will appear here after it is added to the database.</p>
+        </article>
+      </template>
+
+      <template data-template="loading-card">
+        <article class="card skeleton-card">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </template>
+
+      <template data-template="detail-view">
+        <article class="card colorful-card detail-card">
+          <div class="detail-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="detail-content">
+            <span class="badge" data-field="type">Details</span>
+            <h2 data-field="title"></h2>
+            <p data-field="description"></p>
+            <div class="detail-meta">
+              <span data-field="meta_one"></span>
+              <span data-field="meta_two"></span>
+              <span data-field="meta_three"></span>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="progress-profile-only">
+        <article class="profile-progress-item only-profile-progress">
+          <div class="progress-head">
+            <div>
+              <h3 data-field="specialization"></h3>
+              <p data-field="summary"></p>
+            </div>
+            <strong data-field="percentage">0%</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" data-field="fill" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span data-field="courses"></span>
+            <span data-field="quizzes"></span>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="admin-row">
+        <article class="admin-row">
+          <div>
+            <strong data-field="title"></strong>
+            <span data-field="subtitle"></span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="circle-stat">
+        <div class="score-circle" style="--score:0">
+          <div class="score-circle-inner">
+            <strong data-field="score">0%</strong>
+            <span data-field="label">Score</span>
+          </div>
+        </div>
+      </template>
     </section>
 
   </main>

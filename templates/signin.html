@@ -11,22 +11,118 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body class="page-body auth-body">
-  <main class="page-shell">
-    <div id="message"></div>
-
-    <section class="auth-shell">
-      <form id="signinForm" class="auth-card color-form">
-        <span class="eyebrow">Welcome back</span>
-        <h1>Sign in to SQR</h1>
-        <p>Access your profile, dynamic progress, quizzes, ATS tools, and recommendations.</p>
-        <label class="required" for="signinEmail">Email</label>
-        <input id="signinEmail" name="email" type="email" required placeholder="email@example.com">
-        <label class="required" for="signinPassword">Password</label>
-        <input id="signinPassword" name="password" type="password" required placeholder="Password">
-        <button type="submit" class="btn btn-primary full-btn">Sign In</button>
-        <p class="auth-link">No account? <a href="signup.html">Create one</a></p>
+<body class="page-body auth-body colorful-page" data-page="signin">
+  <main class="auth-shell page-shell">
+    <div id="message" class="message-holder"></div>
+    <section class="auth-card color-card">
+      <span class="eyebrow">SQR Access</span>
+      <h1>Welcome back to SQR</h1>
+      <p>Students enter the learning platform. Admin permissions are controlled by owner/admin in the system, not by public signup.</p>
+      <form id="signinForm" class="stack-form">
+        
+        <label class="required" for="email">Email</label>
+        <input id="email" name="email" type="email" required placeholder="name@example.com">
+        <label class="required" for="password">Password</label>
+        <input id="password" name="password" type="password" required placeholder="Password">
+        
+        <button type="submit" class="btn btn-primary">Sign In</button>
       </form>
+      <div class="auth-switch"><a href="signup.html">Create account</a></div>
+    </section>
+
+
+    <section class="hidden-template-bank" hidden aria-hidden="true">
+      <template data-template="database-card">
+        <article class="card colorful-card dynamic-card clickable">
+          <div class="card-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="card-content">
+            <span class="badge">Dynamic</span>
+            <h3 data-field="title"></h3>
+            <p data-field="description"></p>
+            <div class="details-actions">
+              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="empty-state">
+        <article class="card empty-state">
+          <div class="empty-state-icon">◇</div>
+          <h3 data-field="title">No data yet</h3>
+          <p data-field="description">Admin content will appear here after it is added to the database.</p>
+        </article>
+      </template>
+
+      <template data-template="loading-card">
+        <article class="card skeleton-card">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </article>
+      </template>
+
+      <template data-template="detail-view">
+        <article class="card colorful-card detail-card">
+          <div class="detail-media media-placeholder">
+            <span>SQR</span>
+          </div>
+          <div class="detail-content">
+            <span class="badge" data-field="type">Details</span>
+            <h2 data-field="title"></h2>
+            <p data-field="description"></p>
+            <div class="detail-meta">
+              <span data-field="meta_one"></span>
+              <span data-field="meta_two"></span>
+              <span data-field="meta_three"></span>
+            </div>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="progress-profile-only">
+        <article class="profile-progress-item only-profile-progress">
+          <div class="progress-head">
+            <div>
+              <h3 data-field="specialization"></h3>
+              <p data-field="summary"></p>
+            </div>
+            <strong data-field="percentage">0%</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" data-field="fill" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span data-field="courses"></span>
+            <span data-field="quizzes"></span>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="admin-row">
+        <article class="admin-row">
+          <div>
+            <strong data-field="title"></strong>
+            <span data-field="subtitle"></span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <template data-template="circle-stat">
+        <div class="score-circle" style="--score:0">
+          <div class="score-circle-inner">
+            <strong data-field="score">0%</strong>
+            <span data-field="label">Score</span>
+          </div>
+        </div>
+      </template>
     </section>
 
   </main>
