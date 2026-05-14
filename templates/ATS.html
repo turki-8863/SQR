@@ -1,55 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>SQR | ATS Tools</title>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+<title>SQR | ATS</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-  <div class="sqr-page-title">
-    <h1>ATS Resume Tools</h1>
-    <p>Check your resume with a PDF or DOCX upload, then generate an ATS-friendly resume with clean sections and AI instructions.</p>
-  </div>
-
-  <main class="sqr-shell ats-layout">
-    <section class="ats-panel">
-      <h2>ATS Resume Checker</h2>
-      <p>Upload only PDF or DOCX files. The checker will score keywords, sections, formatting, and job match.</p>
-      <form id="atsCheckForm" enctype="multipart/form-data">
-        <label>Target Job / Job Description
-          <textarea name="job_description" id="job_description" placeholder="Paste the job description or target role keywords here..."></textarea>
-        </label>
-        <label class="ats-upload">Upload Resume <span class="required-star">*</span>
-          <input type="file" name="resume" id="resumeFile" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
-        </label>
-        <button type="submit" class="btn btn-primary">Check Resume</button>
-      </form>
-      <div id="atsCheckResult" class="ats-result"></div>
-    </section>
-
-    <section class="ats-panel">
-      <h2>ATS Resume Generator</h2>
-      <p>Fields marked with <span class="required-star">*</span> are required. Use Work Style / AI Instructions to tell the AI exactly how you want the resume.</p>
-      <form id="atsGenerateForm">
-        <div class="admin-form-grid">
-          <label>Full Name <span class="required-star">*</span><input name="name" id="name" required placeholder="Full name"></label>
-          <label>Email <span class="required-star">*</span><input name="email" id="email" type="email" required placeholder="email@example.com"></label>
-          <label>Phone <span class="required-star">*</span><input name="phone" id="phone" required placeholder="05xxxxxxxx"></label>
-          <label>Target Job <span class="required-star">*</span><input name="target_job" id="target_job" required placeholder="Software Engineer, SOC Analyst..."></label>
-          <label class="full">Professional Summary <span class="required-star">*</span><textarea name="summary" id="summary" required placeholder="Write your current summary..."></textarea></label>
-          <label class="full">Skills <span class="required-star">*</span><textarea name="skills" id="skills" required placeholder="Python, Java, SQL, Flask..."></textarea></label>
-          <label class="full">Education <span class="required-star">*</span><textarea name="education" id="education" required placeholder="Degree, college, graduation year..."></textarea></label>
-          <label class="full">Projects<textarea name="projects" id="projects" placeholder="Project name, tools, result..."></textarea></label>
-          <label class="full">Certifications<textarea name="certifications" id="certifications" placeholder="Certificates or training..."></textarea></label>
-          <label class="full">Experience<textarea name="experience" id="experience" placeholder="Internship, coop, part-time, academic experience..."></textarea></label>
-          <label class="full">Work Style / AI Instructions<textarea name="work_style" id="work_style" placeholder="Example: make it suitable for cybersecurity coop, simple language, focus on projects..."></textarea></label>
-        </div>
-        <button type="submit" class="btn btn-primary">Generate Resume</button>
-      </form>
-      <div id="atsGenerateResult" class="ats-result"></div>
-    </section>
-  </main>
+<div id="message"></div>
+<section class="sqr-page-title"><h1>ATS Resume Tools</h1><p>Upload PDF/DOCX/TXT for checking, or generate an ATS-friendly resume.</p></section><main class="sqr-shell"><section class="rec-layout"><form id="atsCheckForm" class="rec-card" enctype="multipart/form-data"><h2>ATS Checker</h2><div class="rec-field"><label for="resume_file">Resume file</label><input id="resume_file" name="resume_file" type="file" accept=".pdf,.docx,.txt" required></div><div class="rec-field"><label for="job_description">Job description</label><textarea id="job_description" name="job_description" rows="6"></textarea></div><button class="btn btn-primary" type="submit">Check Resume</button></form><form id="atsGenerateForm" class="rec-card"><h2>ATS Generator</h2><div class="rec-field"><label for="name">Full name</label><input id="name" name="name" required></div><div class="rec-field"><label for="target_job">Target job</label><input id="target_job" name="target_job" required></div><div class="rec-field"><label for="email">Email</label><input id="email" name="email"></div><div class="rec-field"><label for="phone">Phone</label><input id="phone" name="phone"></div><div class="rec-field"><label for="summary">Summary</label><textarea id="summary" name="summary" rows="3"></textarea></div><div class="rec-field"><label for="skills">Skills</label><textarea id="skills" name="skills" rows="3" required></textarea></div><div class="rec-field"><label for="education">Education</label><textarea id="education" name="education" rows="3"></textarea></div><div class="rec-field"><label for="experience">Experience</label><textarea id="experience" name="experience" rows="3"></textarea></div><div class="rec-field"><label for="projects">Projects</label><textarea id="projects" name="projects" rows="3"></textarea></div><button class="btn btn-primary" type="submit">Generate Resume</button></form></section><section id="atsResult"></section><section id="atsGenerateResult"></section></main>
 </body>
 </html>

@@ -1,21 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>SQR | Courses</title>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+<title>SQR | Courses</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-  <div class="sqr-page-title">
-    <h1>Courses</h1>
-    <p>Open a course to auto-enroll. Progress is based on opening or watching course content and completing quizzes.</p>
-  </div>
-  <main class="sqr-shell">
-    <div id="message"></div>
-    <div id="courseDetails"></div>
-    <section id="coursesBox" class="grid cards-3"></section>
-  </main>
+<div id="message"></div>
+<section class="sqr-page-title"><h1>Courses</h1><p>Opening a course or playing a video auto-enrolls you and updates progress. No manual mark-completed button.</p></section><main class="sqr-shell"><section id="coursesBox"></section></main>
 </body>
 </html>

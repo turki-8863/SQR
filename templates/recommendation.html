@@ -1,87 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>SQR | Recommendation</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+<title>SQR | Recommendation</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-<script>navbar(); requireLogin();</script>
-
-<main class="recommendation-page">
-  <div id="message"></div>
-
-  <section class="rec-hero">
-    <div>
-      <span class="eyebrow">Career Path Finder</span>
-      <h1>Find the best CS specialization for you</h1>
-      <p>
-        Answer a few simple questions and SQR will recommend a specialization based on your interests,
-        skills, goals, and preferred work style.
-      </p>
-    </div>
-
-    <aside class="rec-hero-card">
-      <strong>Personalized result</strong>
-      <span>Specialization match</span>
-      <span>Recommended courses</span>
-      <span>Related job paths</span>
-    </aside>
-  </section>
-
-  <section class="rec-layout">
-    <form id="recForm" class="rec-card">
-      <div class="section-heading">
-        <h2>Your answers</h2>
-        <p>Use short sentences or keywords. The quick checkboxes make the recommendation more accurate.</p>
-      </div>
-
-      <div class="form-grid">
-        <div class="rec-field">
-          <label for="interests">What topics do you enjoy?</label>
-          <textarea id="interests" name="interests" rows="4" placeholder="Example: cybersecurity, AI, web development, databases"></textarea>
-        </div>
-
-        <div class="rec-field">
-          <label for="skills">What skills do you already have?</label>
-          <textarea id="skills" name="skills" rows="4" placeholder="Example: Python, Java, SQL, HTML, problem solving"></textarea>
-        </div>
-
-        <div class="rec-field">
-          <label for="work_style">How do you prefer to work?</label>
-          <textarea id="work_style" name="work_style" rows="4" placeholder="Example: I like building apps, analyzing data, or investigating security issues"></textarea>
-        </div>
-
-        <div class="rec-field">
-          <label for="goal">What kind of role do you want?</label>
-          <textarea id="goal" name="goal" rows="4" placeholder="Example: I want a practical role with good job opportunities"></textarea>
-        </div>
-      </div>
-
-      <div id="recQuizBox" class="rec-question-grid"></div>
-
-      <button type="submit" class="rec-submit">Get recommendation</button>
-    </form>
-
-    <aside class="rec-card rec-result-card">
-      <div class="section-heading">
-        <h2>Result</h2>
-        <p>Your best match will appear here.</p>
-      </div>
-
-      <div id="recommendationResult" class="rec-empty">
-        <div>
-          <div class="rec-empty-icon">⌁</div>
-          <h3>No result yet</h3>
-          <p>Fill the form and click get recommendation.</p>
-        </div>
-      </div>
-    </aside>
-  </section>
-</main>
-
-<script>setupRecommendation();</script>
+<div id="message"></div>
+<main class="recommendation-page"><section class="rec-hero"><div class="rec-hero-main"><span class="eyebrow">Career Path Finder</span><h1>Find the best CS specialization for you</h1><p>Answer the questions and write your interests, skills, goal, and work style. SQR recommends specializations, jobs, and learning steps.</p></div><div class="rec-hero-side"><strong>What you get</strong><span>Specialization match</span><span>Related jobs</span><span>Skills to improve</span><span>Courses to start</span></div></section><section class="rec-layout"><form id="recForm" class="rec-card"><div class="section-title"><h2>Your answers</h2><p>Use simple sentences or keywords.</p></div><div class="rec-field"><label for="interests">Topics you enjoy</label><textarea id="interests" name="interests" rows="4" placeholder="cybersecurity, AI, web development, databases"></textarea></div><div class="rec-field"><label for="skills">Your current skills</label><textarea id="skills" name="skills" rows="4" placeholder="Python, Java, SQL, Linux, HTML"></textarea></div><div class="rec-field"><label for="work_style">Preferred work style</label><textarea id="work_style" name="work_style" rows="4" placeholder="I like building apps, solving problems, investigating issues, or analyzing data"></textarea></div><div class="rec-field"><label for="goal">Career goal</label><textarea id="goal" name="goal" rows="4" placeholder="I want a practical role with good job opportunities"></textarea></div><button class="btn btn-primary" type="submit">Get recommendation</button></form><aside class="rec-card"><div class="section-title"><h2>Result</h2><p>Your recommendation will appear here.</p></div><div id="recommendationResult" class="rec-empty"><div class="rec-empty-icon">⌁</div><h3>No result yet</h3><p>Fill the form and click get recommendation.</p></div></aside></section></main>
 </body>
 </html>

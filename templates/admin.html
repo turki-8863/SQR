@@ -1,107 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>SQR | Admin Dashboard</title>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+<title>SQR | Admin</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-  <div class="sqr-page-title">
-    <h1>Admin Dashboard</h1>
-    <p>Manage users, specializations, courses, quizzes, jobs, and certificates. Admin accounts stay on this page only.</p>
-  </div>
-
-  <main id="adminDashboard" class="sqr-shell admin-main-grid">
-    <div id="message"></div>
-
-    <nav class="admin-tabs" aria-label="Admin sections">
-      <button type="button" class="admin-tab-btn active" data-admin-tab="adminStatsSection">Dashboard</button>
-      <button type="button" class="admin-tab-btn" data-admin-tab="specializationsAdminSection">Specializations</button>
-      <button type="button" class="admin-tab-btn" data-admin-tab="coursesAdminSection">Courses</button>
-      <button type="button" class="admin-tab-btn" data-admin-tab="quizzesAdminSection">Quizzes</button>
-      <button type="button" class="admin-tab-btn" data-admin-tab="jobsAdminSection">Jobs</button>
-      <button type="button" class="admin-tab-btn" data-admin-tab="certificatesAdminSection">Certificates</button>
-      <button type="button" class="admin-tab-btn" data-admin-tab="usersAdminSection">Users</button>
-    </nav>
-
-    <section id="adminStatsSection" class="admin-section active admin-panel">
-      <h2>Website Statistics</h2>
-      <div id="adminStats" class="stats-grid"></div>
-    </section>
-
-    <section id="specializationsAdminSection" class="admin-section admin-panel">
-      <h2>Add Specialization</h2>
-      <form id="specializationForm" enctype="multipart/form-data">
-        <label>Name <input name="name" required placeholder="Cybersecurity"></label>
-        <label>Image <input name="image" type="file" accept="image/*"></label>
-        <label>Description <textarea name="description" required></textarea></label>
-        <label>Skills <textarea name="skills" placeholder="Linux, networks, security..."></textarea></label>
-        <label>Roadmap <textarea name="roadmap" placeholder="Beginner topics, intermediate topics..."></textarea></label>
-        <label>Job Titles <textarea name="job_titles" placeholder="SOC Analyst, Security Analyst..."></textarea></label>
-        <button type="submit" class="btn btn-primary">Add Specialization</button>
-      </form>
-      <div id="adminSpecializationsList" class="grid cards-3"></div>
-    </section>
-
-    <section id="coursesAdminSection" class="admin-section admin-panel">
-      <h2>Add Course</h2>
-      <form id="courseForm" enctype="multipart/form-data">
-        <label>Course Title <input name="title" required placeholder="Intro to Cybersecurity"></label>
-        <label>Specialization <select name="spec_id" id="courseSpec" required></select></label>
-        <label>Level <select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
-        <label>Course Link <input name="link" placeholder="https://..."></label>
-        <label>Course Image <input name="image" type="file" accept="image/*"></label>
-        <label>Course Video <input name="video" type="file" accept="video/*"></label>
-        <label>Description <textarea name="description" required></textarea></label>
-        <button type="submit" class="btn btn-primary">Add Course</button>
-      </form>
-      <div id="adminCoursesList" class="grid cards-3"></div>
-    </section>
-
-    <section id="quizzesAdminSection" class="admin-section admin-panel">
-      <h2>Add Quiz</h2>
-      <form id="quizForm">
-        <label>Quiz Title <input name="title" required placeholder="Module 1 Quiz"></label>
-        <label>Course <select name="course_id" id="quizCourse" required></select></label>
-        <label>Description <textarea name="description"></textarea></label>
-        <div id="questionsBox" class="questions-box"></div>
-        <button type="button" id="addQuestionBtn" class="btn btn-soft">Add Question</button>
-        <button type="submit" class="btn btn-primary">Add Quiz</button>
-      </form>
-    </section>
-
-    <section id="jobsAdminSection" class="admin-section admin-panel">
-      <h2>Add Job</h2>
-      <form id="jobForm">
-        <label>Job Title <input name="title" required placeholder="SOC Analyst"></label>
-        <label>Specialization <select name="spec_id" id="jobSpec" required></select></label>
-        <label>Average Salary <input name="salary" placeholder="8,000 - 12,000 SAR"></label>
-        <label>Job Link <input name="link" placeholder="https://..."></label>
-        <label>Description <textarea name="description" required></textarea></label>
-        <label>Required Skills <textarea name="skills" placeholder="SIEM, Linux, networking..."></textarea></label>
-        <button type="submit" class="btn btn-primary">Add Job</button>
-      </form>
-    </section>
-
-    <section id="certificatesAdminSection" class="admin-section admin-panel">
-      <h2>Add Certificate</h2>
-      <form id="certificateForm">
-        <label>Certificate Name <input name="name" required placeholder="CompTIA Security+"></label>
-        <label>Specialization <select name="spec_id" id="certSpec" required></select></label>
-        <label>Price <input name="price" placeholder="Free / Paid / 1200 SAR"></label>
-        <label>Type <select name="type"><option value="both">Both</option><option value="practical">Practical</option><option value="theoretical">Theoretical</option></select></label>
-        <label>Certificate Link <input name="link" placeholder="https://..."></label>
-        <label>Description <textarea name="description"></textarea></label>
-        <button type="submit" class="btn btn-primary">Add Certificate</button>
-      </form>
-    </section>
-
-    <section id="usersAdminSection" class="admin-section admin-panel">
-      <h2>Users</h2>
-      <div id="usersBox"></div>
-    </section>
-  </main>
+<div id="message"></div>
+<section class="sqr-page-title"><h1>Admin Dashboard</h1><p>Admins manage the system. Admin mode is restricted to this page only.</p></section><main class="sqr-shell admin-layout"><aside class="admin-menu"><button data-section="dashboard" onclick="showAdminSection && showAdminSection('dashboard')">Dashboard</button><button data-section="specializations" onclick="showAdminSection && showAdminSection('specializations')">Specializations</button><button data-section="courses" onclick="showAdminSection && showAdminSection('courses')">Courses</button><button data-section="quizzes" onclick="showAdminSection && showAdminSection('quizzes')">Quizzes</button><button data-section="jobs" onclick="showAdminSection && showAdminSection('jobs')">Jobs</button><button data-section="certificates" onclick="showAdminSection && showAdminSection('certificates')">Certificates</button><button data-section="users" onclick="showAdminSection && showAdminSection('users')">Users</button></aside><section><div id="adminStats"></div><section id="dashboard" class="admin-section active"><h2>System numbers</h2><div id="adminStatsBox"></div></section><section id="specializations" class="admin-section"><h2>Add Specialization</h2><form id="adminSpecializationForm" class="admin-form-card" enctype="multipart/form-data"><div class="rec-field"><label>Name</label><input name="name" required></div><div class="rec-field"><label>Description</label><textarea name="description"></textarea></div><div class="rec-field"><label>Skills</label><textarea name="skills"></textarea></div><div class="rec-field"><label>Roadmap</label><textarea name="roadmap"></textarea></div><div class="rec-field"><label>Job titles</label><textarea name="job_titles"></textarea></div><div class="rec-field"><label>Image</label><input name="image" type="file" accept="image/*"></div><button class="btn btn-primary" type="submit">Add Specialization</button></form></section><section id="courses" class="admin-section"><h2>Add Course</h2><form id="adminCourseForm" class="admin-form-card" enctype="multipart/form-data"><div class="rec-field"><label>Specialization ID</label><input name="spec_id" required></div><div class="rec-field"><label>Title</label><input name="title" required></div><div class="rec-field"><label>Description</label><textarea name="description"></textarea></div><div class="rec-field"><label>Course link</label><input name="link"></div><div class="rec-field"><label>Level</label><select name="level"><option>beginner</option><option>intermediate</option><option>advanced</option></select></div><div class="rec-field"><label>Image</label><input name="image" type="file" accept="image/*"></div><div class="rec-field"><label>Video</label><input name="video" type="file" accept="video/*"></div><button class="btn btn-primary" type="submit">Add Course</button></form></section><section id="quizzes" class="admin-section"><h2>Add Quiz</h2><form id="adminQuizForm" class="admin-form-card"><div class="rec-field"><label>Course ID</label><input name="course_id"></div><div class="rec-field"><label>Specialization ID</label><input name="spec_id"></div><div class="rec-field"><label>Title</label><input name="title" required></div><div class="rec-field"><label>Description</label><textarea name="description"></textarea></div><div class="rec-field"><label>Questions JSON</label><textarea name="questions" rows="8" placeholder='[{"question":"...","option1":"A","option2":"B","option3":"C","option4":"D","answer":"A"}]'></textarea></div><button class="btn btn-primary" type="submit">Add Quiz</button></form></section><section id="jobs" class="admin-section"><h2>Add Job</h2><form id="adminJobForm" class="admin-form-card"><div class="rec-field"><label>Title</label><input name="title" required></div><div class="rec-field"><label>Specialization ID</label><input name="specialization_id"></div><div class="rec-field"><label>Description</label><textarea name="description"></textarea></div><div class="rec-field"><label>Skills</label><textarea name="skills"></textarea></div><div class="rec-field"><label>Salary</label><input name="salary"></div><div class="rec-field"><label>Link</label><input name="link"></div><button class="btn btn-primary" type="submit">Add Job</button></form></section><section id="certificates" class="admin-section"><h2>Add Certificate</h2><form id="adminCertificateForm" class="admin-form-card"><div class="rec-field"><label>Specialization ID</label><input name="spec_id" required></div><div class="rec-field"><label>Name</label><input name="name" required></div><div class="rec-field"><label>Description</label><textarea name="description"></textarea></div><div class="rec-field"><label>Link</label><input name="link"></div><div class="rec-field"><label>Price</label><input name="price"></div><button class="btn btn-primary" type="submit">Add Certificate</button></form></section><section id="users" class="admin-section"><h2>Users</h2><div id="adminUsers"></div></section></section></main><script>function showAdminSection(id){document.querySelectorAll('.admin-section').forEach(s=>s.classList.remove('active'));document.getElementById(id)?.classList.add('active');}</script>
 </body>
 </html>

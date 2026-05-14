@@ -1,20 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>SQR | Jobs</title>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+<title>SQR | Jobs</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-  <div class="sqr-page-title">
-    <h1>Jobs</h1>
-    <p>Explore job roles linked to SQR specializations and skills. Click a job to view the full details page.</p>
-  </div>
-  <main class="sqr-shell">
-    <div id="message"></div>
-    <section id="jobsBox" class="grid cards-3"></section>
-  </main>
+<div id="message"></div>
+<section class="sqr-page-title"><h1>Jobs</h1><p>Explore job roles connected to SQR specializations.</p></section><main class="sqr-shell"><section id="jobsBox"></section></main>
 </body>
 </html>

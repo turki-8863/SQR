@@ -1,25 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SQR | Skill Quest Road</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+<title>SQR | Skill Quest Road</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-  <div id="message"></div>
-  <main class="home-shell">
-    <section class="hero">
-      <span class="eyebrow">Skill Quest Road</span>
-      <h1>Find your CS path, learn faster, and build an ATS-ready career.</h1>
-      <p>SQR connects specializations, courses, quizzes, progress tracking, job recommendations, and ATS resume tools in one student platform.</p>
-      <div class="hero-actions">
-        <a class="btn btn-primary" href="Specialization.html">Explore Paths</a>
-        <a class="btn btn-soft" href="ATS.html">Open ATS Tools</a>
-      </div>
-    </section>
-    <section id="homeCards" class="grid cards-4 home-panels"></section>
-  </main>
+<div id="message"></div>
+<section class="sqr-page-title"><h1>SQR — Skill Quest Road</h1><p>Career guidance, specializations, courses, quizzes, ATS tools, recommendations, and progress tracking in one platform.</p></section><main class="sqr-shell"><section class="card-grid"><article class="feature-card interactive-card" data-open-url="Specialization.html"><h3>Specializations</h3><p>Choose a CS path and follow courses linked to it.</p></article><article class="feature-card interactive-card" data-open-url="Courses.html"><h3>Courses</h3><p>Open courses to auto-enroll and update progress.</p></article><article class="feature-card interactive-card" data-open-url="recommendation.html"><h3>Recommendation</h3><p>Get a specialization and job recommendation from your interests.</p></article><article class="feature-card interactive-card" data-open-url="ATS.html"><h3>ATS</h3><p>Check or generate an ATS-friendly resume.</p></article></section></main>
 </body>
 </html>

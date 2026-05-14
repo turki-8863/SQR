@@ -1,27 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SQR | Sign Up</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+<title>SQR | Sign Up</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-  <div id="message"></div>
-  <main class="auth-shell">
-    <form id="signupForm" class="auth-card">
-      <span class="eyebrow">Start Learning</span>
-      <h1>Sign Up</h1>
-      <label class="required" for="name">Name</label>
-      <input id="name" name="name" required>
-      <label class="required" for="email">Email</label>
-      <input id="email" name="email" type="email" required>
-      <label class="required" for="password">Password</label>
-      <input id="password" name="password" type="password" required>
-      <button type="submit" class="btn btn-primary">Create Account</button>
-      <p>Already have an account? <a href="signin.html">Sign in</a></p>
-    </form>
-  </main>
+<div id="message"></div>
+<section class="sqr-page-title"><h1>Create Student Account</h1><p>Students sign up as students. Only existing admins can grant admin access.</p></section><main class="sqr-shell"><form id="signupForm" class="rec-card"><div class="rec-field"><label for="name">Full name</label><input id="name" name="name" required></div><div class="rec-field"><label for="username">Username</label><input id="username" name="username"></div><div class="rec-field"><label for="email">Email</label><input id="email" name="email" type="email" required></div><div class="rec-field"><label for="password">Password</label><input id="password" name="password" type="password" required></div><div class="rec-field"><label for="confirm_password">Confirm password</label><input id="confirm_password" name="confirm_password" type="password"></div><button class="btn btn-primary" type="submit">Create Account</button></form></main>
 </body>
 </html>
