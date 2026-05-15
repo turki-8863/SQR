@@ -921,32 +921,11 @@ def get_specializations():
 @app.route("/api/specializations/<int:spec_id>", methods=["GET"])
 def get_specialization(spec_id):
     try:
-        def get_columns(table_name):
-            rows = query_db(f"SHOW COLUMNS FROM `{table_name}`", fetchall=True)
-            return [row["Field"] for row in rows] if rows else []
-
-        def table_has_column(table_name, column_name):
-            try:
-                return column_name in get_columns(table_name)
-            except Exception:
-                return False
-
-        spec_columns = get_columns("specializations")
-
-        if "specialization_id" in spec_columns:
-            spec_id_column = "specialization_id"
-        elif "id" in spec_columns:
-            spec_id_column = "id"
-        else:
-            return jsonify({
-                "error": "specializations table has no id or specialization_id column"
-            }), 500
-
         spec = query_db(
-            f"""
+            """
             SELECT *
             FROM specializations
-            WHERE `{spec_id_column}` = %s
+            WHERE specialization_id = %s
             """,
             (spec_id,),
             fetchone=True
@@ -955,45 +934,40 @@ def get_specialization(spec_id):
         if not spec:
             return jsonify({"error": "Specialization not found"}), 404
 
-        courses = []
-        if table_has_column("courses", "specialization_id"):
-            courses = query_db(
-                """
-                SELECT *
-                FROM courses
-                WHERE specialization_id = %s
-                ORDER BY id DESC
-                """,
-                (spec_id,),
-                fetchall=True
-            ) or []
+        courses = query_db(
+            """
+            SELECT *
+            FROM courses
+            WHERE specialization_id = %s
+            ORDER BY id DESC
+            """,
+            (spec_id,),
+            fetchall=True
+        ) or []
 
-        jobs = []
-        if table_has_column("jobs", "specialization_id"):
-            jobs = query_db(
-                """
-                SELECT *
-                FROM jobs
-                WHERE specialization_id = %s
-                ORDER BY id DESC
-                """,
-                (spec_id,),
-                fetchall=True
-            ) or []
+        jobs = query_db(
+            """
+            SELECT *
+            FROM jobs
+            WHERE specialization_id = %s
+            ORDER BY id DESC
+            """,
+            (spec_id,),
+            fetchall=True
+        ) or []
 
         certifications = []
         try:
-            if table_has_column("certifications", "specialization_id"):
-                certifications = query_db(
-                    """
-                    SELECT *
-                    FROM certifications
-                    WHERE specialization_id = %s
-                    ORDER BY id DESC
-                    """,
-                    (spec_id,),
-                    fetchall=True
-                ) or []
+            certifications = query_db(
+                """
+                SELECT *
+                FROM certifications
+                WHERE specialization_id = %s
+                ORDER BY id DESC
+                """,
+                (spec_id,),
+                fetchall=True
+            ) or []
         except Exception:
             certifications = []
 
@@ -1006,11 +980,7 @@ def get_specialization(spec_id):
 
     except Exception as e:
         print("SPECIALIZATION DETAILS ERROR:", str(e))
-        return jsonify({
-            "error": "Server error",
-            "details": str(e)
-        }), 500
-
+        return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @app.route("/api/specializations", methods=["POST"])
 @admin_required
