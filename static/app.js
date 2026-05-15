@@ -688,6 +688,53 @@ async function loadSpecializationDetails() {
 
   if (!box || !id) return;
 
+  const isLoggedIn = () => {
+    return Boolean(
+      localStorage.getItem("sqr_token") ||
+      localStorage.getItem("token")
+    );
+  };
+
+  const getSpecializationStatus = async (sid, spec) => {
+    const fromSpec =
+      spec.is_enrolled ??
+      spec.enrolled ??
+      spec.user_enrolled ??
+      spec.isEnrolled ??
+      null;
+
+    if (fromSpec !== null && fromSpec !== undefined) {
+      return Boolean(Number(fromSpec));
+    }
+
+    try {
+      const status = await api(`/api/specializations/${encodeURIComponent(sid)}/enrollment-status`);
+      return Boolean(status.enrolled || status.is_enrolled || status.user_enrolled);
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const renderEnrollButton = (sid, enrolled) => {
+    if (!isLoggedIn()) {
+      return `<a class="btn btn-primary" href="signin.html">Sign In to Enroll</a>`;
+    }
+
+    if (enrolled) {
+      return `
+        <button type="button" class="btn btn-danger" data-unenroll-specialization="${escapeAttr(sid)}">
+          Unenroll
+        </button>
+      `;
+    }
+
+    return `
+      <button type="button" class="btn btn-primary" data-enroll-specialization="${escapeAttr(sid)}">
+        Enroll
+      </button>
+    `;
+  };
+
   try {
     const result = await api(`/api/specializations/${encodeURIComponent(id)}`);
 
@@ -702,12 +749,7 @@ async function loadSpecializationDetails() {
       spec.id ||
       id;
 
-    const isLoggedIn = Boolean(
-      (typeof token === "function" && token()) ||
-      (typeof getToken === "function" && getToken()) ||
-      localStorage.getItem("sqr_token") ||
-      localStorage.getItem("token")
-    );
+    let enrolled = await getSpecializationStatus(sid, spec);
 
     box.innerHTML = `
       <article class="details-card gradient-card">
@@ -737,20 +779,8 @@ async function loadSpecializationDetails() {
               : ""
           }
 
-          <div class="details-actions">
-            ${
-              isLoggedIn
-                ? `
-                  <button type="button" class="btn btn-primary" data-enroll-specialization="${escapeAttr(sid)}">
-                    Enroll Specialization
-                  </button>
-
-                  <button type="button" class="btn btn-danger" data-unenroll-specialization="${escapeAttr(sid)}">
-                    Unenroll
-                  </button>
-                `
-                : `<a class="btn btn-primary" href="signin.html">Sign In to Enroll</a>`
-            }
+          <div class="details-actions" id="specializationEnrollActions">
+            ${renderEnrollButton(sid, enrolled)}
 
             <a class="btn btn-secondary" href="Courses.html?specialization_id=${escapeAttr(sid)}">
               View Courses
@@ -808,6 +838,57 @@ async function loadSpecializationDetails() {
         </section>
       </div>
     `;
+
+    const actionsBox = byId("specializationEnrollActions");
+
+    if (actionsBox) {
+      actionsBox.addEventListener("click", async function (e) {
+        const enrollBtn = e.target.closest("[data-enroll-specialization]");
+        const unenrollBtn = e.target.closest("[data-unenroll-specialization]");
+
+        if (!enrollBtn && !unenrollBtn) return;
+
+        const isEnroll = Boolean(enrollBtn);
+        const btn = enrollBtn || unenrollBtn;
+
+        btn.disabled = true;
+        btn.textContent = isEnroll ? "Enrolling..." : "Unenrolling...";
+
+        try {
+          await api(
+            `/api/specializations/${encodeURIComponent(sid)}/${isEnroll ? "enroll" : "unenroll"}`,
+            { method: "POST" }
+          );
+
+          enrolled = isEnroll;
+
+          actionsBox.innerHTML = `
+            ${renderEnrollButton(sid, enrolled)}
+
+            <a class="btn btn-secondary" href="Courses.html?specialization_id=${escapeAttr(sid)}">
+              View Courses
+            </a>
+
+            <a class="btn btn-secondary" href="jobs.html?specialization_id=${escapeAttr(sid)}">
+              View Jobs
+            </a>
+          `;
+
+          if (typeof showMessage === "function") {
+            showMessage(isEnroll ? "Enrolled successfully." : "Unenrolled successfully.", "success");
+          }
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = isEnroll ? "Enroll" : "Unenroll";
+
+          if (typeof showMessage === "function") {
+            showMessage(err.message || "Enrollment failed.", "error");
+          } else {
+            alert(err.message || "Enrollment failed.");
+          }
+        }
+      });
+    }
   } catch (err) {
     box.innerHTML = emptyState("Specialization not found", err.message);
   }
