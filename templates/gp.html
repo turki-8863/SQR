@@ -20,33 +20,77 @@
 
     <div id="message" class="message-holder"></div>
 
-    <section class="dashboard-header">
-      <span class="eyebrow">Skill Quest Road</span>
-      <h1>SQR Dashboard</h1>
-      <p>Live website statistics loaded from the database.</p>
+    <section class="dashboard-side-layout">
+
+      <article class="dashboard-description-card">
+        <span class="eyebrow">Skill Quest Road</span>
+
+        <h1>SQR Dashboard</h1>
+
+        <p>
+          SQR is a dynamic computer science career guidance platform connected to a real database.
+          The system helps students explore specializations, browse courses, take quizzes,
+          discover jobs, use ATS resume tools, and get career recommendations.
+        </p>
+
+        <p>
+          All website numbers shown here are loaded from the database, not written manually.
+          Student progress is kept inside the profile page where it is calculated from opened courses
+          and quiz attempts.
+        </p>
+
+        <div class="dashboard-description-actions">
+          <a href="Specialization.html" class="btn btn-primary">Specializations</a>
+          <a href="Courses.html" class="btn btn-soft">Courses</a>
+          <a href="recommendation.html" class="btn btn-soft">Recommendation</a>
+        </div>
+      </article>
+
+      <section class="dashboard-stats-side" aria-label="Website statistics">
+
+        <article class="metric-card cyan-card">
+          <span>Specializations</span>
+          <strong id="homeSpecCount">0</strong>
+          <p>Total specializations added by admin.</p>
+        </article>
+
+        <article class="metric-card purple-card">
+          <span>Courses</span>
+          <strong id="homeCourseCount">0</strong>
+          <p>Total courses available in the platform.</p>
+        </article>
+
+        <article class="metric-card orange-card">
+          <span>Jobs</span>
+          <strong id="homeJobCount">0</strong>
+          <p>Total jobs connected to specializations.</p>
+        </article>
+
+      </section>
+
     </section>
 
-    <section class="home-metrics dashboard-stats-grid" aria-label="Website statistics">
+    <footer class="bottom-dashboard-nav">
+      <div class="bottom-nav-brand">
+        <strong>SQR</strong>
+        <span>Skill Quest Road</span>
+      </div>
 
-      <article class="metric-card cyan-card">
-        <span>Specializations</span>
-        <strong id="homeSpecCount">0</strong>
-        <p>Total specializations added by admin.</p>
-      </article>
+      <nav class="bottom-nav-links" aria-label="Bottom navigation">
+        <a href="gp.html">Home</a>
+        <a href="Specialization.html">Specializations</a>
+        <a href="Courses.html">Courses</a>
+        <a href="ATS.html">ATS</a>
+        <a href="jobs.html">Jobs</a>
+        <a href="recommendation.html">Recommendation</a>
+        <a href="profile.html">Profile</a>
+      </nav>
 
-      <article class="metric-card purple-card">
-        <span>Courses</span>
-        <strong id="homeCourseCount">0</strong>
-        <p>Total courses available in the platform.</p>
-      </article>
-
-      <article class="metric-card orange-card">
-        <span>Jobs</span>
-        <strong id="homeJobCount">0</strong>
-        <p>Total jobs connected to specializations.</p>
-      </article>
-
-    </section>
+      <div class="bottom-nav-actions">
+        <a href="signin.html" class="btn btn-soft">Sign In</a>
+        <a href="signup.html" class="btn btn-primary">Sign Up</a>
+      </div>
+    </footer>
 
   </main>
 
