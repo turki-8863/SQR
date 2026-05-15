@@ -893,7 +893,44 @@ async function loadSpecializationDetails() {
     box.innerHTML = emptyState("Specialization not found", err.message);
   }
 }
+document.addEventListener("click", async function (e) {
+  const enrollBtn = e.target.closest("[data-enroll-specialization]");
+  const unenrollBtn = e.target.closest("[data-unenroll-specialization]");
 
+  if (!enrollBtn && !unenrollBtn) return;
+
+  const isEnroll = Boolean(enrollBtn);
+  const btn = enrollBtn || unenrollBtn;
+  const sid = btn.dataset.enrollSpecialization || btn.dataset.unenrollSpecialization;
+
+  if (!sid) return;
+
+  btn.disabled = true;
+  btn.textContent = isEnroll ? "Enrolling..." : "Unenrolling...";
+
+  try {
+    await api(`/api/specializations/${encodeURIComponent(sid)}/${isEnroll ? "enroll" : "unenroll"}`, {
+      method: "POST"
+    });
+
+    await loadSpecializationDetails();
+
+    if (typeof showMessage === "function") {
+      showMessage(isEnroll ? "Enrolled successfully." : "Unenrolled successfully.", "success");
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = isEnroll ? "Enroll" : "Unenroll";
+
+    if (typeof showMessage === "function") {
+      showMessage(err.message || "Enrollment failed.", "error");
+    } else {
+      alert(err.message || "Enrollment failed.");
+    }
+  }
+});
+  
+  
   async function loadCourses() {
     const box = byId("coursesBox");
     if (!box) return;
