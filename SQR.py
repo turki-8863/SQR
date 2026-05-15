@@ -982,6 +982,85 @@ def get_specialization(spec_id):
         print("SPECIALIZATION DETAILS ERROR:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
+@app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
+@login_required
+def specialization_enrollment_status(spec_id):
+    try:
+        user_id = request.user["id"]
+
+        row = query_db(
+            """
+            SELECT 1
+            FROM student_specializations
+            WHERE user_id = %s AND specialization_id = %s
+            LIMIT 1
+            """,
+            (user_id, spec_id),
+            fetchone=True
+        )
+
+        return jsonify({"enrolled": bool(row)}), 200
+
+    except Exception as e:
+        print("SPECIALIZATION STATUS ERROR:", str(e))
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+
+
+@app.route("/api/specializations/<int:spec_id>/enroll", methods=["POST"])
+@login_required
+def enroll_specialization(spec_id):
+    try:
+        user_id = request.user["id"]
+
+        spec = query_db(
+            """
+            SELECT specialization_id
+            FROM specializations
+            WHERE specialization_id = %s
+            """,
+            (spec_id,),
+            fetchone=True
+        )
+
+        if not spec:
+            return jsonify({"error": "Specialization not found"}), 404
+
+        existing = query_db(
+            """
+            SELECT 1
+            FROM student_specializations
+            WHERE user_id = %s AND specialization_id = %s
+            LIMIT 1
+            """,
+            (user_id, spec_id),
+            fetchone=True
+        )
+
+        if existing:
+            return jsonify({
+                "message": "Already enrolled",
+                "enrolled": True
+            }), 200
+
+        query_db(
+            """
+            INSERT INTO student_specializations (user_id, specialization_id)
+            VALUES (%s, %s)
+            """,
+            (user_id, spec_id),
+            commit=True
+        )
+
+        return jsonify({
+            "message": "Enrolled successfully",
+            "enrolled": True
+        }), 201
+
+    except Exception as e:
+        print("SPECIALIZATION ENROLL ERROR:", str(e))
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+
+
 @app.route("/api/specializations", methods=["POST"])
 @admin_required
 def add_specialization():
