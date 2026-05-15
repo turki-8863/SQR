@@ -920,18 +920,70 @@ def get_specializations():
 
 @app.route("/api/specializations/<int:spec_id>", methods=["GET"])
 def get_specialization(spec_id):
-    spec = query_db("SELECT * FROM specializations WHERE id=%s", (spec_id,), fetchone=True)
-    if not spec:
-        return jsonify({"error": "Specialization not found"}), 404
-    courses = query_db("SELECT c.*, s.name AS specialization_name FROM courses c LEFT JOIN specializations s ON s.id=c.spec_id WHERE c.spec_id=%s ORDER BY c.id DESC", (spec_id,), fetchall=True) or []
-    jobs = query_db("SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.id=j.specialization_id WHERE j.specialization_id=%s ORDER BY j.id DESC", (spec_id,), fetchall=True) or []
-    certificates = query_db("SELECT * FROM certificates WHERE specialization_id=%s ORDER BY id DESC", (spec_id,), fetchall=True) or []
-    return jsonify({
-        "specialization": normalize_specialization(spec),
-        "courses": [normalize_course(row) for row in courses],
-        "jobs": [normalize_job(row) for row in jobs],
-        "certificates": certificates,
-    })
+    try:
+        spec = query_db(
+            """
+            SELECT *
+            FROM specializations
+            WHERE id = %s
+            """,
+            (spec_id,),
+            fetchone=True
+        )
+
+        if not spec:
+            return jsonify({"error": "Specialization not found"}), 404
+
+        courses = query_db(
+            """
+            SELECT *
+            FROM courses
+            WHERE specialization_id = %s
+            ORDER BY id DESC
+            """,
+            (spec_id,),
+            fetchall=True
+        )
+
+        jobs = query_db(
+            """
+            SELECT *
+            FROM jobs
+            WHERE specialization_id = %s
+            ORDER BY id DESC
+            """,
+            (spec_id,),
+            fetchall=True
+        )
+
+        certifications = []
+        try:
+            certifications = query_db(
+                """
+                SELECT *
+                FROM certifications
+                WHERE specialization_id = %s
+                ORDER BY id DESC
+                """,
+                (spec_id,),
+                fetchall=True
+            )
+        except Exception:
+            certifications = []
+
+        return jsonify({
+            "specialization": spec,
+            "courses": courses or [],
+            "jobs": jobs or [],
+            "certifications": certifications or []
+        }), 200
+
+    except Exception as e:
+        print("SPECIALIZATION DETAILS ERROR:", str(e))
+        return jsonify({
+            "error": "Server error",
+            "details": str(e)
+        }), 500
 
 
 @app.route("/api/specializations", methods=["POST"])
