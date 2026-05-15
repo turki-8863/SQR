@@ -682,36 +682,136 @@
     }
   }
 
-  async function loadSpecializationDetails() {
-    const box = byId("specializationDetails");
-    const id = param("id") || param("specialization_id") || param("spec_id");
-    if (!box || !id) return;
-    try {
-      const result = await api(`/api/specializations/${encodeURIComponent(id)}`);
-      const spec = result.specialization || result;
-      const courses = asArray(result, ["courses"]);
-      const jobs = asArray(result, ["jobs"]);
-      const certificates = asArray(result, ["certificates"]);
-      box.innerHTML = `
-        <article class="details-card gradient-card">
-          ${media(spec, "details-media")}
-          <div class="details-content">
-            ${badge("Specialization", "badge badge-cyan")}
-            <h2>${escapeHtml(pick(spec, ["name", "title"], "Specialization"))}</h2>
-            <p>${escapeHtml(pick(spec, ["description"], ""))}</p>
-            <div class="skill-line">${escapeHtml(pick(spec, ["skills"], ""))}</div>
-            <div class="details-actions"><a class="btn btn-primary" href="Courses.html?spec_id=${escapeAttr(itemId(spec))}">View Courses</a><a class="btn btn-secondary" href="jobs.html?specialization_id=${escapeAttr(itemId(spec))}">View Jobs</a></div>
+async function loadSpecializationDetails() {
+  const box = byId("specializationDetails");
+  const id = param("id") || param("specialization_id") || param("spec_id");
+
+  if (!box || !id) return;
+
+  try {
+    const result = await api(`/api/specializations/${encodeURIComponent(id)}`);
+
+    const spec = result.specialization || result;
+    const courses = asArray(result, ["courses"]);
+    const jobs = asArray(result, ["jobs"]);
+    const certificates = asArray(result, ["certificates", "certifications"]);
+
+    const sid =
+      itemId(spec) ||
+      spec.specialization_id ||
+      spec.id ||
+      id;
+
+    const isLoggedIn = Boolean(
+      (typeof token === "function" && token()) ||
+      (typeof getToken === "function" && getToken()) ||
+      localStorage.getItem("sqr_token") ||
+      localStorage.getItem("token")
+    );
+
+    box.innerHTML = `
+      <article class="details-card gradient-card">
+        ${media(spec, "details-media")}
+
+        <div class="details-content">
+          ${badge("Specialization", "badge badge-cyan")}
+
+          <h2>${escapeHtml(pick(spec, ["name", "title"], "Specialization"))}</h2>
+
+          <p>${escapeHtml(pick(spec, ["description", "overview"], ""))}</p>
+
+          ${
+            pick(spec, ["skills"], "")
+              ? `<div class="skill-line">${escapeHtml(pick(spec, ["skills"], ""))}</div>`
+              : ""
+          }
+
+          ${
+            pick(spec, ["roadmap"], "")
+              ? `
+                <div class="skill-line">
+                  <strong>Roadmap:</strong>
+                  ${escapeHtml(pick(spec, ["roadmap"], ""))}
+                </div>
+              `
+              : ""
+          }
+
+          <div class="details-actions">
+            ${
+              isLoggedIn
+                ? `
+                  <button type="button" class="btn btn-primary" data-enroll-specialization="${escapeAttr(sid)}">
+                    Enroll Specialization
+                  </button>
+
+                  <button type="button" class="btn btn-danger" data-unenroll-specialization="${escapeAttr(sid)}">
+                    Unenroll
+                  </button>
+                `
+                : `<a class="btn btn-primary" href="signin.html">Sign In to Enroll</a>`
+            }
+
+            <a class="btn btn-secondary" href="Courses.html?specialization_id=${escapeAttr(sid)}">
+              View Courses
+            </a>
+
+            <a class="btn btn-secondary" href="jobs.html?specialization_id=${escapeAttr(sid)}">
+              View Jobs
+            </a>
           </div>
-        </article>
-        <div class="details-split">
-          <section><h2>Linked courses</h2><div class="grid cards-2">${courses.length ? courses.map((x) => cardCourse(x)).join("") : emptyState("No courses", "Courses for this specialization will appear here.")}</div></section>
-          <section><h2>Certificates</h2><div class="mini-list colored-list">${certificates.length ? certificates.map((c) => `<article><strong>${escapeHtml(c.name || "Certificate")}</strong><p>${escapeHtml(c.description || "")}</p>${c.link ? link("Open", c.link, "btn btn-mini btn-secondary", 'target="_blank" rel="noopener"') : ""}</article>`).join("") : `<p class="muted">No certificates yet.</p>`}</div></section>
-          <section><h2>Related jobs</h2><div class="grid cards-2">${jobs.length ? jobs.map((x) => cardJob(x)).join("") : emptyState("No jobs", "Jobs for this specialization will appear here.")}</div></section>
-        </div>`;
-    } catch (err) {
-      box.innerHTML = emptyState("Specialization not found", err.message);
-    }
+        </div>
+      </article>
+
+      <div class="details-split">
+        <section>
+          <h2>Linked courses</h2>
+          <div class="grid cards-2">
+            ${
+              courses.length
+                ? courses.map((x) => cardCourse(x)).join("")
+                : emptyState("No courses", "Courses for this specialization will appear here.")
+            }
+          </div>
+        </section>
+
+        <section>
+          <h2>Certificates</h2>
+          <div class="mini-list colored-list">
+            ${
+              certificates.length
+                ? certificates.map((c) => `
+                    <article>
+                      <strong>${escapeHtml(c.name || c.title || "Certificate")}</strong>
+                      <p>${escapeHtml(c.description || "")}</p>
+                      ${
+                        c.link || c.url
+                          ? link("Open", c.link || c.url, "btn btn-mini btn-secondary", 'target="_blank" rel="noopener"')
+                          : ""
+                      }
+                    </article>
+                  `).join("")
+                : `<p class="muted">No certificates yet.</p>`
+            }
+          </div>
+        </section>
+
+        <section>
+          <h2>Related jobs</h2>
+          <div class="grid cards-2">
+            ${
+              jobs.length
+                ? jobs.map((x) => cardJob(x)).join("")
+                : emptyState("No jobs", "Jobs for this specialization will appear here.")
+            }
+          </div>
+        </section>
+      </div>
+    `;
+  } catch (err) {
+    box.innerHTML = emptyState("Specialization not found", err.message);
   }
+}
 
   async function loadCourses() {
     const box = byId("coursesBox");
