@@ -3,179 +3,238 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="SQR Skill Quest Road dynamic CS career guidance platform.">
+  <meta name="description" content="SQR specializations page.">
   <title>SQR | Specializations</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+
+  <style>
+    body.details-mode .specializations-list-section {
+      display: none;
+    }
+
+    body:not(.details-mode) .specialization-details-section {
+      display: none;
+    }
+
+    .specialization-page-shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 28px auto 70px;
+    }
+
+    .specialization-hero {
+      margin-bottom: 24px;
+      padding: 38px;
+      border-radius: 32px;
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(49, 46, 129, 0.76));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    .specialization-hero h1 {
+      margin: 14px 0 10px;
+      color: #f8fafc;
+      font-size: clamp(2.4rem, 5vw, 5rem);
+      line-height: 0.95;
+      letter-spacing: -0.06em;
+      font-weight: 950;
+    }
+
+    .specialization-hero p {
+      max-width: 760px;
+      margin: 0;
+      color: #cbd5e1;
+      font-size: 1.05rem;
+      line-height: 1.75;
+      font-weight: 600;
+    }
+
+    .specialization-top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .specializations-list-section {
+      display: grid;
+      gap: 20px;
+    }
+
+    .specialization-details-section {
+      display: grid;
+      gap: 20px;
+    }
+
+    .specialization-back-row {
+      display: flex;
+      justify-content: flex-start;
+      margin-bottom: 10px;
+    }
+
+    .specializations-grid,
+    #specializationsBox,
+    #specializationGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 22px;
+    }
+
+    body[data-page="specializations"]:not(.details-mode) .specializations-list-section .card p,
+    body[data-page="specializations"]:not(.details-mode) .specializations-list-section .feature-card p,
+    body[data-page="specializations"]:not(.details-mode) .specializations-list-section .colorful-card p,
+    body[data-page="specializations"]:not(.details-mode) #specializationsBox p,
+    body[data-page="specializations"]:not(.details-mode) #specializationGrid p {
+      display: none !important;
+    }
+
+    body[data-page="specializations"].details-mode .specialization-details-section p,
+    body[data-page="specializations"].details-mode #specializationDetails p,
+    body[data-page="specializations"].details-mode #specializationDetailsBox p {
+      display: block !important;
+    }
+
+    .specializations-list-section .card,
+    .specializations-list-section .feature-card,
+    .specializations-list-section .colorful-card {
+      min-height: 500px;
+    }
+
+    .specializations-list-section .card h3,
+    .specializations-list-section .feature-card h3,
+    .specializations-list-section .colorful-card h3 {
+      margin-bottom: 18px;
+    }
+
+    .specialization-detail-card {
+      padding: 34px;
+      border-radius: 32px;
+      background: rgba(15, 23, 42, 0.84);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.3);
+      color: #f8fafc;
+    }
+
+    .specialization-detail-card h2,
+    .specialization-detail-card h3 {
+      color: #f8fafc;
+    }
+
+    .specialization-detail-card p {
+      color: #cbd5e1;
+      line-height: 1.75;
+    }
+
+    @media (max-width: 720px) {
+      .specialization-hero {
+        padding: 26px;
+      }
+
+      .specializations-grid,
+      #specializationsBox,
+      #specializationGrid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
-<body class="page-body specializations-body colorful-page" data-page="specializations">
-  <main class="page-shell specialization-shell">
+
+<body class="page-body colorful-page" data-page="specializations">
+
+  <main class="specialization-page-shell">
+
     <div id="message" class="message-holder"></div>
 
-    <section class="page-hero compact-hero gradient-blue">
-      <div>
-        <span class="eyebrow">Specializations</span>
-        <h1>Explore CS paths from the database.</h1>
-        <p>Every card is loaded from admin-created content. No fake progress bars are shown on this page.</p>
-      </div>
-      <div class="hero-actions"><a href="Courses.html" class="btn btn-light">Courses</a><a href="recommendation.html" class="btn btn-glass">Get Recommendation</a></div>
-    </section>
+    <section class="specialization-hero">
+      <span class="eyebrow">Skill Quest Road</span>
 
-    <section id="specializationDetails" class="detail-zone colorful-detail"></section>
+      <h1 id="specializationPageTitle">Specializations</h1>
 
-    <section class="section-block color-panel blue-panel">
-      <div class="section-heading split-heading">
-        <div>
-          <span>Available paths</span>
-          <h2>Admin-managed specializations</h2>
-          <p>Select a specialization to see connected courses, certificates, quizzes, and jobs.</p>
-        </div>
-        <div class="section-actions"><input type="search" class="page-search" data-filter-target="specializationsBox" placeholder="Search specializations..."></div>
-      </div>
-      <div id="specializationsBox" class="grid cards-3 dynamic-grid">
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
+      <p id="specializationPageText">
+        Explore computer science paths added by the admin. The cards only show the specialization name.
+        Full descriptions appear after clicking View Details.
+      </p>
+
+      <div class="specialization-top-actions">
+        <a href="gp.html" class="btn btn-soft">Home</a>
+        <a href="Courses.html" class="btn btn-soft">Courses</a>
+        <a href="recommendation.html" class="btn btn-primary">Recommendation Test</a>
       </div>
     </section>
 
-    <section class="info-strip color-strip">
-      <article><strong>Dynamic</strong><span>Loaded from /api/specializations</span></article>
-      <article><strong>Linked</strong><span>Courses and certificates connect by specialization ID</span></article>
-      <article><strong>Clean</strong><span>Progress remains inside profile only</span></article>
+    <section class="specialization-details-section">
+      <div class="specialization-back-row">
+        <a href="Specialization.html" class="btn btn-soft">Back to Specializations</a>
+      </div>
+
+      <div id="specializationDetails" class="specialization-detail-card">
+        <div id="specializationDetailsBox"></div>
+        <div id="specializationDetail"></div>
+        <div id="detailsBox"></div>
+      </div>
     </section>
 
+    <section class="specializations-list-section">
+      <div class="section-heading">
+        <h2>Available Specializations</h2>
+        <p>Choose a specialization to view its full information, related courses, skills, jobs, and roadmap.</p>
+      </div>
 
-    <section class="hidden-template-bank" hidden aria-hidden="true">
-      <template data-template="database-card">
-        <article class="card colorful-card dynamic-card clickable">
-          <div class="card-media media-placeholder">
-            <span>SQR</span>
-          </div>
-          <div class="card-content">
-            <span class="badge">Dynamic</span>
-            <h3 data-field="title"></h3>
-            <p data-field="description"></p>
-            <div class="details-actions">
-              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
-            </div>
-          </div>
-        </article>
-      </template>
-
-      <template data-template="empty-state">
-        <article class="card empty-state">
-          <div class="empty-state-icon">◇</div>
-          <h3 data-field="title">No data yet</h3>
-          <p data-field="description">Admin content will appear here after it is added to the database.</p>
-        </article>
-      </template>
-
-      <template data-template="loading-card">
-        <article class="card skeleton-card">
+      <div id="specializationsBox" class="specializations-grid">
+        <article class="card skeleton-card" aria-hidden="true">
           <div class="skeleton-media"></div>
           <div class="skeleton-line wide"></div>
           <div class="skeleton-line"></div>
           <div class="skeleton-line short"></div>
         </article>
-      </template>
 
-      <template data-template="detail-view">
-        <article class="card colorful-card detail-card">
-          <div class="detail-media media-placeholder">
-            <span>SQR</span>
-          </div>
-          <div class="detail-content">
-            <span class="badge" data-field="type">Details</span>
-            <h2 data-field="title"></h2>
-            <p data-field="description"></p>
-            <div class="detail-meta">
-              <span data-field="meta_one"></span>
-              <span data-field="meta_two"></span>
-              <span data-field="meta_three"></span>
-            </div>
-          </div>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
         </article>
-      </template>
 
-      <template data-template="progress-profile-only">
-        <article class="profile-progress-item only-profile-progress">
-          <div class="progress-head">
-            <div>
-              <h3 data-field="specialization"></h3>
-              <p data-field="summary"></p>
-            </div>
-            <strong data-field="percentage">0%</strong>
-          </div>
-          <div class="progress">
-            <div class="progress-fill" data-field="fill" style="width:0%"></div>
-          </div>
-          <div class="progress-meta">
-            <span data-field="courses"></span>
-            <span data-field="quizzes"></span>
-          </div>
+        <article class="card skeleton-card" aria-hidden="true">
+          <div class="skeleton-media"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
         </article>
-      </template>
+      </div>
 
-      <template data-template="admin-row">
-        <article class="admin-row">
-          <div>
-            <strong data-field="title"></strong>
-            <span data-field="subtitle"></span>
-          </div>
-          <div class="row-actions">
-            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
-            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
-          </div>
-        </article>
-      </template>
-
-      <template data-template="circle-stat">
-        <div class="score-circle" style="--score:0">
-          <div class="score-circle-inner">
-            <strong data-field="score">0%</strong>
-            <span data-field="label">Score</span>
-          </div>
-        </div>
-      </template>
+      <div id="specializationGrid" class="specializations-grid"></div>
     </section>
 
   </main>
+
+  <script>
+    const sqrSpecializationParams = new URLSearchParams(window.location.search);
+    const sqrSpecializationId =
+      sqrSpecializationParams.get("id") ||
+      sqrSpecializationParams.get("specialization_id") ||
+      sqrSpecializationParams.get("spec_id");
+
+    if (sqrSpecializationId) {
+      document.body.classList.add("details-mode");
+
+      const title = document.getElementById("specializationPageTitle");
+      const text = document.getElementById("specializationPageText");
+
+      if (title) {
+        title.textContent = "Specialization Details";
+      }
+
+      if (text) {
+        text.textContent = "View the selected specialization description, skills, roadmap, related courses, jobs, and certificates.";
+      }
+    }
+  </script>
+
 </body>
 </html>
