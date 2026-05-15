@@ -914,8 +914,18 @@ def profile_progress():
 
 @app.route("/api/specializations", methods=["GET"])
 def get_specializations():
-    rows = query_db("SELECT * FROM specializations ORDER BY id DESC", fetchall=True) or []
-    return jsonify({"specializations": [normalize_specialization(row) for row in rows]})
+    rows = query_db(
+        """
+        SELECT *
+        FROM specializations
+        ORDER BY specialization_id DESC
+        """,
+        fetchall=True
+    ) or []
+
+    return jsonify({
+        "specializations": [normalize_specialization(row) for row in rows]
+    }), 200
 
 
 @app.route("/api/specializations/<int:spec_id>", methods=["GET"])
@@ -972,7 +982,7 @@ def get_specialization(spec_id):
             certifications = []
 
         return jsonify({
-            "specialization": spec,
+            "specialization": normalize_specialization(spec),
             "courses": courses,
             "jobs": jobs,
             "certifications": certifications
@@ -981,6 +991,7 @@ def get_specialization(spec_id):
     except Exception as e:
         print("SPECIALIZATION DETAILS ERROR:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
+
 
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
 @login_required
@@ -1060,6 +1071,30 @@ def enroll_specialization(spec_id):
         print("SPECIALIZATION ENROLL ERROR:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
+
+@app.route("/api/specializations/<int:spec_id>/unenroll", methods=["POST"])
+@login_required
+def unenroll_specialization(spec_id):
+    try:
+        user_id = request.user["id"]
+
+        query_db(
+            """
+            DELETE FROM student_specializations
+            WHERE user_id = %s AND specialization_id = %s
+            """,
+            (user_id, spec_id),
+            commit=True
+        )
+
+        return jsonify({
+            "message": "Unenrolled successfully",
+            "enrolled": False
+        }), 200
+
+    except Exception as e:
+        print("SPECIALIZATION UNENROLL ERROR:", str(e))
+        return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @app.route("/api/specializations", methods=["POST"])
 @admin_required
