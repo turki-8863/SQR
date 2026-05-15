@@ -4385,3 +4385,23 @@ select:focus { border-color: rgba(34, 211, 238, 0.72); box-shadow: 0 0 0 4px rgb
     justify-content: center;
   }
 }
+/* Hide specialization descriptions on the list cards only */
+body[data-page="specializations"]:not(.details-mode) .specializations-list-section .card p,
+body[data-page="specializations"]:not(.details-mode) .specializations-list-section .feature-card p,
+body[data-page="specializations"]:not(.details-mode) #specializationsBox p,
+body[data-page="specializations"]:not(.details-mode) #specializationGrid p {
+  display: none !important;
+}
+
+/* Keep spacing clean after hiding description */
+body[data-page="specializations"]:not(.details-mode) .specializations-list-section .card-body,
+body[data-page="specializations"]:not(.details-mode) .specializations-list-section .card-content {
+  gap: 12px;
+}
+
+/* Make sure description appears again in View Details page */
+body[data-page="specializations"].details-mode .specialization-details-section p,
+body[data-page="specializations"].details-mode #specializationDetails p,
+body[data-page="specializations"].details-mode #specializationDetailsBox p {
+  display: block !important;
+}
