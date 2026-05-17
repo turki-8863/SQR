@@ -4405,3 +4405,73 @@ body[data-page="specializations"].details-mode #specializationDetails p,
 body[data-page="specializations"].details-mode #specializationDetailsBox p {
   display: block !important;
 }
+body {
+  background:
+    radial-gradient(circle at top left, rgba(20, 184, 166, 0.14), transparent 35%),
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.16), transparent 35%),
+    linear-gradient(135deg, #020617 0%, #0f172a 45%, #111827 100%);
+  color: #e5e7eb;
+}
+
+.container,
+.page-container,
+.main-content {
+  background: transparent !important;
+}
+
+.card,
+form,
+#atsGenerateForm,
+#atsCheckForm,
+#recForm,
+.admin-panel,
+.profile-card {
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92)) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  color: #e5e7eb;
+}
+
+label {
+  color: #cbd5e1 !important;
+}
+
+.required::after,
+.required-star {
+  color: #fb7185;
+}
+
+input,
+textarea,
+select {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.25) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.16);
+}
+
+h1,
+h2,
+h3 {
+  color: #f8fafc;
+}
+
+.subtitle,
+p {
+  color: #cbd5e1;
+}
+.dark-card {
+  background: linear-gradient(145deg, #0f172a, #1e293b) !important;
+}
