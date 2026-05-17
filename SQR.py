@@ -330,15 +330,19 @@ def strong_password(password):
     )
 
 
+
 def generate_username(name, email):
     base = (email.split("@")[0] if email and "@" in email else name).strip().lower()
     base = re.sub(r"[^a-z0-9_]+", "_", base).strip("_") or "student"
+    if not column_exists("users", "username"):
+        return base
     candidate = base
     counter = 1
     while query_db("SELECT id FROM users WHERE username=%s", (candidate,), fetchone=True):
         counter += 1
         candidate = f"{base}{counter}"
     return candidate
+
 
 
 def generate_token(user):
@@ -355,6 +359,7 @@ def generate_token(user):
     return jwt.encode(payload, app.config["SECRET_KEY"], algorithm="HS256")
 
 
+
 def get_current_user():
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
     if not token:
@@ -365,11 +370,12 @@ def get_current_user():
         user = query_db("SELECT * FROM users WHERE id=%s", (uid,), fetchone=True)
         if not user:
             return None
-        if safe_int(user.get("banned"), 0) == 1:
+        if safe_int(row_value(user, "banned", "is_banned"), 0) == 1:
             return None
         return user
     except Exception:
         return None
+
 
 
 def login_required(func):
@@ -489,16 +495,21 @@ def ai_json(prompt, fallback):
         return fallback
 
 
+
 def init_db():
+    """Create/patch the database without deleting project features.
+    This version matches the Railway dump tables: specialization_id, course_id,
+    quiz_id, job_id, specialization_enrollments, course_enrollments, and ats_id.
+    """
     statements = [
         """
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(120) UNIQUE,
-            name VARCHAR(160) NOT NULL,
-            email VARCHAR(180) NOT NULL UNIQUE,
+            name VARCHAR(100) NOT NULL,
+            email VARCHAR(150) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL,
-            role ENUM('student','admin') DEFAULT 'student',
+            role ENUM('student','admin') NOT NULL DEFAULT 'student',
+            is_banned TINYINT(1) DEFAULT 0,
             current_mode ENUM('student','admin') DEFAULT 'student',
             banned TINYINT DEFAULT 0,
             skills TEXT,
@@ -509,18 +520,26 @@ def init_db():
         """,
         """
         CREATE TABLE IF NOT EXISTS admins (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            admin_id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL UNIQUE,
-            admin_level VARCHAR(80) DEFAULT 'manager',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            admin_level ENUM('owner','manager') DEFAULT 'manager',
+            can_manage_users TINYINT(1) DEFAULT 1,
+            can_manage_specializations TINYINT(1) DEFAULT 1,
+            can_manage_courses TINYINT(1) DEFAULT 1,
+            can_manage_quizzes TINYINT(1) DEFAULT 1,
+            can_view_reports TINYINT(1) DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS specializations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(180) NOT NULL,
+            specialization_id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
             description TEXT,
+            roadmap TEXT,
+            job_titles TEXT,
+            career_paths TEXT,
+            image_url VARCHAR(255),
             skills TEXT,
             image VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -528,78 +547,179 @@ def init_db():
         """,
         """
         CREATE TABLE IF NOT EXISTS courses (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            spec_id INT,
-            title VARCHAR(220) NOT NULL,
+            course_id INT AUTO_INCREMENT PRIMARY KEY,
+            specialization_id INT NOT NULL,
+            title VARCHAR(150) NOT NULL,
             description TEXT,
-            level VARCHAR(40) DEFAULT 'beginner',
-            link TEXT,
+            level ENUM('Beginner','Intermediate','Advanced') DEFAULT 'Beginner',
+            course_link VARCHAR(255),
+            video_url VARCHAR(255),
+            image_url VARCHAR(255),
+            spec_id INT,
+            link VARCHAR(255),
             image VARCHAR(255),
             video VARCHAR(255),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (spec_id) REFERENCES specializations(id) ON DELETE SET NULL
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS certificates (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            specialization_id INT,
-            name VARCHAR(220) NOT NULL,
+            spec_id INT NOT NULL,
+            name VARCHAR(150) NOT NULL,
             description TEXT,
-            link TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (specialization_id) REFERENCES specializations(id) ON DELETE SET NULL
+            link VARCHAR(255),
+            price VARCHAR(100),
+            type ENUM('practical','theoretical','both') DEFAULT 'both',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS quizzes (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            course_id INT,
-            title VARCHAR(220) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS quiz_questions (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            quiz_id INT NOT NULL,
-            question TEXT NOT NULL,
-            option1 TEXT,
-            option2 TEXT,
-            option3 TEXT,
-            option4 TEXT,
-            answer VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
+        CREATE TABLE IF NOT EXISTS certifications (
+            certification_id INT AUTO_INCREMENT PRIMARY KEY,
+            specialization_id INT NOT NULL,
+            name VARCHAR(150) NOT NULL,
+            description TEXT,
+            official_link VARCHAR(255),
+            price VARCHAR(50),
+            type ENUM('Practical','Theoretical','Both') DEFAULT 'Both',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS jobs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            specialization_id INT,
-            title VARCHAR(220) NOT NULL,
+            job_id INT AUTO_INCREMENT PRIMARY KEY,
+            specialization_id INT NOT NULL,
+            title VARCHAR(150) NOT NULL,
             description TEXT,
-            skills TEXT,
-            salary VARCHAR(120),
-            link TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (specialization_id) REFERENCES specializations(id) ON DELETE SET NULL
+            required_skills TEXT,
+            average_salary VARCHAR(100),
+            job_link VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS course_progress (
+        CREATE TABLE IF NOT EXISTS quizzes (
+            quiz_id INT AUTO_INCREMENT PRIMARY KEY,
+            course_id INT NOT NULL,
+            title VARCHAR(150) NOT NULL,
+            description TEXT,
+            total_questions INT DEFAULT 0,
+            spec_id INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS quiz_questions (
+            question_id INT AUTO_INCREMENT PRIMARY KEY,
+            quiz_id INT NOT NULL,
+            question_text TEXT NOT NULL,
+            option_a VARCHAR(255),
+            option_b VARCHAR(255),
+            option_c VARCHAR(255),
+            option_d VARCHAR(255),
+            correct_answer ENUM('A','B','C','D') NOT NULL,
+            score DECIMAL(5,2) DEFAULT 1.00,
+            question TEXT,
+            option1 VARCHAR(255),
+            option2 VARCHAR(255),
+            option3 VARCHAR(255),
+            option4 VARCHAR(255),
+            answer VARCHAR(255)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS specialization_enrollments (
+            enrollment_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            specialization_id INT NOT NULL,
+            progress_percentage DECIMAL(5,2) DEFAULT 0.00,
+            status ENUM('Not Started','In Progress','Completed') DEFAULT 'Not Started',
+            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP NULL DEFAULT NULL,
+            UNIQUE KEY unique_user_specialization (user_id, specialization_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS course_enrollments (
+            enrollment_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            course_id INT NOT NULL,
+            progress_percentage DECIMAL(5,2) DEFAULT 0.00,
+            status ENUM('Not Started','In Progress','Completed') DEFAULT 'Not Started',
+            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP NULL DEFAULT NULL,
+            UNIQUE KEY unique_user_course (user_id, course_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS quiz_attempts (
+            attempt_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            quiz_id INT NOT NULL,
+            score DECIMAL(5,2) DEFAULT 0.00,
+            passed TINYINT(1) DEFAULT 0,
+            attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS ats_results (
+            ats_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            resume_text LONGTEXT,
+            target_job VARCHAR(150),
+            ats_score DECIMAL(5,2) DEFAULT 0.00,
+            missing_keywords TEXT,
+            matched_keywords TEXT,
+            suggestions TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS recommendations (
+            recommendation_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            specialization_id INT NOT NULL,
+            assessment_id INT DEFAULT NULL,
+            match_score DECIMAL(5,2) DEFAULT 0.00,
+            explanation TEXT,
+            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS recommendation_results (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            recommendation_json LONGTEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_completed_courses (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             course_id INT NOT NULL,
-            opened TINYINT DEFAULT 1,
-            video_started TINYINT DEFAULT 0,
-            completed TINYINT DEFAULT 0,
-            opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY unique_course_user (user_id, course_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+            completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_completed_course (user_id, course_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_completed_quizzes (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            quiz_id INT NOT NULL,
+            score INT DEFAULT 0,
+            completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_completed_quiz (user_id, quiz_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS progress (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            spec_id INT NOT NULL,
+            progress INT DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
         """,
         """
@@ -609,52 +729,100 @@ def init_db():
             specialization_id INT NOT NULL,
             progress INT DEFAULT 0,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY unique_spec_user (user_id, specialization_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (specialization_id) REFERENCES specializations(id) ON DELETE CASCADE
+            UNIQUE KEY unique_spec_progress (user_id, specialization_id)
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS quiz_attempts (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            quiz_id INT NOT NULL,
-            course_id INT,
-            score INT DEFAULT 0,
-            total INT DEFAULT 0,
-            score_percentage INT DEFAULT 0,
-            answers_json TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
-            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL
+        CREATE TABLE IF NOT EXISTS students (
+            student_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL UNIQUE,
+            university VARCHAR(150),
+            major VARCHAR(100),
+            gpa DECIMAL(3,2),
+            skills TEXT,
+            interests TEXT,
+            graduation_year INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS ats_results (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS assessments (
+            assessment_id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
-            target_job VARCHAR(220),
-            score INT DEFAULT 0,
-            summary TEXT,
-            matched_keywords TEXT,
-            missing_keywords TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            title VARCHAR(150) DEFAULT 'Career Assessment',
+            description TEXT,
+            total_score DECIMAL(6,2) DEFAULT 0.00,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS recommendation_results (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS assessment_answers (
+            answer_id INT AUTO_INCREMENT PRIMARY KEY,
+            assessment_id INT NOT NULL,
+            question_text TEXT NOT NULL,
+            selected_option VARCHAR(255),
+            score DECIMAL(6,2) DEFAULT 0.00
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS cvs (
+            cv_id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
-            recommendation_json LONGTEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            file_url VARCHAR(255),
+            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
     ]
     for statement in statements:
-        exec_db(statement)
+        try:
+            exec_db(statement)
+        except Exception as exc:
+            print("init_db statement skipped:", exc)
+
+    compatibility_columns = {
+        "users": [
+            ("current_mode", "ENUM('student','admin') DEFAULT 'student'"),
+            ("banned", "TINYINT DEFAULT 0"),
+            ("skills", "TEXT"),
+            ("interests", "TEXT"),
+            ("goal", "TEXT"),
+        ],
+        "specializations": [
+            ("roadmap", "TEXT"),
+            ("job_titles", "TEXT"),
+            ("career_paths", "TEXT"),
+            ("image_url", "VARCHAR(255)"),
+            ("skills", "TEXT"),
+            ("image", "VARCHAR(255)"),
+        ],
+        "courses": [
+            ("spec_id", "INT"),
+            ("link", "VARCHAR(255)"),
+            ("image", "VARCHAR(255)"),
+            ("video", "VARCHAR(255)"),
+            ("course_link", "VARCHAR(255)"),
+            ("video_url", "VARCHAR(255)"),
+            ("image_url", "VARCHAR(255)"),
+        ],
+        "quiz_questions": [
+            ("question", "TEXT"),
+            ("option1", "VARCHAR(255)"),
+            ("option2", "VARCHAR(255)"),
+            ("option3", "VARCHAR(255)"),
+            ("option4", "VARCHAR(255)"),
+            ("answer", "VARCHAR(255)"),
+        ],
+    }
+    for table, columns in compatibility_columns.items():
+        if not table_exists(table):
+            continue
+        for column, definition in columns:
+            try:
+                if not column_exists(table, column):
+                    exec_db(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {definition}")
+            except Exception as exc:
+                print(f"init_db alter skipped for {table}.{column}:", exc)
+
 
 
 def render_page(template_name):
@@ -757,6 +925,7 @@ def health():
     })
 
 
+
 @app.route("/api/signup", methods=["POST"])
 def signup():
     data = get_json()
@@ -769,18 +938,29 @@ def signup():
         return jsonify({"error": "Password must be at least 8 characters and include uppercase, lowercase, number, and symbol"}), 400
     if query_db("SELECT id FROM users WHERE email=%s", (email,), fetchone=True):
         return jsonify({"error": "Email already exists"}), 409
-    username = generate_username(name, email)
     hashed_password = generate_password_hash(password, method="pbkdf2:sha256", salt_length=16)
-    user_id = query_db(
-        """
-        INSERT INTO users (username, name, email, password, role, current_mode, banned)
-        VALUES (%s,%s,%s,%s,'student','student',0)
-        """,
-        (username, name, email, hashed_password),
-        commit=True
-    )
+    if column_exists("users", "username"):
+        username = generate_username(name, email)
+        user_id = query_db(
+            """
+            INSERT INTO users (username, name, email, password, role, current_mode, banned)
+            VALUES (%s,%s,%s,%s,'student','student',0)
+            """,
+            (username, name, email, hashed_password),
+            commit=True
+        )
+    else:
+        user_id = query_db(
+            """
+            INSERT INTO users (name, email, password, role, current_mode, banned)
+            VALUES (%s,%s,%s,'student','student',0)
+            """,
+            (name, email, hashed_password),
+            commit=True
+        )
     user = query_db("SELECT * FROM users WHERE id=%s", (user_id,), fetchone=True)
     return jsonify({"message": "Account created", "token": generate_token(user), "user": clean_user(user)}), 201
+
 
 
 @app.route("/api/signin", methods=["POST"])
@@ -802,36 +982,70 @@ def me():
     return jsonify(clean_user(request.current_user))
 
 
+
 @app.route("/api/profile", methods=["GET"])
 @login_required
 def get_profile():
     user = clean_user(request.current_user)
     user_id = user["id"]
-    quiz_history = query_db(
-        """
-        SELECT qa.id, qa.score, qa.total, qa.score_percentage, qa.created_at, q.title AS quiz_title, c.title AS course_title
-        FROM quiz_attempts qa
-        LEFT JOIN quizzes q ON q.id=qa.quiz_id
-        LEFT JOIN courses c ON c.id=qa.course_id
-        WHERE qa.user_id=%s
-        ORDER BY qa.created_at DESC
-        LIMIT 30
-        """,
-        (user_id,),
-        fetchall=True
-    ) or []
-    ats_history = query_db(
-        """
-        SELECT id,target_job,score,summary,matched_keywords,missing_keywords,created_at
-        FROM ats_results
-        WHERE user_id=%s
-        ORDER BY created_at DESC
-        LIMIT 20
-        """,
-        (user_id,),
-        fetchall=True
-    ) or []
+    quiz_history = []
+    try:
+        quiz_history = query_db(
+            """
+            SELECT
+                qa.attempt_id AS id,
+                qa.attempt_id,
+                qa.score,
+                qa.passed,
+                qa.attempted_at AS created_at,
+                q.title AS quiz_title,
+                c.title AS course_title,
+                c.course_id,
+                CASE
+                    WHEN qa.score <= 1 THEN ROUND(qa.score * 100)
+                    ELSE ROUND(qa.score)
+                END AS score_percentage,
+                COALESCE((SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id=qa.quiz_id), 0) AS total
+            FROM quiz_attempts qa
+            LEFT JOIN quizzes q ON q.quiz_id=qa.quiz_id
+            LEFT JOIN courses c ON c.course_id=q.course_id
+            WHERE qa.user_id=%s
+            ORDER BY qa.attempted_at DESC
+            LIMIT 30
+            """,
+            (user_id,),
+            fetchall=True
+        ) or []
+    except Exception as exc:
+        print("PROFILE QUIZ HISTORY ERROR:", exc)
+
+    ats_history = []
+    try:
+        ats_history = query_db(
+            """
+            SELECT
+                ats_id AS id,
+                ats_id,
+                target_job,
+                ats_score AS score,
+                ats_score,
+                suggestions AS summary,
+                matched_keywords,
+                missing_keywords,
+                created_at
+            FROM ats_results
+            WHERE user_id=%s
+            ORDER BY created_at DESC
+            LIMIT 20
+            """,
+            (user_id,),
+            fetchall=True
+        ) or []
+    except Exception as exc:
+        print("PROFILE ATS HISTORY ERROR:", exc)
+
     return jsonify({"user": user, "quiz_history": quiz_history, "ats_history": ats_history})
+
 
 
 @app.route("/api/profile", methods=["PUT"])
@@ -850,33 +1064,61 @@ def update_profile():
     return jsonify({"message": "Profile updated", "user": clean_user(user)})
 
 
+
 def compute_user_progress(user_id):
     specs = query_db("SELECT * FROM specializations ORDER BY name", fetchall=True) or []
     progress_rows = []
     for spec in specs:
-        spec_id = spec["id"]
-        total_courses_row = query_db("SELECT COUNT(*) AS total FROM courses WHERE spec_id=%s", (spec_id,), fetchone=True) or {"total": 0}
-        total_courses = safe_int(total_courses_row.get("total"), 0)
-        opened_row = query_db(
-            """
-            SELECT COUNT(DISTINCT cp.course_id) AS total
-            FROM course_progress cp
-            JOIN courses c ON c.id=cp.course_id
-            WHERE cp.user_id=%s AND c.spec_id=%s AND cp.opened=1
-            """,
-            (user_id, spec_id),
+        spec_id = row_value(spec, "specialization_id", "id")
+        if not spec_id:
+            continue
+        total_courses_row = query_db(
+            "SELECT COUNT(*) AS total FROM courses WHERE specialization_id=%s",
+            (spec_id,),
             fetchone=True
         ) or {"total": 0}
-        quiz_row = query_db(
-            """
-            SELECT COUNT(DISTINCT qa.course_id) AS completed_quizzes, COALESCE(ROUND(AVG(qa.score_percentage),0),0) AS average_score
-            FROM quiz_attempts qa
-            JOIN courses c ON c.id=qa.course_id
-            WHERE qa.user_id=%s AND c.spec_id=%s AND qa.score_percentage >= 60
-            """,
-            (user_id, spec_id),
-            fetchone=True
-        ) or {"completed_quizzes": 0, "average_score": 0}
+        total_courses = safe_int(total_courses_row.get("total"), 0)
+
+        opened_row = {"total": 0}
+        if table_exists("course_enrollments"):
+            opened_row = query_db(
+                """
+                SELECT COUNT(DISTINCT ce.course_id) AS total
+                FROM course_enrollments ce
+                JOIN courses c ON c.course_id=ce.course_id
+                WHERE ce.user_id=%s AND c.specialization_id=%s
+                """,
+                (user_id, spec_id),
+                fetchone=True
+            ) or {"total": 0}
+        elif table_exists("user_completed_courses"):
+            opened_row = query_db(
+                """
+                SELECT COUNT(DISTINCT ucc.course_id) AS total
+                FROM user_completed_courses ucc
+                JOIN courses c ON c.course_id=ucc.course_id
+                WHERE ucc.user_id=%s AND c.specialization_id=%s
+                """,
+                (user_id, spec_id),
+                fetchone=True
+            ) or {"total": 0}
+
+        quiz_row = {"completed_quizzes": 0, "average_score": 0}
+        if table_exists("quiz_attempts"):
+            quiz_row = query_db(
+                """
+                SELECT
+                    COUNT(DISTINCT q.course_id) AS completed_quizzes,
+                    COALESCE(ROUND(AVG(CASE WHEN qa.score <= 1 THEN qa.score * 100 ELSE qa.score END),0),0) AS average_score
+                FROM quiz_attempts qa
+                JOIN quizzes q ON q.quiz_id=qa.quiz_id
+                JOIN courses c ON c.course_id=q.course_id
+                WHERE qa.user_id=%s AND c.specialization_id=%s AND (qa.passed=1 OR qa.score >= 60 OR qa.score >= 0.6)
+                """,
+                (user_id, spec_id),
+                fetchone=True
+            ) or {"completed_quizzes": 0, "average_score": 0}
+
         opened_courses = safe_int(opened_row.get("total"), 0)
         completed_quizzes = safe_int(quiz_row.get("completed_quizzes"), 0)
         average_score = safe_int(quiz_row.get("average_score"), 0)
@@ -886,24 +1128,50 @@ def compute_user_progress(user_id):
             opened_part = (opened_courses / total_courses) * 50
             quiz_part = (completed_quizzes / total_courses) * 50
             percent_value = max(0, min(100, round(opened_part + quiz_part)))
-        exec_db(
-            """
-            INSERT INTO specialization_progress (user_id, specialization_id, progress)
-            VALUES (%s,%s,%s)
-            ON DUPLICATE KEY UPDATE progress=%s
-            """,
-            (user_id, spec_id, percent_value, percent_value)
-        )
+
+        try:
+            if table_exists("specialization_progress"):
+                query_db(
+                    """
+                    INSERT INTO specialization_progress (user_id, specialization_id, progress)
+                    VALUES (%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE progress=%s
+                    """,
+                    (user_id, spec_id, percent_value, percent_value),
+                    commit=True
+                )
+        except Exception as exc:
+            print("SPECIALIZATION_PROGRESS SAVE ERROR:", exc)
+
+        try:
+            if table_exists("specialization_enrollments"):
+                status = "Completed" if percent_value >= 100 else ("In Progress" if percent_value > 0 else "Not Started")
+                query_db(
+                    """
+                    UPDATE specialization_enrollments
+                    SET progress_percentage=%s, status=%s, completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+                    WHERE user_id=%s AND specialization_id=%s
+                    """,
+                    (percent_value, status, percent_value, user_id, spec_id),
+                    commit=True
+                )
+        except Exception as exc:
+            print("SPECIALIZATION_ENROLLMENTS PROGRESS ERROR:", exc)
+
         progress_rows.append({
             "specialization_id": spec_id,
+            "id": spec_id,
             "specialization_name": spec.get("name"),
+            "name": spec.get("name"),
             "total_courses": total_courses,
             "opened_courses": opened_courses,
             "completed_quizzes": completed_quizzes,
             "average_quiz_score": average_score,
             "progress": percent_value,
+            "percentage": percent_value,
         })
     return progress_rows
+
 
 
 @app.route("/api/profile/progress")
@@ -911,21 +1179,6 @@ def compute_user_progress(user_id):
 def profile_progress():
     return jsonify({"progress": compute_user_progress(request.current_user["id"])})
 
-
-@app.route("/api/specializations", methods=["GET"])
-def get_specializations():
-    rows = query_db(
-        """
-        SELECT *
-        FROM specializations
-        ORDER BY specialization_id DESC
-        """,
-        fetchall=True
-    ) or []
-
-    return jsonify({
-        "specializations": [normalize_specialization(row) for row in rows]
-    }), 200
 
 
 @app.route("/api/specializations", methods=["GET"])
@@ -935,38 +1188,99 @@ def get_specializations():
             """
             SELECT *
             FROM specializations
-            ORDER BY id DESC
+            ORDER BY specialization_id DESC
             """,
             fetchall=True
         ) or []
-
-        return jsonify({
-            "specializations": [normalize_specialization(row) for row in rows]
-        }), 200
-
+        return jsonify({"specializations": [normalize_specialization(row) for row in rows]}), 200
     except Exception as e:
         print("GET SPECIALIZATIONS ERROR:", str(e))
         return jsonify({"error": "Could not load specializations", "details": str(e)}), 500
-        
+
+
+@app.route("/api/specializations/<int:spec_id>", methods=["GET"])
+def get_specialization(spec_id):
+    try:
+        spec = query_db("SELECT * FROM specializations WHERE specialization_id=%s", (spec_id,), fetchone=True)
+        if not spec:
+            return jsonify({"error": "Specialization not found"}), 404
+
+        courses = query_db(
+            """
+            SELECT *
+            FROM courses
+            WHERE specialization_id=%s
+            ORDER BY course_id DESC
+            """,
+            (spec_id,),
+            fetchall=True
+        ) or []
+
+        jobs = query_db(
+            """
+            SELECT *
+            FROM jobs
+            WHERE specialization_id=%s
+            ORDER BY job_id DESC
+            """,
+            (spec_id,),
+            fetchall=True
+        ) or []
+
+        certificates = []
+        if table_exists("certificates"):
+            certificates = query_db(
+                """
+                SELECT id, spec_id AS specialization_id, name, description, link, price, type, created_at
+                FROM certificates
+                WHERE spec_id=%s
+                ORDER BY id DESC
+                """,
+                (spec_id,),
+                fetchall=True
+            ) or []
+        certifications = []
+        if table_exists("certifications"):
+            certifications = query_db(
+                """
+                SELECT certification_id AS id, specialization_id, name, description, official_link AS link, price, type, created_at
+                FROM certifications
+                WHERE specialization_id=%s
+                ORDER BY certification_id DESC
+                """,
+                (spec_id,),
+                fetchall=True
+            ) or []
+
+        merged_certs = certificates + certifications
+        return jsonify({
+            "specialization": normalize_specialization(spec),
+            "courses": [normalize_course(row) for row in courses],
+            "jobs": [normalize_job(row) for row in jobs],
+            "certificates": merged_certs,
+            "certifications": merged_certs
+        }), 200
+    except Exception as e:
+        print("SPECIALIZATION DETAILS ERROR:", str(e))
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+
+
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
 @login_required
 def specialization_enrollment_status(spec_id):
     try:
         user_id = request.current_user["id"]
-
         row = query_db(
             """
             SELECT 1
             FROM specialization_enrollments
-            WHERE user_id = %s AND specialization_id = %s
+            WHERE user_id=%s AND specialization_id=%s
             LIMIT 1
             """,
             (user_id, spec_id),
             fetchone=True
         )
-
-        return jsonify({"enrolled": bool(row)}), 200
-
+        return jsonify({"enrolled": bool(row), "is_enrolled": bool(row), "user_enrolled": bool(row)}), 200
     except Exception as e:
         print("SPECIALIZATION STATUS ERROR:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
@@ -977,51 +1291,30 @@ def specialization_enrollment_status(spec_id):
 def enroll_specialization(spec_id):
     try:
         user_id = request.current_user["id"]
-
-        spec = query_db(
-            """
-            SELECT id
-            FROM specializations
-            WHERE id = %s
-            """,
-            (spec_id,),
-            fetchone=True
-        )
-
+        spec = query_db("SELECT specialization_id FROM specializations WHERE specialization_id=%s", (spec_id,), fetchone=True)
         if not spec:
             return jsonify({"error": "Specialization not found"}), 404
-
         existing = query_db(
             """
             SELECT 1
             FROM specialization_enrollments
-            WHERE user_id = %s AND specialization_id = %s
+            WHERE user_id=%s AND specialization_id=%s
             LIMIT 1
             """,
             (user_id, spec_id),
             fetchone=True
         )
-
         if existing:
-            return jsonify({
-                "message": "Already enrolled",
-                "enrolled": True
-            }), 200
-
+            return jsonify({"message": "Already enrolled", "enrolled": True}), 200
         query_db(
             """
-            INSERT INTO specialization_enrollments (user_id, specialization_id)
-            VALUES (%s, %s)
+            INSERT INTO specialization_enrollments (user_id, specialization_id, progress_percentage, status)
+            VALUES (%s,%s,0,'Not Started')
             """,
             (user_id, spec_id),
             commit=True
         )
-
-        return jsonify({
-            "message": "Enrolled successfully",
-            "enrolled": True
-        }), 201
-
+        return jsonify({"message": "Enrolled successfully", "enrolled": True}), 201
     except Exception as e:
         print("SPECIALIZATION ENROLL ERROR:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
@@ -1032,52 +1325,75 @@ def enroll_specialization(spec_id):
 def unenroll_specialization(spec_id):
     try:
         user_id = request.current_user["id"]
-
         query_db(
             """
             DELETE FROM specialization_enrollments
-            WHERE user_id = %s AND specialization_id = %s
+            WHERE user_id=%s AND specialization_id=%s
             """,
             (user_id, spec_id),
             commit=True
         )
-
-        return jsonify({
-            "message": "Unenrolled successfully",
-            "enrolled": False
-        }), 200
-
+        return jsonify({"message": "Unenrolled successfully", "enrolled": False}), 200
     except Exception as e:
         print("SPECIALIZATION UNENROLL ERROR:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
+
+
+
 
 @app.route("/api/specializations", methods=["POST"])
 @admin_required
 def add_specialization():
     data = request_data()
-    image = save_file("image") or safe_text(data.get("image"))
+    image = save_file("image") or safe_text(data.get("image") or data.get("image_url"))
     name = safe_text(data.get("name"))
     if not name:
         return jsonify({"error": "Specialization name is required"}), 400
     spec_id = query_db(
-        "INSERT INTO specializations (name, description, skills, image) VALUES (%s,%s,%s,%s)",
-        (name, safe_text(data.get("description")), safe_text(data.get("skills")), image),
+        """
+        INSERT INTO specializations (name, description, roadmap, job_titles, career_paths, skills, image_url, image)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            name,
+            safe_text(data.get("description")),
+            safe_text(data.get("roadmap")),
+            safe_text(data.get("job_titles")),
+            safe_text(data.get("career_paths")),
+            safe_text(data.get("skills")),
+            image,
+            image,
+        ),
         commit=True
     )
-    return jsonify({"message": "Specialization added", "id": spec_id})
+    return jsonify({"message": "Specialization added", "id": spec_id, "specialization_id": spec_id})
 
 
 @app.route("/api/specializations/<int:spec_id>", methods=["PUT"])
 @admin_required
 def update_specialization(spec_id):
     data = request_data()
-    old = query_db("SELECT * FROM specializations WHERE id=%s", (spec_id,), fetchone=True)
+    old = query_db("SELECT * FROM specializations WHERE specialization_id=%s", (spec_id,), fetchone=True)
     if not old:
         return jsonify({"error": "Specialization not found"}), 404
-    image = save_file("image") or safe_text(data.get("image")) or old.get("image")
+    image = save_file("image") or safe_text(data.get("image") or data.get("image_url")) or row_value(old, "image_url", "image")
     exec_db(
-        "UPDATE specializations SET name=%s, description=%s, skills=%s, image=%s WHERE id=%s",
-        (safe_text(data.get("name")) or old.get("name"), safe_text(data.get("description")), safe_text(data.get("skills")), image, spec_id)
+        """
+        UPDATE specializations
+        SET name=%s, description=%s, roadmap=%s, job_titles=%s, career_paths=%s, skills=%s, image_url=%s, image=%s
+        WHERE specialization_id=%s
+        """,
+        (
+            safe_text(data.get("name")) or old.get("name"),
+            safe_text(data.get("description")) or old.get("description"),
+            safe_text(data.get("roadmap")) or old.get("roadmap"),
+            safe_text(data.get("job_titles")) or old.get("job_titles"),
+            safe_text(data.get("career_paths")) or old.get("career_paths"),
+            safe_text(data.get("skills")) or old.get("skills"),
+            image,
+            image,
+            spec_id,
+        )
     )
     return jsonify({"message": "Specialization updated"})
 
@@ -1085,33 +1401,49 @@ def update_specialization(spec_id):
 @app.route("/api/specializations/<int:spec_id>", methods=["DELETE"])
 @admin_required
 def delete_specialization(spec_id):
-    exec_db("DELETE FROM specializations WHERE id=%s", (spec_id,))
+    exec_db("DELETE FROM specializations WHERE specialization_id=%s", (spec_id,))
     return jsonify({"message": "Specialization deleted"})
+
+
 
 
 @app.route("/api/courses", methods=["GET"])
 def get_courses():
     spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
     search = safe_text(request.args.get("search"))
-    sql = "SELECT c.*, s.name AS specialization_name FROM courses c LEFT JOIN specializations s ON s.id=c.spec_id WHERE 1=1"
+    sql = """
+        SELECT c.*, s.name AS specialization_name
+        FROM courses c
+        LEFT JOIN specializations s ON s.specialization_id=c.specialization_id
+        WHERE 1=1
+    """
     params = []
     if spec_id:
-        sql += " AND c.spec_id=%s"
+        sql += " AND c.specialization_id=%s"
         params.append(spec_id)
     if search:
         sql += " AND (c.title LIKE %s OR c.description LIKE %s OR c.level LIKE %s)"
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-    sql += " ORDER BY c.id DESC"
+    sql += " ORDER BY c.course_id DESC"
     rows = query_db(sql, tuple(params), fetchall=True) or []
     return jsonify({"courses": [normalize_course(row) for row in rows]})
 
 
 @app.route("/api/courses/<int:course_id>", methods=["GET"])
 def get_course(course_id):
-    course = query_db("SELECT c.*, s.name AS specialization_name FROM courses c LEFT JOIN specializations s ON s.id=c.spec_id WHERE c.id=%s", (course_id,), fetchone=True)
+    course = query_db(
+        """
+        SELECT c.*, s.name AS specialization_name
+        FROM courses c
+        LEFT JOIN specializations s ON s.specialization_id=c.specialization_id
+        WHERE c.course_id=%s
+        """,
+        (course_id,),
+        fetchone=True
+    )
     if not course:
         return jsonify({"error": "Course not found"}), 404
-    quizzes = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY id DESC", (course_id,), fetchall=True) or []
+    quizzes = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY quiz_id DESC", (course_id,), fetchall=True) or []
     return jsonify({"course": normalize_course(course), "quizzes": [normalize_quiz(row) for row in quizzes]})
 
 
@@ -1119,50 +1451,69 @@ def get_course(course_id):
 @admin_required
 def add_course():
     data = request_data()
-    image = save_file("image") or safe_text(data.get("image"))
-    video = save_file("video") or safe_text(data.get("video"))
+    image = save_file("image") or safe_text(data.get("image") or data.get("image_url"))
+    video = save_file("video") or safe_text(data.get("video") or data.get("video_url"))
     title = safe_text(data.get("title"))
+    spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not title:
         return jsonify({"error": "Course title is required"}), 400
+    if not spec_id:
+        return jsonify({"error": "Specialization is required"}), 400
+    level = normalize_level(data.get("level")).capitalize()
+    if level == "Intermediate":
+        level = "Intermediate"
     course_id = query_db(
         """
-        INSERT INTO courses (spec_id,title,description,level,link,image,video)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        INSERT INTO courses (specialization_id, spec_id, title, description, level, course_link, link, image_url, image, video_url, video)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
-            safe_int(data.get("spec_id") or data.get("specialization_id"), None),
+            spec_id,
+            spec_id,
             title,
             safe_text(data.get("description")),
-            normalize_level(data.get("level")),
-            safe_text(data.get("link") or data.get("course_link")),
+            level,
+            safe_text(data.get("course_link") or data.get("link")),
+            safe_text(data.get("course_link") or data.get("link")),
             image,
+            image,
+            video,
             video,
         ),
         commit=True
     )
-    return jsonify({"message": "Course added", "id": course_id})
+    return jsonify({"message": "Course added", "id": course_id, "course_id": course_id})
 
 
 @app.route("/api/courses/<int:course_id>", methods=["PUT"])
 @admin_required
 def update_course(course_id):
     data = request_data()
-    old = query_db("SELECT * FROM courses WHERE id=%s", (course_id,), fetchone=True)
+    old = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
     if not old:
         return jsonify({"error": "Course not found"}), 404
-    image = save_file("image") or safe_text(data.get("image")) or old.get("image")
-    video = save_file("video") or safe_text(data.get("video")) or old.get("video")
+    image = save_file("image") or safe_text(data.get("image") or data.get("image_url")) or row_value(old, "image_url", "image")
+    video = save_file("video") or safe_text(data.get("video") or data.get("video_url")) or row_value(old, "video_url", "video")
+    spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), row_value(old, "specialization_id", "spec_id"))
+    level = normalize_level(data.get("level") or old.get("level")).capitalize()
     exec_db(
         """
-        UPDATE courses SET spec_id=%s,title=%s,description=%s,level=%s,link=%s,image=%s,video=%s WHERE id=%s
+        UPDATE courses
+        SET specialization_id=%s, spec_id=%s, title=%s, description=%s, level=%s,
+            course_link=%s, link=%s, image_url=%s, image=%s, video_url=%s, video=%s
+        WHERE course_id=%s
         """,
         (
-            safe_int(data.get("spec_id") or data.get("specialization_id"), old.get("spec_id")),
+            spec_id,
+            spec_id,
             safe_text(data.get("title")) or old.get("title"),
-            safe_text(data.get("description")),
-            normalize_level(data.get("level") or old.get("level")),
-            safe_text(data.get("link") or data.get("course_link") or old.get("link")),
+            safe_text(data.get("description")) or old.get("description"),
+            level,
+            safe_text(data.get("course_link") or data.get("link") or row_value(old, "course_link", "link")),
+            safe_text(data.get("course_link") or data.get("link") or row_value(old, "course_link", "link")),
             image,
+            image,
+            video,
             video,
             course_id,
         )
@@ -1173,50 +1524,77 @@ def update_course(course_id):
 @app.route("/api/courses/<int:course_id>", methods=["DELETE"])
 @admin_required
 def delete_course(course_id):
-    exec_db("DELETE FROM courses WHERE id=%s", (course_id,))
+    exec_db("DELETE FROM courses WHERE course_id=%s", (course_id,))
     return jsonify({"message": "Course deleted"})
 
 
 @app.route("/api/courses/<int:course_id>/open", methods=["POST"])
 @student_required
 def open_course(course_id):
-    course = query_db("SELECT id FROM courses WHERE id=%s", (course_id,), fetchone=True)
+    course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
     if not course:
         return jsonify({"error": "Course not found"}), 404
     data = get_json()
-    video_started = 1 if data.get("video_started") else 0
     completed = 1 if data.get("completed") else 0
-    exec_db(
+    status = "Completed" if completed else "In Progress"
+    progress_value = 100 if completed else 25
+    query_db(
         """
-        INSERT INTO course_progress (user_id,course_id,opened,video_started,completed)
-        VALUES (%s,%s,1,%s,%s)
-        ON DUPLICATE KEY UPDATE opened=1, video_started=GREATEST(video_started,VALUES(video_started)), completed=GREATEST(completed,VALUES(completed))
+        INSERT INTO course_enrollments (user_id, course_id, progress_percentage, status, completed_at)
+        VALUES (%s,%s,%s,%s,CASE WHEN %s=100 THEN CURRENT_TIMESTAMP ELSE NULL END)
+        ON DUPLICATE KEY UPDATE
+            progress_percentage=GREATEST(progress_percentage, VALUES(progress_percentage)),
+            status=CASE WHEN VALUES(progress_percentage) >= 100 THEN 'Completed' ELSE 'In Progress' END,
+            completed_at=CASE WHEN VALUES(progress_percentage) >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
         """,
-        (request.current_user["id"], course_id, video_started, completed)
+        (request.current_user["id"], course_id, progress_value, status, progress_value),
+        commit=True
     )
+    if completed and table_exists("user_completed_courses"):
+        query_db(
+            "INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)",
+            (request.current_user["id"], course_id),
+            commit=True
+        )
     compute_user_progress(request.current_user["id"])
     return jsonify({"message": "Course progress tracked"})
+
+
 
 
 @app.route("/api/quizzes", methods=["GET"])
 def get_quizzes():
     course_id = request.args.get("course_id")
-    sql = "SELECT q.*, c.title AS course_title FROM quizzes q LEFT JOIN courses c ON c.id=q.course_id WHERE 1=1"
+    sql = """
+        SELECT q.*, c.title AS course_title
+        FROM quizzes q
+        LEFT JOIN courses c ON c.course_id=q.course_id
+        WHERE 1=1
+    """
     params = []
     if course_id:
         sql += " AND q.course_id=%s"
         params.append(course_id)
-    sql += " ORDER BY q.id DESC"
+    sql += " ORDER BY q.quiz_id DESC"
     rows = query_db(sql, tuple(params), fetchall=True) or []
     return jsonify({"quizzes": [normalize_quiz(row) for row in rows]})
 
 
 @app.route("/api/quizzes/<int:quiz_id>", methods=["GET"])
 def get_quiz(quiz_id):
-    quiz = query_db("SELECT q.*, c.title AS course_title FROM quizzes q LEFT JOIN courses c ON c.id=q.course_id WHERE q.id=%s", (quiz_id,), fetchone=True)
+    quiz = query_db(
+        """
+        SELECT q.*, c.title AS course_title
+        FROM quizzes q
+        LEFT JOIN courses c ON c.course_id=q.course_id
+        WHERE q.quiz_id=%s
+        """,
+        (quiz_id,),
+        fetchone=True
+    )
     if not quiz:
         return jsonify({"error": "Quiz not found"}), 404
-    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id", (quiz_id,), fetchall=True) or []
+    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY question_id", (quiz_id,), fetchall=True) or []
     return jsonify({"quiz": normalize_quiz(quiz), "questions": [normalize_question(row) for row in questions]})
 
 
@@ -1228,33 +1606,44 @@ def add_quiz():
     course_id = safe_int(data.get("course_id"), None)
     if not title or not course_id:
         return jsonify({"error": "Quiz title and course are required"}), 400
-    quiz_id = query_db("INSERT INTO quizzes (course_id,title) VALUES (%s,%s)", (course_id, title), commit=True)
+    course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
+    if not course:
+        return jsonify({"error": "Course not found"}), 404
+    quiz_id = query_db(
+        "INSERT INTO quizzes (course_id,title,description,total_questions,spec_id) VALUES (%s,%s,%s,0,%s)",
+        (course_id, title, safe_text(data.get("description")), row_value(course, "specialization_id", "spec_id")),
+        commit=True
+    )
     questions = data.get("questions") or []
     if not questions and data.get("questions_json"):
         try:
             questions = json.loads(data.get("questions_json"))
         except Exception:
             questions = []
+    count = 0
     for q in questions:
         add_question_to_quiz(quiz_id, q)
-    return jsonify({"message": "Quiz added", "id": quiz_id})
+        count += 1
+    exec_db("UPDATE quizzes SET total_questions=%s WHERE quiz_id=%s", (count, quiz_id))
+    return jsonify({"message": "Quiz added", "id": quiz_id, "quiz_id": quiz_id})
 
 
 def add_question_to_quiz(quiz_id, data):
+    question = safe_text(data.get("question") or data.get("question_text"))
+    option_a = safe_text(data.get("option_a") or data.get("option1"))
+    option_b = safe_text(data.get("option_b") or data.get("option2"))
+    option_c = safe_text(data.get("option_c") or data.get("option3"))
+    option_d = safe_text(data.get("option_d") or data.get("option4"))
+    answer = safe_text(data.get("correct_answer") or data.get("answer")).upper()
+    aliases = {"1": "A", "2": "B", "3": "C", "4": "D", option_a.upper(): "A", option_b.upper(): "B", option_c.upper(): "C", option_d.upper(): "D"}
+    answer = aliases.get(answer, answer if answer in ["A", "B", "C", "D"] else "A")
     return query_db(
         """
-        INSERT INTO quiz_questions (quiz_id,question,option1,option2,option3,option4,answer)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        INSERT INTO quiz_questions
+            (quiz_id,question_text,option_a,option_b,option_c,option_d,correct_answer,question,option1,option2,option3,option4,answer)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
-        (
-            quiz_id,
-            safe_text(data.get("question") or data.get("question_text")),
-            safe_text(data.get("option1") or data.get("option_a")),
-            safe_text(data.get("option2") or data.get("option_b")),
-            safe_text(data.get("option3") or data.get("option_c")),
-            safe_text(data.get("option4") or data.get("option_d")),
-            safe_text(data.get("answer") or data.get("correct_answer")),
-        ),
+        (quiz_id, question, option_a, option_b, option_c, option_d, answer, question, option_a, option_b, option_c, option_d, answer),
         commit=True
     )
 
@@ -1263,13 +1652,15 @@ def add_question_to_quiz(quiz_id, data):
 @admin_required
 def add_quiz_question(quiz_id):
     question_id = add_question_to_quiz(quiz_id, get_json())
+    row = query_db("SELECT COUNT(*) AS total FROM quiz_questions WHERE quiz_id=%s", (quiz_id,), fetchone=True) or {"total": 0}
+    exec_db("UPDATE quizzes SET total_questions=%s WHERE quiz_id=%s", (safe_int(row.get("total"), 0), quiz_id))
     return jsonify({"message": "Question added", "id": question_id})
 
 
 @app.route("/api/quizzes/<int:quiz_id>", methods=["DELETE"])
 @admin_required
 def delete_quiz(quiz_id):
-    exec_db("DELETE FROM quizzes WHERE id=%s", (quiz_id,))
+    exec_db("DELETE FROM quizzes WHERE quiz_id=%s", (quiz_id,))
     return jsonify({"message": "Quiz deleted"})
 
 
@@ -1278,63 +1669,99 @@ def delete_quiz(quiz_id):
 def submit_quiz(quiz_id):
     data = get_json()
     answers = data.get("answers") or {}
-    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id", (quiz_id,), fetchall=True) or []
-    quiz = query_db("SELECT * FROM quizzes WHERE id=%s", (quiz_id,), fetchone=True)
+    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY question_id", (quiz_id,), fetchall=True) or []
+    quiz = query_db("SELECT * FROM quizzes WHERE quiz_id=%s", (quiz_id,), fetchone=True)
     if not quiz:
         return jsonify({"error": "Quiz not found"}), 404
     score = 0
     details = []
     for q in questions:
-        qid = str(q["id"])
-        given = safe_text(answers.get(qid) or answers.get(q["id"])).lower()
-        correct = safe_text(q.get("answer")).lower()
-        ok = given == correct or given in ["1", "a"] and correct in ["a", "1", safe_text(q.get("option1")).lower()] or given in ["2", "b"] and correct in ["b", "2", safe_text(q.get("option2")).lower()] or given in ["3", "c"] and correct in ["c", "3", safe_text(q.get("option3")).lower()] or given in ["4", "d"] and correct in ["d", "4", safe_text(q.get("option4")).lower()]
+        qid = str(row_value(q, "question_id", "id"))
+        given = safe_text(answers.get(qid) or answers.get(row_value(q, "question_id", "id"))).upper()
+        correct = safe_text(row_value(q, "correct_answer", "answer")).upper()
+        normalized = {"1": "A", "2": "B", "3": "C", "4": "D"}.get(given, given)
+        ok = normalized == correct
         if ok:
             score += 1
-        details.append({"question_id": q["id"], "given": given, "correct": correct, "correct_boolean": bool(ok)})
+        details.append({"question_id": qid, "given": normalized, "correct": correct, "correct_boolean": bool(ok)})
     total = len(questions)
     percentage = round((score / total) * 100) if total else 0
+    passed = 1 if percentage >= 60 else 0
     attempt_id = query_db(
         """
-        INSERT INTO quiz_attempts (user_id,quiz_id,course_id,score,total,score_percentage,answers_json)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        INSERT INTO quiz_attempts (user_id,quiz_id,score,passed)
+        VALUES (%s,%s,%s,%s)
         """,
-        (request.current_user["id"], quiz_id, quiz.get("course_id"), score, total, percentage, json.dumps(details)),
+        (request.current_user["id"], quiz_id, percentage, passed),
         commit=True
     )
-    if quiz.get("course_id"):
-        exec_db(
-            """
-            INSERT INTO course_progress (user_id,course_id,opened,completed)
-            VALUES (%s,%s,1,%s)
-            ON DUPLICATE KEY UPDATE opened=1, completed=GREATEST(completed,VALUES(completed))
-            """,
-            (request.current_user["id"], quiz.get("course_id"), 1 if percentage >= 60 else 0)
+    if passed and table_exists("user_completed_quizzes"):
+        query_db(
+            "INSERT INTO user_completed_quizzes (user_id, quiz_id, score) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE score=GREATEST(score,VALUES(score)), completed_at=CURRENT_TIMESTAMP",
+            (request.current_user["id"], quiz_id, percentage),
+            commit=True
         )
+    course_id = quiz.get("course_id")
+    if course_id:
+        progress_value = 100 if passed else 50
+        query_db(
+            """
+            INSERT INTO course_enrollments (user_id, course_id, progress_percentage, status, completed_at)
+            VALUES (%s,%s,%s,%s,CASE WHEN %s=100 THEN CURRENT_TIMESTAMP ELSE NULL END)
+            ON DUPLICATE KEY UPDATE
+                progress_percentage=GREATEST(progress_percentage,VALUES(progress_percentage)),
+                status=CASE WHEN VALUES(progress_percentage) >= 100 THEN 'Completed' ELSE 'In Progress' END,
+                completed_at=CASE WHEN VALUES(progress_percentage) >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+            """,
+            (request.current_user["id"], course_id, progress_value, "Completed" if passed else "In Progress", progress_value),
+            commit=True
+        )
+        if passed and table_exists("user_completed_courses"):
+            query_db(
+                "INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)",
+                (request.current_user["id"], course_id),
+                commit=True
+            )
     compute_user_progress(request.current_user["id"])
     return jsonify({"message": "Quiz submitted", "attempt_id": attempt_id, "score": score, "total": total, "score_percentage": percentage, "details": details})
+
+
 
 
 @app.route("/api/jobs", methods=["GET"])
 def get_jobs():
     search = safe_text(request.args.get("search"))
     spec_id = request.args.get("specialization_id") or request.args.get("spec_id")
-    sql = "SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.id=j.specialization_id WHERE 1=1"
+    sql = """
+        SELECT j.*, s.name AS specialization_name
+        FROM jobs j
+        LEFT JOIN specializations s ON s.specialization_id=j.specialization_id
+        WHERE 1=1
+    """
     params = []
     if search:
-        sql += " AND (j.title LIKE %s OR j.description LIKE %s OR j.skills LIKE %s)"
+        sql += " AND (j.title LIKE %s OR j.description LIKE %s OR j.required_skills LIKE %s)"
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
     if spec_id:
         sql += " AND j.specialization_id=%s"
         params.append(spec_id)
-    sql += " ORDER BY j.id DESC"
+    sql += " ORDER BY j.job_id DESC"
     rows = query_db(sql, tuple(params), fetchall=True) or []
     return jsonify({"jobs": [normalize_job(row) for row in rows]})
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["GET"])
 def get_job(job_id):
-    row = query_db("SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.id=j.specialization_id WHERE j.id=%s", (job_id,), fetchone=True)
+    row = query_db(
+        """
+        SELECT j.*, s.name AS specialization_name
+        FROM jobs j
+        LEFT JOIN specializations s ON s.specialization_id=j.specialization_id
+        WHERE j.job_id=%s
+        """,
+        (job_id,),
+        fetchone=True
+    )
     if not row:
         return jsonify({"error": "Job not found"}), 404
     return jsonify({"job": normalize_job(row)})
@@ -1345,26 +1772,44 @@ def get_job(job_id):
 def add_job():
     data = get_json()
     title = safe_text(data.get("title"))
+    spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not title:
         return jsonify({"error": "Job title is required"}), 400
+    if not spec_id:
+        return jsonify({"error": "Specialization is required"}), 400
     job_id = query_db(
-        "INSERT INTO jobs (specialization_id,title,description,skills,salary,link) VALUES (%s,%s,%s,%s,%s,%s)",
-        (safe_int(data.get("specialization_id") or data.get("spec_id"), None), title, safe_text(data.get("description")), safe_text(data.get("skills") or data.get("required_skills")), safe_text(data.get("salary")), safe_text(data.get("link") or data.get("job_link"))),
+        """
+        INSERT INTO jobs (specialization_id,title,description,required_skills,average_salary,job_link)
+        VALUES (%s,%s,%s,%s,%s,%s)
+        """,
+        (spec_id, title, safe_text(data.get("description")), safe_text(data.get("required_skills") or data.get("skills")), safe_text(data.get("average_salary") or data.get("salary")), safe_text(data.get("job_link") or data.get("link"))),
         commit=True
     )
-    return jsonify({"message": "Job added", "id": job_id})
+    return jsonify({"message": "Job added", "id": job_id, "job_id": job_id})
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["PUT"])
 @admin_required
 def update_job(job_id):
     data = get_json()
-    old = query_db("SELECT * FROM jobs WHERE id=%s", (job_id,), fetchone=True)
+    old = query_db("SELECT * FROM jobs WHERE job_id=%s", (job_id,), fetchone=True)
     if not old:
         return jsonify({"error": "Job not found"}), 404
     exec_db(
-        "UPDATE jobs SET specialization_id=%s,title=%s,description=%s,skills=%s,salary=%s,link=%s WHERE id=%s",
-        (safe_int(data.get("specialization_id") or data.get("spec_id"), old.get("specialization_id")), safe_text(data.get("title")) or old.get("title"), safe_text(data.get("description")), safe_text(data.get("skills") or data.get("required_skills")), safe_text(data.get("salary")), safe_text(data.get("link") or data.get("job_link")), job_id)
+        """
+        UPDATE jobs
+        SET specialization_id=%s,title=%s,description=%s,required_skills=%s,average_salary=%s,job_link=%s
+        WHERE job_id=%s
+        """,
+        (
+            safe_int(data.get("specialization_id") or data.get("spec_id"), old.get("specialization_id")),
+            safe_text(data.get("title")) or old.get("title"),
+            safe_text(data.get("description")) or old.get("description"),
+            safe_text(data.get("required_skills") or data.get("skills") or old.get("required_skills")),
+            safe_text(data.get("average_salary") or data.get("salary") or old.get("average_salary")),
+            safe_text(data.get("job_link") or data.get("link") or old.get("job_link")),
+            job_id,
+        )
     )
     return jsonify({"message": "Job updated"})
 
@@ -1372,13 +1817,33 @@ def update_job(job_id):
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
 @admin_required
 def delete_job(job_id):
-    exec_db("DELETE FROM jobs WHERE id=%s", (job_id,))
+    exec_db("DELETE FROM jobs WHERE job_id=%s", (job_id,))
     return jsonify({"message": "Job deleted"})
 
 
 @app.route("/api/certificates", methods=["GET"])
 def get_certificates():
-    rows = query_db("SELECT c.*, s.name AS specialization_name FROM certificates c LEFT JOIN specializations s ON s.id=c.specialization_id ORDER BY c.id DESC", fetchall=True) or []
+    rows = []
+    if table_exists("certificates"):
+        rows += query_db(
+            """
+            SELECT c.id, c.spec_id AS specialization_id, c.name, c.description, c.link, c.price, c.type, c.created_at, s.name AS specialization_name
+            FROM certificates c
+            LEFT JOIN specializations s ON s.specialization_id=c.spec_id
+            ORDER BY c.id DESC
+            """,
+            fetchall=True
+        ) or []
+    if table_exists("certifications"):
+        rows += query_db(
+            """
+            SELECT c.certification_id AS id, c.specialization_id, c.name, c.description, c.official_link AS link, c.price, c.type, c.created_at, s.name AS specialization_name
+            FROM certifications c
+            LEFT JOIN specializations s ON s.specialization_id=c.specialization_id
+            ORDER BY c.certification_id DESC
+            """,
+            fetchall=True
+        ) or []
     return jsonify({"certificates": rows})
 
 
@@ -1387,11 +1852,14 @@ def get_certificates():
 def add_certificate():
     data = get_json()
     name = safe_text(data.get("name"))
+    spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not name:
         return jsonify({"error": "Certificate name is required"}), 400
+    if not spec_id:
+        return jsonify({"error": "Specialization is required"}), 400
     cert_id = query_db(
-        "INSERT INTO certificates (specialization_id,name,description,link) VALUES (%s,%s,%s,%s)",
-        (safe_int(data.get("specialization_id") or data.get("spec_id"), None), name, safe_text(data.get("description")), safe_text(data.get("link"))),
+        "INSERT INTO certificates (spec_id,name,description,link,price,type) VALUES (%s,%s,%s,%s,%s,%s)",
+        (spec_id, name, safe_text(data.get("description")), safe_text(data.get("link") or data.get("official_link")), safe_text(data.get("price")), safe_text(data.get("type")).lower() or "both"),
         commit=True
     )
     return jsonify({"message": "Certificate added", "id": cert_id})
@@ -1413,7 +1881,7 @@ def recommendations():
     preferred_work = safe_text(data.get("preferred_work") or data.get("goal"))
     profile_text = f"{interests} {skills} {preferred_work}".lower()
     specs = [normalize_specialization(row) for row in (query_db("SELECT * FROM specializations", fetchall=True) or [])]
-    jobs = [normalize_job(row) for row in (query_db("SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.id=j.specialization_id", fetchall=True) or [])]
+    jobs = [normalize_job(row) for row in (query_db("SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.specialization_id=j.specialization_id", fetchall=True) or [])]
     recommended_specs = []
     for spec in specs:
         target = f"{spec.get('name','')} {spec.get('description','')} {spec.get('skills','')}"
@@ -1443,7 +1911,18 @@ def recommendations():
     }
     prompt = f"Return JSON with recommended_specializations, recommended_jobs, roadmap, summary. User interests: {interests}. Skills: {skills}. Preferred work: {preferred_work}. Specs: {json.dumps(specs[:20])}. Jobs: {json.dumps(jobs[:30])}."
     result = ai_json(prompt, fallback)
-    query_db("INSERT INTO recommendation_results (user_id,recommendation_json) VALUES (%s,%s)", (request.current_user["id"], json.dumps(result)), commit=True)
+    try:
+        if table_exists("recommendation_results"):
+            query_db("INSERT INTO recommendation_results (user_id,recommendation_json) VALUES (%s,%s)", (request.current_user["id"], json.dumps(result)), commit=True)
+        elif table_exists("recommendations") and recommended_specs:
+            top = recommended_specs[0]
+            query_db(
+                "INSERT INTO recommendations (user_id,specialization_id,match_score,explanation) VALUES (%s,%s,%s,%s)",
+                (request.current_user["id"], top.get("id"), top.get("match_percentage", 0), json.dumps(result)),
+                commit=True
+            )
+    except Exception as exc:
+        print("RECOMMENDATION SAVE ERROR:", exc)
     return jsonify(result)
 
 
@@ -1488,9 +1967,13 @@ def ats_check():
     prompt = f"Return JSON ATS result with ats_score, summary, matched_keywords, missing_keywords, strengths, weaknesses, improvements, section_scores. Target job: {target_job}. Resume: {resume_text[:5000]}"
     result = ai_json(prompt, fallback)
     ats_score = safe_int(result.get("ats_score") or result.get("score"), ats_score)
+    suggestions = safe_text(result.get("summary")) or json.dumps(result.get("improvements", []))
     query_db(
-        "INSERT INTO ats_results (user_id,target_job,score,summary,matched_keywords,missing_keywords) VALUES (%s,%s,%s,%s,%s,%s)",
-        (request.current_user["id"], target_job[:220], ats_score, safe_text(result.get("summary")), json.dumps(result.get("matched_keywords", [])), json.dumps(result.get("missing_keywords", []))),
+        """
+        INSERT INTO ats_results (user_id,resume_text,target_job,ats_score,matched_keywords,missing_keywords,suggestions)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (request.current_user["id"], resume_text[:60000], target_job[:150], ats_score, json.dumps(result.get("matched_keywords", [])), json.dumps(result.get("missing_keywords", [])), suggestions),
         commit=True
     )
     return jsonify(result)
@@ -1500,120 +1983,84 @@ def ats_check():
 @student_required
 def ats_generate():
     try:
-        data = request.get_json(silent=True)
-
-        if not data:
-            data = request.form.to_dict()
-
-        name = (data.get("name") or "").strip()
-        email = (data.get("email") or "").strip()
-        phone = (data.get("phone") or "").strip()
-        location = (data.get("location") or "").strip()
-        target_role = (data.get("target_role") or data.get("target_job") or "").strip()
-        linkedin = (data.get("linkedin") or "").strip()
-        summary = (data.get("summary") or "").strip()
-
-        technical_skills = (
-            data.get("technical_skills")
-            or data.get("technicalSkills")
-            or data.get("tech_skills")
-            or data.get("skills")
-            or ""
-        ).strip()
-
-        soft_skills = (
-            data.get("soft_skills")
-            or data.get("softSkills")
-            or ""
-        ).strip()
-
-        education = (data.get("education") or "").strip()
-        experience = (data.get("experience") or "").strip()
-        projects = (data.get("projects") or "").strip()
-        certifications = (data.get("certifications") or "").strip()
-
+        data = request.get_json(silent=True) or request.form.to_dict()
+        name = safe_text(data.get("name"))
+        email = safe_text(data.get("email"))
+        phone = safe_text(data.get("phone"))
+        location = safe_text(data.get("location"))
+        target_role = safe_text(data.get("target_role") or data.get("target_job"))
+        linkedin = safe_text(data.get("linkedin"))
+        summary = safe_text(data.get("summary"))
+        technical_skills = safe_text(data.get("technical_skills") or data.get("technicalSkills") or data.get("tech_skills") or data.get("skills"))
+        soft_skills = safe_text(data.get("soft_skills") or data.get("softSkills"))
+        education = safe_text(data.get("education"))
+        experience = safe_text(data.get("experience"))
+        projects = safe_text(data.get("projects"))
+        certifications = safe_text(data.get("certifications"))
         if not name or not email or not phone or not target_role or not summary or not technical_skills or not soft_skills or not education:
-            return jsonify({
-                "error": "Name, email, phone, target role, summary, technical skills, soft skills, and education are required"
-            }), 400
-
+            return jsonify({"error": "Name, email, phone, target role, summary, technical skills, soft skills, and education are required"}), 400
         enhanced_summary = (
             f"{name} is an aspiring {target_role} with experience in {technical_skills}. "
-            f"The candidate demonstrates {soft_skills} and is focused on building practical, "
-            f"ATS-friendly career readiness through projects, education, and continuous learning."
+            f"The candidate demonstrates {soft_skills} and is focused on building practical, ATS-friendly career readiness."
         )
-
-        resume_parts = []
-
-        resume_parts.append(name.upper())
+        resume_parts = [name.upper()]
         contact_line = f"{email} | {phone}"
         if location:
             contact_line += f" | {location}"
         if linkedin:
             contact_line += f" | {linkedin}"
         resume_parts.append(contact_line)
-
-        resume_parts.append("\nPROFESSIONAL SUMMARY")
-        resume_parts.append(summary)
-
-        resume_parts.append("\nTARGET ROLE")
-        resume_parts.append(target_role)
-
-        resume_parts.append("\nTECHNICAL SKILLS")
-        resume_parts.append(technical_skills)
-
-        resume_parts.append("\nSOFT SKILLS")
-        resume_parts.append(soft_skills)
-
-        resume_parts.append("\nEDUCATION")
-        resume_parts.append(education)
-
+        resume_parts.extend([
+            "\nPROFESSIONAL SUMMARY", summary,
+            "\nTARGET ROLE", target_role,
+            "\nTECHNICAL SKILLS", technical_skills,
+            "\nSOFT SKILLS", soft_skills,
+            "\nEDUCATION", education,
+        ])
         if experience:
-            resume_parts.append("\nEXPERIENCE")
-            resume_parts.append(experience)
-
+            resume_parts.extend(["\nEXPERIENCE", experience])
         if projects:
-            resume_parts.append("\nPROJECTS")
-            resume_parts.append(projects)
-
+            resume_parts.extend(["\nPROJECTS", projects])
         if certifications:
-            resume_parts.append("\nCERTIFICATIONS")
-            resume_parts.append(certifications)
-
+            resume_parts.extend(["\nCERTIFICATIONS", certifications])
         resume = "\n".join(resume_parts)
-
-        keyword_text = " ".join([
-            target_role,
-            summary,
-            technical_skills,
-            soft_skills,
-            education,
-            experience,
-            projects,
-            certifications
-        ]).lower()
-
-        ats_keywords = [
-            "python", "java", "sql", "linux", "flask", "html", "css",
-            "javascript", "git", "api", "database", "project",
-            "communication", "teamwork", "problem solving", "leadership"
-        ]
-
+        keyword_text = " ".join([target_role, summary, technical_skills, soft_skills, education, experience, projects, certifications]).lower()
+        ats_keywords = ["python", "java", "sql", "linux", "flask", "html", "css", "javascript", "git", "api", "database", "project", "communication", "teamwork", "problem solving", "leadership"]
         matched = [kw for kw in ats_keywords if kw in keyword_text]
         ats_score = min(100, 55 + len(matched) * 5)
-
-        return jsonify({
-            "resume": resume,
-            "enhanced_summary": enhanced_summary,
-            "ats_score": ats_score,
-            "matched_keywords": matched,
-            "message": "ATS resume generated successfully"
-        }), 200
-
+        return jsonify({"resume": resume, "enhanced_summary": enhanced_summary, "ats_score": ats_score, "matched_keywords": matched, "message": "ATS resume generated successfully"}), 200
     except Exception as e:
         print("ATS GENERATE ERROR:", e)
         return jsonify({"error": "Could not generate ATS resume"}), 500
-        
+
+
+def build_resume_pdf(text):
+    if not all([SimpleDocTemplate, Paragraph, Spacer, A4, getSampleStyleSheet]):
+        return None
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=44, leftMargin=44, topMargin=42, bottomMargin=42)
+    styles = getSampleStyleSheet()
+    normal = styles["BodyText"]
+    normal.fontSize = 10
+    normal.leading = 14
+    heading = styles["Heading2"]
+    story = []
+    for line in safe_text(text).splitlines():
+        value = line.strip()
+        if not value:
+            story.append(Spacer(1, 8))
+        elif value.isupper() and len(value) <= 40:
+            story.append(Paragraph(value, heading))
+        else:
+            story.append(Paragraph(escape_pdf_text(value), normal))
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+def escape_pdf_text(value):
+    return safe_text(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 @app.route("/api/ats/export/pdf", methods=["POST"])
 @student_required
 def export_pdf():
@@ -1670,11 +2117,14 @@ def admin_stats():
     })
 
 
+
 @app.route("/api/admin/users")
 @admin_required
 def admin_users():
-    rows = query_db("SELECT id,username,name,email,role,current_mode,banned,created_at FROM users ORDER BY id DESC", fetchall=True) or []
+    rows = query_db("SELECT * FROM users ORDER BY id DESC", fetchall=True) or []
     return jsonify({"users": [clean_user(row) for row in rows]})
+
+
 
 
 @app.route("/api/admin/users/<int:user_id>/ban", methods=["PUT", "POST"])
@@ -1682,15 +2132,29 @@ def admin_users():
 def ban_user(user_id):
     if user_id == request.current_user["id"]:
         return jsonify({"error": "You cannot ban yourself"}), 400
-    exec_db("UPDATE users SET banned=1 WHERE id=%s", (user_id,))
+    if column_exists("users", "banned") and column_exists("users", "is_banned"):
+        exec_db("UPDATE users SET banned=1, is_banned=1 WHERE id=%s", (user_id,))
+    elif column_exists("users", "banned"):
+        exec_db("UPDATE users SET banned=1 WHERE id=%s", (user_id,))
+    else:
+        exec_db("UPDATE users SET is_banned=1 WHERE id=%s", (user_id,))
     return jsonify({"message": "User banned"})
+
+
 
 
 @app.route("/api/admin/users/<int:user_id>/unban", methods=["PUT", "POST"])
 @admin_required
 def unban_user(user_id):
-    exec_db("UPDATE users SET banned=0 WHERE id=%s", (user_id,))
+    if column_exists("users", "banned") and column_exists("users", "is_banned"):
+        exec_db("UPDATE users SET banned=0, is_banned=0 WHERE id=%s", (user_id,))
+    elif column_exists("users", "banned"):
+        exec_db("UPDATE users SET banned=0 WHERE id=%s", (user_id,))
+    else:
+        exec_db("UPDATE users SET is_banned=0 WHERE id=%s", (user_id,))
     return jsonify({"message": "User unbanned"})
+
+
 
 
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT", "POST"])
@@ -1703,10 +2167,17 @@ def change_user_role(user_id):
     current_mode = "admin" if role == "admin" else "student"
     exec_db("UPDATE users SET role=%s,current_mode=%s WHERE id=%s", (role, current_mode, user_id))
     if role == "admin":
-        exec_db("INSERT IGNORE INTO admins (user_id,admin_level) VALUES (%s,'manager')", (user_id,))
+        try:
+            exec_db("INSERT IGNORE INTO admins (user_id,admin_level) VALUES (%s,'manager')", (user_id,))
+        except Exception as exc:
+            print("ADMIN INSERT SKIPPED:", exc)
     else:
-        exec_db("DELETE FROM admins WHERE user_id=%s", (user_id,))
+        try:
+            exec_db("DELETE FROM admins WHERE user_id=%s", (user_id,))
+        except Exception:
+            pass
     return jsonify({"message": "User role updated"})
+
 
 
 @app.route("/api/mode", methods=["PUT", "POST"])
