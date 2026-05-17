@@ -1257,9 +1257,12 @@ document.addEventListener("click", async function (e) {
     if (!box) return;
     box.classList.remove("hidden");
     const resume = result.resume || "No resume returned from backend.";
+    const enhanced = pick(result, ["enhanced_summary", "ai_enhanced_summary", "summary"], "");
+    const source = result.ai_used ? "AI enhanced" : "Enhanced summary";
     box.innerHTML = `
       <article class="card colorful-card resume-preview">
-        <div class="resume-head"><h2>Generated ATS Resume</h2>${circleStat(result.ats_score || 0, "ATS")}</div>
+        <div class="resume-head"><h2>Generated ATS Resume</h2>${circleStat(result.ats_score || result.score || 0, "ATS")}</div>
+        ${enhanced ? `<section class="enhanced-summary-card"><h3>${escapeHtml(source)} Summary</h3><p>${escapeHtml(enhanced)}</p></section>` : ""}
         <pre class="resume-text">${escapeHtml(resume)}</pre>
         <div class="details-actions"><button type="button" class="btn btn-secondary" data-copy-resume>Copy</button><button type="button" class="btn btn-primary" data-export-pdf>Export PDF</button><button type="button" class="btn btn-primary" data-export-docx>Export DOCX</button></div>
       </article>`;
@@ -1295,20 +1298,80 @@ document.addEventListener("click", async function (e) {
     }
   }
 
+  async function ensureRecommendationQuiz(form) {
+    if (!form || form.dataset.quizLoaded) return;
+    form.dataset.quizLoaded = "1";
+    let box = byId("recommendationQuiz") || byId("recommendationQuestionBank");
+    if (!box) {
+      box = document.createElement("section");
+      box.id = "recommendationQuiz";
+      box.className = "recommendation-quiz-grid";
+      const submit = form.querySelector("button[type='submit']");
+      if (submit) submit.parentNode.insertBefore(box, submit);
+      else form.appendChild(box);
+    }
+    box.innerHTML = `<article class="card colorful-card"><h2>Loading recommendation quiz...</h2><p>Questions will be used to rank specializations and jobs separately.</p></article>`;
+    try {
+      const data = await api("/api/recommendation/questions", { silentUnauthorized: true });
+      const all = asArray(data, ["questions"]);
+      const grouped = {};
+      all.forEach((q) => {
+        const key = pick(q, ["specialization_key", "specialization"], "general");
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(q);
+      });
+      const selected = [];
+      Object.keys(grouped).forEach((key) => {
+        const group = grouped[key];
+        const interest = group.find((q) => lower(q.dimension) === "interest") || group[0];
+        const skill = group.find((q) => lower(q.dimension) === "skill") || group[1];
+        if (interest) selected.push(interest);
+        if (skill && skill !== interest) selected.push(skill);
+      });
+      const questions = selected.slice(0, 12);
+      if (!questions.length) throw new Error("No recommendation questions returned");
+      box.innerHTML = `
+        <div class="recommendation-quiz-head">
+          <span class="panel-kicker">Quiz based recommendation</span>
+          <h2>Answer the quiz</h2>
+          <p>Specializations and jobs will be recommended separately from these answers.</p>
+        </div>
+        <div class="grid cards-2 recommendation-quiz-cards">
+          ${questions.map((q, index) => {
+            const qid = pick(q, ["id", "question_id"], `q${index}`);
+            return `<article class="quiz-question-card">
+              <h3>${index + 1}. ${escapeHtml(pick(q, ["question", "text"], "Recommendation question"))}</h3>
+              <div class="rating-row" role="radiogroup" aria-label="${escapeAttr(qid)}">
+                ${[1, 2, 3, 4, 5].map((value) => `
+                  <label class="rating-pill">
+                    <input type="radio" name="q_${escapeAttr(qid)}" value="${value}" ${value === 3 ? "checked" : ""}>
+                    <span>${value}</span>
+                  </label>`).join("")}
+              </div>
+              <p class="muted">1 = low, 5 = high</p>
+            </article>`;
+          }).join("")}
+        </div>`;
+    } catch (err) {
+      box.innerHTML = `<article class="card colorful-card"><h2>Recommendation quiz unavailable</h2><p>${escapeHtml(err.message || "Write your interests and skills. SQR will still recommend from your answer.")}</p></article>`;
+    }
+  }
+
   function setupRecommendation() {
     const form = byId("recommendationForm");
     if (!form || form.dataset.ready) return;
     form.dataset.ready = "1";
+    ensureRecommendationQuiz(form);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!requireLogin()) return;
       const btn = form.querySelector("button[type='submit']");
       const box = byId("recommendationResult");
       try {
-        setLoading(btn, true, "Analyzing...");
+        setLoading(btn, true, "Analyzing quiz...");
         if (box) {
           box.classList.remove("hidden");
-          box.innerHTML = `<article class="card colorful-card"><h2>Analyzing your answers...</h2><p>SQR is comparing your answers with database specializations and jobs.</p></article>`;
+          box.innerHTML = `<article class="card colorful-card"><h2>Analyzing your quiz...</h2><p>SQR is ranking specializations and jobs separately.</p></article>`;
         }
         const result = await api("/api/recommendations", { method: "POST", body: formDataObject(form) });
         renderRecommendation(result);
@@ -1326,15 +1389,23 @@ document.addEventListener("click", async function (e) {
     const specs = asArray(result, ["recommended_specializations", "specializations"]);
     const jobs = asArray(result, ["recommended_jobs", "jobs"]);
     const roadmap = asArray(result.roadmap || [], []);
+    const quizScores = result.quiz_scores || {};
+    const quizScoreHtml = Object.keys(quizScores).length ? `
+      <section class="card colorful-card">
+        <h2>Quiz score by specialization</h2>
+        <div class="grid cards-3">${Object.entries(quizScores).sort((a,b) => Number(b[1]) - Number(a[1])).slice(0, 6).map(([name, value]) => `<article class="mini-match-card"><h3>${escapeHtml(name.replace(/_/g, " "))}</h3>${circleStat(value, "Quiz")}</article>`).join("")}</div>
+      </section>` : "";
     box.classList.remove("hidden");
     box.innerHTML = `
       <article class="card colorful-card recommendation-card">
+        <span class="panel-kicker">${escapeHtml(result.recommendation_basis === "quiz" ? "Quiz based" : "Profile based")}</span>
         <h2>Recommendation Result</h2>
-        <p>${escapeHtml(result.summary || result.reason || "SQR created recommendations from your answers and the database.")}</p>
+        <p>${escapeHtml(result.summary || result.reason || "SQR created recommendations from your quiz and the database.")}</p>
       </article>
-      <section class="section-block"><h2>Recommended Specializations</h2><div class="grid cards-3">${specs.length ? specs.map((s) => `<article class="mini-match-card"><h3>${escapeHtml(s.name || s.title || "Specialization")}</h3>${circleStat(s.match_percentage || s.score || 0, "Match")}<p>${escapeHtml(s.reason || "Matched your answers.")}</p>${s.id ? link("Open", route("specialization", { id: s.id }), "btn btn-secondary") : ""}</article>`).join("") : emptyState("No specialization matches", "Add more specializations or write more detail.")}</div></section>
-      <section class="section-block"><h2>Recommended Jobs</h2><div class="grid cards-3">${jobs.length ? jobs.map((j) => `<article class="mini-match-card"><h3>${escapeHtml(j.title || j.name || "Job")}</h3>${circleStat(j.match_percentage || j.score || 0, "Match")}<p>${escapeHtml(j.reason || "Matched your skills.")}</p>${j.id ? link("Open", route("jobDetails", { id: j.id }), "btn btn-secondary") : ""}</article>`).join("") : emptyState("No job matches", "Add jobs in admin or write more skills.")}</div></section>
-      <section class="card colorful-card"><h2>Roadmap</h2><ol class="roadmap-list">${roadmap.length ? roadmap.map((x) => `<li>${escapeHtml(x)}</li>`).join("") : "<li>Choose a specialization.</li><li>Complete linked courses.</li><li>Take quizzes.</li><li>Use ATS tools.</li>"}</ol></section>`;
+      ${quizScoreHtml}
+      <section class="section-block"><div class="section-title-row"><h2>Specialization Recommendation</h2><p>Ranked from your quiz answers.</p></div><div class="grid cards-3">${specs.length ? specs.map((s) => `<article class="mini-match-card"><h3>${escapeHtml(s.name || s.title || "Specialization")}</h3>${circleStat(s.match_percentage || s.score || 0, "Match")}<p>${escapeHtml(s.reason || "Matched your quiz answers.")}</p>${s.id || s.specialization_id ? link("Open", route("specialization", { id: s.id || s.specialization_id }), "btn btn-secondary") : ""}</article>`).join("") : emptyState("No specialization matches", "Add specializations or answer more quiz questions.")}</div></section>
+      <section class="section-block"><div class="section-title-row"><h2>Job Recommendation</h2><p>Ranked separately using the top specialization score plus job skills.</p></div><div class="grid cards-3">${jobs.length ? jobs.map((j) => `<article class="mini-match-card"><h3>${escapeHtml(j.title || j.name || "Job")}</h3>${circleStat(j.match_percentage || j.score || 0, "Match")}<p>${escapeHtml(j.reason || "Matched your skills and quiz result.")}</p>${j.id || j.job_id ? link("Open", route("jobDetails", { id: j.id || j.job_id }), "btn btn-secondary") : ""}</article>`).join("") : emptyState("No job matches", "Add jobs in admin or answer more quiz questions.")}</div></section>
+      <section class="card colorful-card"><h2>Roadmap</h2><ol class="roadmap-list">${roadmap.length ? roadmap.map((x) => `<li>${escapeHtml(x)}</li>`).join("") : "<li>Choose the top specialization.</li><li>Complete linked courses.</li><li>Take quizzes.</li><li>Use ATS tools.</li>"}</ol></section>`;
   }
 
   async function loadAdmin() {
