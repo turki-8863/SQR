@@ -2399,6 +2399,7 @@ function setupAdminEditForm() {
     hydrateQuestionBank();
     animateMetricCards();
     observeDynamicContent();
+    setupAdminEditForm();
   }
 
   SQRX.runAll = runAll;
