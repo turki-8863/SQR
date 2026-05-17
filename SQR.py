@@ -1983,84 +1983,149 @@ def ats_check():
 @student_required
 def ats_generate():
     try:
-        data = request.get_json(silent=True) or request.form.to_dict()
-        name = safe_text(data.get("name"))
-        email = safe_text(data.get("email"))
-        phone = safe_text(data.get("phone"))
-        location = safe_text(data.get("location"))
-        target_role = safe_text(data.get("target_role") or data.get("target_job"))
-        linkedin = safe_text(data.get("linkedin"))
-        summary = safe_text(data.get("summary"))
-        technical_skills = safe_text(data.get("technical_skills") or data.get("technicalSkills") or data.get("tech_skills") or data.get("skills"))
-        soft_skills = safe_text(data.get("soft_skills") or data.get("softSkills"))
-        education = safe_text(data.get("education"))
-        experience = safe_text(data.get("experience"))
-        projects = safe_text(data.get("projects"))
-        certifications = safe_text(data.get("certifications"))
+        data = request.get_json(silent=True)
+
+        if not data:
+            data = request.form.to_dict()
+
+        name = (data.get("name") or "").strip()
+        email = (data.get("email") or "").strip()
+        phone = (data.get("phone") or "").strip()
+        location = (data.get("location") or "").strip()
+        target_role = (data.get("target_role") or data.get("target_job") or "").strip()
+        linkedin = (data.get("linkedin") or "").strip()
+        summary = (data.get("summary") or "").strip()
+
+        technical_skills = (
+            data.get("technical_skills")
+            or data.get("technicalSkills")
+            or data.get("tech_skills")
+            or data.get("skills")
+            or ""
+        ).strip()
+
+        soft_skills = (
+            data.get("soft_skills")
+            or data.get("softSkills")
+            or ""
+        ).strip()
+
+        education = (data.get("education") or "").strip()
+        experience = (data.get("experience") or "").strip()
+        projects = (data.get("projects") or "").strip()
+        certifications = (data.get("certifications") or "").strip()
+
         if not name or not email or not phone or not target_role or not summary or not technical_skills or not soft_skills or not education:
-            return jsonify({"error": "Name, email, phone, target role, summary, technical skills, soft skills, and education are required"}), 400
-        enhanced_summary = (
-            f"{name} is an aspiring {target_role} with experience in {technical_skills}. "
-            f"The candidate demonstrates {soft_skills} and is focused on building practical, ATS-friendly career readiness."
-        )
-        resume_parts = [name.upper()]
+            return jsonify({
+                "error": "Name, email, phone, target role, summary, technical skills, soft skills, and education are required"
+            }), 400
+
+        fallback_summary = summary
+
+        ai_prompt = f"""
+Return valid JSON only.
+
+Create a professional resume summary for this user.
+
+Rules:
+- Return only this JSON format: {{"summary": "..."}}
+- Write 2 to 3 strong resume sentences.
+- Do not use first person words like I, me, or my.
+- Do not say "ATS-friendly career readiness".
+- Do not say "candidate".
+- Do not invent experience, companies, GPA, certificates, or jobs.
+- Use the user's real technical skills and soft skills naturally.
+- Make it suitable for the target role.
+- Keep it professional and clear.
+
+User information:
+Name: {name}
+Target role: {target_role}
+Original summary: {summary}
+Technical skills: {technical_skills}
+Soft skills: {soft_skills}
+Education: {education}
+Experience: {experience}
+Projects: {projects}
+Certifications: {certifications}
+"""
+
+        ai_result = ai_json(ai_prompt, {"summary": fallback_summary})
+        enhanced_summary = safe_text(ai_result.get("summary")) or fallback_summary
+
+        resume_parts = []
+
+        resume_parts.append(name.upper())
+
         contact_line = f"{email} | {phone}"
         if location:
             contact_line += f" | {location}"
         if linkedin:
             contact_line += f" | {linkedin}"
+
         resume_parts.append(contact_line)
-        resume_parts.extend([
-            "\nPROFESSIONAL SUMMARY", summary,
-            "\nTARGET ROLE", target_role,
-            "\nTECHNICAL SKILLS", technical_skills,
-            "\nSOFT SKILLS", soft_skills,
-            "\nEDUCATION", education,
-        ])
+
+        resume_parts.append("\nPROFESSIONAL SUMMARY")
+        resume_parts.append(enhanced_summary)
+
+        resume_parts.append("\nTARGET ROLE")
+        resume_parts.append(target_role)
+
+        resume_parts.append("\nTECHNICAL SKILLS")
+        resume_parts.append(technical_skills)
+
+        resume_parts.append("\nSOFT SKILLS")
+        resume_parts.append(soft_skills)
+
+        resume_parts.append("\nEDUCATION")
+        resume_parts.append(education)
+
         if experience:
-            resume_parts.extend(["\nEXPERIENCE", experience])
+            resume_parts.append("\nEXPERIENCE")
+            resume_parts.append(experience)
+
         if projects:
-            resume_parts.extend(["\nPROJECTS", projects])
+            resume_parts.append("\nPROJECTS")
+            resume_parts.append(projects)
+
         if certifications:
-            resume_parts.extend(["\nCERTIFICATIONS", certifications])
+            resume_parts.append("\nCERTIFICATIONS")
+            resume_parts.append(certifications)
+
         resume = "\n".join(resume_parts)
-        keyword_text = " ".join([target_role, summary, technical_skills, soft_skills, education, experience, projects, certifications]).lower()
-        ats_keywords = ["python", "java", "sql", "linux", "flask", "html", "css", "javascript", "git", "api", "database", "project", "communication", "teamwork", "problem solving", "leadership"]
+
+        keyword_text = " ".join([
+            target_role,
+            enhanced_summary,
+            technical_skills,
+            soft_skills,
+            education,
+            experience,
+            projects,
+            certifications
+        ]).lower()
+
+        ats_keywords = [
+            "python", "java", "sql", "linux", "flask", "html", "css",
+            "javascript", "git", "api", "database", "project",
+            "communication", "teamwork", "problem solving", "leadership"
+        ]
+
         matched = [kw for kw in ats_keywords if kw in keyword_text]
         ats_score = min(100, 55 + len(matched) * 5)
-        return jsonify({"resume": resume, "enhanced_summary": enhanced_summary, "ats_score": ats_score, "matched_keywords": matched, "message": "ATS resume generated successfully"}), 200
+
+        return jsonify({
+            "resume": resume,
+            "enhanced_summary": enhanced_summary,
+            "ats_score": ats_score,
+            "matched_keywords": matched,
+            "message": "ATS resume generated successfully"
+        }), 200
+
     except Exception as e:
         print("ATS GENERATE ERROR:", e)
         return jsonify({"error": "Could not generate ATS resume"}), 500
-
-
-def build_resume_pdf(text):
-    if not all([SimpleDocTemplate, Paragraph, Spacer, A4, getSampleStyleSheet]):
-        return None
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=44, leftMargin=44, topMargin=42, bottomMargin=42)
-    styles = getSampleStyleSheet()
-    normal = styles["BodyText"]
-    normal.fontSize = 10
-    normal.leading = 14
-    heading = styles["Heading2"]
-    story = []
-    for line in safe_text(text).splitlines():
-        value = line.strip()
-        if not value:
-            story.append(Spacer(1, 8))
-        elif value.isupper() and len(value) <= 40:
-            story.append(Paragraph(value, heading))
-        else:
-            story.append(Paragraph(escape_pdf_text(value), normal))
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
-
-def escape_pdf_text(value):
-    return safe_text(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
+        
 @app.route("/api/ats/export/pdf", methods=["POST"])
 @student_required
 def export_pdf():
