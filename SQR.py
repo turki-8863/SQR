@@ -1293,78 +1293,141 @@ def get_specialization(spec_id):
             "details": str(e)
         }), 500
 
+def get_logged_user_id():
+    user_id = getattr(request, "user_id", None)
+
+    if user_id:
+        return user_id
+
+    user_data = getattr(request, "user", None)
+
+    if isinstance(user_data, dict):
+        return user_data.get("id") or user_data.get("user_id")
+
+    return None
+
+
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
 @login_required
 def specialization_enrollment_status(spec_id):
     try:
-        user_id = request.current_user["id"]
-        row = query_db(
+        user_id = get_logged_user_id()
+
+        if not user_id:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        spec = query_db(
             """
-            SELECT 1
+            SELECT specialization_id, name
+            FROM specializations
+            WHERE specialization_id = %s
+            LIMIT 1
+            """,
+            (spec_id,),
+            fetchone=True
+        )
+
+        if not spec:
+            return jsonify({"error": "Specialization not found"}), 404
+
+        enrollment = query_db(
+            """
+            SELECT id, progress, status
             FROM specialization_enrollments
-            WHERE user_id=%s AND specialization_id=%s
+            WHERE user_id = %s AND spec_id = %s
             LIMIT 1
             """,
             (user_id, spec_id),
             fetchone=True
         )
-        return jsonify({"enrolled": bool(row), "is_enrolled": bool(row), "user_enrolled": bool(row)}), 200
+
+        return jsonify({
+            "success": True,
+            "specialization_id": spec_id,
+            "enrolled": bool(enrollment),
+            "progress": enrollment.get("progress", 0) if enrollment else 0,
+            "status": enrollment.get("status", "not_started") if enrollment else "not_started"
+        })
+
     except Exception as e:
-        print("SPECIALIZATION STATUS ERROR:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        print("SPECIALIZATION STATUS ERROR:", e)
+        return jsonify({"error": "Failed to load enrollment status"}), 500
 
 
 @app.route("/api/specializations/<int:spec_id>/enroll", methods=["POST"])
 @login_required
 def enroll_specialization(spec_id):
     try:
-        user_id = request.current_user["id"]
-        spec = query_db("SELECT specialization_id FROM specializations WHERE specialization_id=%s", (spec_id,), fetchone=True)
-        if not spec:
-            return jsonify({"error": "Specialization not found"}), 404
-        existing = query_db(
+        user_id = get_logged_user_id()
+
+        if not user_id:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        spec = query_db(
             """
-            SELECT 1
-            FROM specialization_enrollments
-            WHERE user_id=%s AND specialization_id=%s
+            SELECT specialization_id, name
+            FROM specializations
+            WHERE specialization_id = %s
             LIMIT 1
             """,
-            (user_id, spec_id),
+            (spec_id,),
             fetchone=True
         )
-        if existing:
-            return jsonify({"message": "Already enrolled", "enrolled": True}), 200
+
+        if not spec:
+            return jsonify({"error": "Specialization not found"}), 404
+
         query_db(
             """
-            INSERT INTO specialization_enrollments (user_id, specialization_id, progress_percentage, status)
-            VALUES (%s,%s,0,'Not Started')
+            INSERT INTO specialization_enrollments
+            (user_id, spec_id, progress, status, enrolled_at)
+            VALUES (%s, %s, 0, 'not_started', NOW())
+            ON DUPLICATE KEY UPDATE
+                status = IF(status = 'completed', status, 'in_progress'),
+                enrolled_at = enrolled_at
             """,
             (user_id, spec_id),
             commit=True
         )
-        return jsonify({"message": "Enrolled successfully", "enrolled": True}), 201
+
+        return jsonify({
+            "success": True,
+            "message": "Enrolled successfully",
+            "specialization_id": spec_id
+        })
+
     except Exception as e:
-        print("SPECIALIZATION ENROLL ERROR:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        print("SPECIALIZATION ENROLL ERROR:", e)
+        return jsonify({"error": "Failed to enroll specialization"}), 500
 
 
-@app.route("/api/specializations/<int:spec_id>/unenroll", methods=["POST"])
+@app.route("/api/specializations/<int:spec_id>/unenroll", methods=["DELETE", "POST"])
 @login_required
 def unenroll_specialization(spec_id):
     try:
-        user_id = request.current_user["id"]
+        user_id = get_logged_user_id()
+
+        if not user_id:
+            return jsonify({"error": "Unauthorized"}), 401
+
         query_db(
             """
             DELETE FROM specialization_enrollments
-            WHERE user_id=%s AND specialization_id=%s
+            WHERE user_id = %s AND spec_id = %s
             """,
             (user_id, spec_id),
             commit=True
         )
-        return jsonify({"message": "Unenrolled successfully", "enrolled": False}), 200
+
+        return jsonify({
+            "success": True,
+            "message": "Unenrolled successfully",
+            "specialization_id": spec_id
+        })
+
     except Exception as e:
-        print("SPECIALIZATION UNENROLL ERROR:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        print("SPECIALIZATION UNENROLL ERROR:", e)
+        return jsonify({"error": "Failed to unenroll specialization"}), 500
 
 
 
