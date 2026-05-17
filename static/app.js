@@ -185,7 +185,13 @@ async function safeFetch(url, options = {}) {
   }
 
   function getToken() {
-    return localStorage.getItem("sqr_token") || localStorage.getItem("token") || "";
+    return (
+      localStorage.getItem("sqr_token") ||
+      localStorage.getItem("token") ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("access_token") ||
+      ""
+    );
   }
 
   function getUser() {
@@ -197,10 +203,15 @@ async function safeFetch(url, options = {}) {
   }
 
   function setAuth(authToken, user) {
-    if (authToken) localStorage.setItem("sqr_token", authToken);
-    if (user) localStorage.setItem("sqr_user", JSON.stringify(user));
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    if (authToken) {
+      localStorage.setItem("sqr_token", authToken);
+      localStorage.setItem("token", authToken);
+    }
+    if (user) {
+      const userJson = JSON.stringify(user);
+      localStorage.setItem("sqr_user", userJson);
+      localStorage.setItem("user", userJson);
+    }
   }
 
   function clearAuth() {
@@ -269,7 +280,8 @@ async function safeFetch(url, options = {}) {
     }
     const response = await fetch(/^https?:\/\//i.test(path) ? path : `${API}${path}`, config);
     if (response.status === 401) {
-      if (!isPublicPage()) {
+      const shouldRedirect = config.redirectOnUnauthorized !== false && config.silentUnauthorized !== true;
+      if (shouldRedirect && !isPublicPage()) {
         clearAuth();
         setTimeout(() => go(route("signin")), 450);
       }
@@ -732,12 +744,7 @@ async function loadSpecializationDetails() {
 
   if (!box || !id) return;
 
-  const isLoggedIn = () => {
-    return Boolean(
-      localStorage.getItem("sqr_token") ||
-      localStorage.getItem("token")
-    );
-  };
+  const isLoggedIn = () => Boolean(getToken());
 
   const getSpecializationStatus = async (sid, spec) => {
     const fromSpec =
@@ -752,7 +759,10 @@ async function loadSpecializationDetails() {
     }
 
     try {
-      const status = await api(`/api/specializations/${encodeURIComponent(sid)}/enrollment-status`);
+      const status = await api(`/api/specializations/${encodeURIComponent(sid)}/enrollment-status`, {
+        silentUnauthorized: true,
+        redirectOnUnauthorized: false
+      });
       return Boolean(status.enrolled || status.is_enrolled || status.user_enrolled);
     } catch (e) {
       return false;
@@ -1274,55 +1284,51 @@ document.addEventListener("click", async function (e) {
       </article>`;
   }
 
- function setupATS() {
+ function setupAtsGenerator() {
   const form = document.getElementById("atsGenerateForm");
-  if (!form) return;
+  if (!form || form.dataset.ready) return;
+  form.dataset.ready = "1";
 
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
+    if (!requireLogin()) return;
 
     const summaryBox = document.getElementById("atsSummaryResult");
     const messageBox = document.getElementById("message");
+    const resumeBox = document.getElementById("generatedResume");
+    const btn = form.querySelector("button[type='submit']");
 
-    if (summaryBox) {
-      summaryBox.textContent = "Generating enhanced summary...";
-    }
+    if (summaryBox) summaryBox.textContent = "Generating enhanced summary...";
 
     try {
-      const formData = new FormData(form);
-
-      const res = await fetch("/api/ats/generate", {
+      setLoading(btn, true, "Generating...");
+      const result = await api("/api/ats/generate", {
         method: "POST",
-        headers: {
-          Authorization: "Bearer " + localStorage.getItem("token")
-        },
-        body: formData
+        body: new FormData(form),
+        redirectOnUnauthorized: false
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "ATS generation failed");
-      }
-
-      const enhancedSummary = data.enhanced_summary || data.summary || "";
+      const enhancedSummary = result.enhanced_summary || result.ai_enhanced_summary || result.summary || "";
 
       if (summaryBox) {
-        summaryBox.textContent = enhancedSummary;
+        summaryBox.textContent = enhancedSummary || "No enhanced summary returned from backend.";
       }
 
-      if (messageBox) {
+      if (result.resume || resumeBox) {
+        renderGeneratedResume(result);
+      }
+
+      showMessage("Enhanced summary generated successfully.", "success");
+
+      if (messageBox && messageBox !== byId("message")) {
         messageBox.innerHTML = `<div class="success">Enhanced summary generated successfully.</div>`;
       }
-
     } catch (err) {
-      if (summaryBox) {
-        summaryBox.textContent = "";
-      }
-
-      if (messageBox) {
-        messageBox.innerHTML = `<div class="error">${err.message}</div>`;
-      }
+      if (summaryBox) summaryBox.textContent = "";
+      if (messageBox) messageBox.innerHTML = `<div class="error">${escapeHtml(err.message || "ATS generation failed")}</div>`;
+      showMessage(err.message || "ATS generation failed", "error");
+    } finally {
+      setLoading(btn, false);
     }
   });
 }
@@ -1538,18 +1544,22 @@ document.addEventListener("click", async function (e) {
     const jobBox = byId("adminJobsList");
     const quizBox = byId("adminQuizzesList");
     const certBox = byId("adminCertificatesList");
-    if (specBox) specBox.innerHTML = specs.length ? specs.map((s) => adminRow(s.name, s.description, "specialization", itemId(s))).join("") : emptyState("No specializations", "Add the first specialization using the form.");
-    if (courseBox) courseBox.innerHTML = courses.length ? courses.map((c) => adminRow(c.title, `${c.specialization_name || ""} • ${c.level || ""}`, "course", itemId(c))).join("") : emptyState("No courses", "Add courses using the form.");
-    if (jobBox) jobBox.innerHTML = jobs.length ? jobs.map((j) => adminRow(j.title, `${j.specialization || ""} • ${j.salary || ""}`, "job", itemId(j))).join("") : emptyState("No jobs", "Add jobs using the form.");
-    if (quizBox) quizBox.innerHTML = quizzes.length ? quizzes.map((q) => adminRow(q.title, q.course_title || "Course quiz", "quiz", itemId(q))).join("") : emptyState("No quizzes", "Add a quiz using the form.");
-    if (certBox) certBox.innerHTML = certificates.length ? certificates.map((c) => adminRow(c.name, c.specialization_name || c.description || "Certificate", "certificate", itemId(c))).join("") : emptyState("No certificates", "Add certificates using the form.");
+    if (specBox) specBox.innerHTML = specs.length ? specs.map((s) => adminRow(s.name, s.description, "specialization", itemId(s), s)).join("") : emptyState("No specializations", "Add the first specialization using the form.");
+    if (courseBox) courseBox.innerHTML = courses.length ? courses.map((c) => adminRow(c.title, `${c.specialization_name || ""} • ${c.level || c.difficulty || ""}`, "course", itemId(c), c)).join("") : emptyState("No courses", "Add courses using the form.");
+    if (jobBox) jobBox.innerHTML = jobs.length ? jobs.map((j) => adminRow(j.title, `${j.specialization || j.specialization_name || ""} • ${j.salary || ""}`, "job", itemId(j), j)).join("") : emptyState("No jobs", "Add jobs using the form.");
+    if (quizBox) quizBox.innerHTML = quizzes.length ? quizzes.map((q) => adminRow(q.title, q.course_title || "Course quiz", "quiz", itemId(q), q)).join("") : emptyState("No quizzes", "Add a quiz using the form.");
+    if (certBox) certBox.innerHTML = certificates.length ? certificates.map((c) => adminRow(c.name, c.specialization_name || c.description || "Certificate", "certificate", itemId(c), c)).join("") : emptyState("No certificates", "Add certificates using the form.");
   }
 
-  function adminRow(title, subtitle, type, id) {
+  function adminRow(title, subtitle, type, id, item) {
+    const payload = escapeAttr(JSON.stringify(item || {}));
     return `
       <article class="admin-row">
         <div><strong>${escapeHtml(title || type)}</strong><span>${escapeHtml(subtitle || "")}</span></div>
-        <div>${button("Delete", "btn btn-mini btn-danger", `data-delete-${escapeAttr(type)}="${escapeAttr(id)}"`)}</div>
+        <div class="row-actions">
+          ${button("Edit", "btn btn-mini btn-secondary", `data-edit-type="${escapeAttr(type)}" data-edit-id="${escapeAttr(id)}" data-edit-payload="${payload}"`)}
+          ${button("Delete", "btn btn-mini btn-danger", `data-delete-${escapeAttr(type)}="${escapeAttr(id)}"`)}
+        </div>
       </article>`;
   }
 
@@ -1717,6 +1727,24 @@ document.addEventListener("click", async function (e) {
       const banBtn = event.target.closest("[data-ban-user]");
       if (banBtn) {
         await updateUserBan(banBtn.dataset.banUser, banBtn.dataset.banValue);
+        return;
+      }
+      const editBtn = event.target.closest("[data-edit-type]");
+      if (editBtn) {
+        let item = {};
+        try {
+          item = JSON.parse(editBtn.dataset.editPayload || "{}");
+        } catch (_) {
+          item = {};
+        }
+        if (!item.id && !item.specialization_id && !item.course_id && !item.job_id && !item.quiz_id && !item.certificate_id) {
+          item.id = editBtn.dataset.editId;
+        }
+        if (typeof window.openAdminEditModal === "function") {
+          window.openAdminEditModal(editBtn.dataset.editType, item);
+        } else {
+          showMessage("Edit modal is not ready. Refresh the page and try again.", "error");
+        }
         return;
       }
       for (const type of ["specialization", "course", "job", "quiz", "certificate"]) {
@@ -2014,7 +2042,9 @@ document.addEventListener("click", async function (e) {
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function percent(value) { return clamp(Math.round(toNumber(value)), 0, 100); }
   function html(value) { return clean(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
-  function token() { return localStorage.getItem("sqr_token") || localStorage.getItem("token") || ""; }
+  function token() {
+    return localStorage.getItem("sqr_token") || localStorage.getItem("token") || localStorage.getItem("authToken") || localStorage.getItem("access_token") || "";
+  }
   function authHeaders() { return token() ? { Authorization: "Bearer " + token() } : {}; }
 
   async function getJson(path, options) {
@@ -2189,7 +2219,30 @@ document.addEventListener("click", async function (e) {
       });
     });
   }
+function ensureAdminEditModal() {
+  if (document.getElementById("adminEditModal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="adminEditModal" class="admin-modal hidden">
+      <div class="admin-modal-box">
+        <div class="admin-modal-head">
+          <h2 id="adminEditTitle">Edit</h2>
+          <button type="button" id="adminEditCloseBtn" aria-label="Close edit modal">×</button>
+        </div>
+        <form id="adminEditForm">
+          <input type="hidden" id="editType">
+          <input type="hidden" id="editId">
+          <div id="adminEditFields"></div>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </form>
+      </div>
+    </div>
+  `);
+  const closeBtn = document.getElementById("adminEditCloseBtn");
+  if (closeBtn) closeBtn.addEventListener("click", closeAdminEditModal);
+}
+
 function openAdminEditModal(type, item) {
+  ensureAdminEditModal();
   const modal = document.getElementById("adminEditModal");
   const title = document.getElementById("adminEditTitle");
   const fields = document.getElementById("adminEditFields");
@@ -2211,8 +2264,20 @@ function openAdminEditModal(type, item) {
       <label>Description</label>
       <textarea id="editDescription">${escapeInput(item.description || "")}</textarea>
 
+      <label>Skills</label>
+      <textarea id="editSkills">${escapeInput(item.skills || "")}</textarea>
+
+      <label>Roadmap</label>
+      <textarea id="editRoadmap">${escapeInput(item.roadmap || "")}</textarea>
+
+      <label>Job Titles</label>
+      <textarea id="editJobTitles">${escapeInput(item.job_titles || "")}</textarea>
+
+      <label>Career Paths</label>
+      <textarea id="editCareerPaths">${escapeInput(item.career_paths || "")}</textarea>
+
       <label>Image URL</label>
-      <input id="editImageUrl" value="${escapeInput(item.image_url || "")}">
+      <input id="editImageUrl" value="${escapeInput(item.image_url || item.image || "")}">
     `;
   }
 
@@ -2232,16 +2297,16 @@ function openAdminEditModal(type, item) {
 
       <label>Difficulty</label>
       <select id="editDifficulty">
-        <option value="beginner" ${item.difficulty === "beginner" ? "selected" : ""}>Beginner</option>
-        <option value="intermediate" ${item.difficulty === "intermediate" ? "selected" : ""}>Intermediate</option>
-        <option value="advanced" ${item.difficulty === "advanced" ? "selected" : ""}>Advanced</option>
+        <option value="beginner" ${(item.level || item.difficulty) === "beginner" ? "selected" : ""}>Beginner</option>
+        <option value="intermediate" ${(item.level || item.difficulty) === "intermediate" ? "selected" : ""}>Intermediate</option>
+        <option value="advanced" ${(item.level || item.difficulty) === "advanced" ? "selected" : ""}>Advanced</option>
       </select>
 
       <label>Image URL</label>
-      <input id="editImageUrl" value="${escapeInput(item.image_url || "")}">
+      <input id="editImageUrl" value="${escapeInput(item.image_url || item.image || "")}">
 
       <label>Video URL</label>
-      <input id="editVideoUrl" value="${escapeInput(item.video_url || "")}">
+      <input id="editVideoUrl" value="${escapeInput(item.video_url || item.video || item.media_url || "")}">
     `;
   }
 
@@ -2260,7 +2325,13 @@ function openAdminEditModal(type, item) {
       <textarea id="editRequiredSkills">${escapeInput(item.required_skills || "")}</textarea>
 
       <label>Specialization ID</label>
-      <input id="editSpecializationId" value="${escapeInput(item.specialization_id || "")}">
+      <input id="editSpecializationId" value="${escapeInput(item.specialization_id || item.spec_id || "")}">
+
+      <label>Salary</label>
+      <input id="editSalary" value="${escapeInput(item.salary || "")}">
+
+      <label>Job Link</label>
+      <input id="editJobLink" value="${escapeInput(item.link || item.job_link || "")}">
     `;
   }
 
@@ -2282,8 +2353,10 @@ function escapeInput(value) {
 }
 
 function setupAdminEditForm() {
+  ensureAdminEditModal();
   const form = document.getElementById("adminEditForm");
-  if (!form) return;
+  if (!form || form.dataset.ready) return;
+  form.dataset.ready = "1";
 
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
@@ -2299,6 +2372,10 @@ function setupAdminEditForm() {
       payload = {
         name: document.getElementById("editName").value,
         description: document.getElementById("editDescription").value,
+        skills: document.getElementById("editSkills")?.value || "",
+        roadmap: document.getElementById("editRoadmap")?.value || "",
+        job_titles: document.getElementById("editJobTitles")?.value || "",
+        career_paths: document.getElementById("editCareerPaths")?.value || "",
         image_url: document.getElementById("editImageUrl").value
       };
     }
@@ -2309,6 +2386,7 @@ function setupAdminEditForm() {
         title: document.getElementById("editTitleInput").value,
         description: document.getElementById("editDescription").value,
         specialization_id: document.getElementById("editSpecializationId").value,
+        level: document.getElementById("editDifficulty").value,
         difficulty: document.getElementById("editDifficulty").value,
         image_url: document.getElementById("editImageUrl").value,
         video_url: document.getElementById("editVideoUrl").value
@@ -2321,33 +2399,59 @@ function setupAdminEditForm() {
         title: document.getElementById("editTitleInput").value,
         description: document.getElementById("editDescription").value,
         required_skills: document.getElementById("editRequiredSkills").value,
-        specialization_id: document.getElementById("editSpecializationId").value
+        skills: document.getElementById("editRequiredSkills").value,
+        specialization_id: document.getElementById("editSpecializationId").value,
+        salary: document.getElementById("editSalary")?.value || "",
+        link: document.getElementById("editJobLink")?.value || "",
+        job_link: document.getElementById("editJobLink")?.value || ""
       };
     }
 
-    const res = await fetch(endpoint, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + localStorage.getItem("token")
-      },
-      body: JSON.stringify(payload)
-    });
+    const fallbackEndpoints = {
+      specialization: [`/api/admin/specializations/${id}`, `/api/specializations/${id}`],
+      course: [`/api/admin/courses/${id}`, `/api/courses/${id}`],
+      job: [`/api/admin/jobs/${id}`, `/api/jobs/${id}`]
+    };
 
-    const data = await res.json();
+    const endpoints = fallbackEndpoints[type] || [endpoint];
+    let data = {};
+    let updated = false;
+    let lastError = "Update failed";
 
-    if (!res.ok) {
-      alert(data.error || "Update failed");
+    for (const currentEndpoint of endpoints) {
+      const res = await fetch(/^https?:\/\//i.test(currentEndpoint) ? currentEndpoint : getApiBase() + currentEndpoint, {
+        method: "PUT",
+        headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+        body: JSON.stringify(payload)
+      });
+
+      try { data = await res.json(); } catch (_) { data = {}; }
+
+      if (res.ok) {
+        updated = true;
+        break;
+      }
+
+      lastError = data.error || data.message || `Update failed (${res.status})`;
+      if (![404, 405].includes(res.status)) break;
+    }
+
+    if (!updated) {
+      alert(lastError);
       return;
     }
 
     closeAdminEditModal();
 
-    if (typeof loadAdmin === "function") {
-      loadAdmin();
+    if (window.SQR && typeof window.SQR.loadAdmin === "function") {
+      window.SQR.loadAdmin();
     }
+    alert(data.message || "Updated successfully");
   });
 }
+  window.openAdminEditModal = openAdminEditModal;
+  window.closeAdminEditModal = closeAdminEditModal;
+
   function addRequiredStars() {
     qsa("input[required], textarea[required], select[required]").forEach(function (input) {
       const id = input.id;
