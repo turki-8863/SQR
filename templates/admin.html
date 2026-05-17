@@ -194,5 +194,22 @@
     </section>
 
   </main>
+  <div id="adminEditModal" class="admin-modal hidden">
+  <div class="admin-modal-box">
+    <div class="admin-modal-head">
+      <h2 id="adminEditTitle">Edit</h2>
+      <button type="button" onclick="closeAdminEditModal()">×</button>
+    </div>
+
+    <form id="adminEditForm">
+      <input type="hidden" id="editType">
+      <input type="hidden" id="editId">
+
+      <div id="adminEditFields"></div>
+
+      <button type="submit" class="btn primary">Save Changes</button>
+    </form>
+  </div>
+</div>
 </body>
 </html>
