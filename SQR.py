@@ -1188,7 +1188,7 @@ def get_specializations():
 
         sql = """
             SELECT *
-            FROM specialization
+            FROM specializations
             WHERE 1=1
         """
 
@@ -1225,7 +1225,7 @@ def get_specialization(spec_id):
         spec = query_db(
             """
             SELECT *
-            FROM specialization
+            FROM specializations
             WHERE specialization_id = %s
             """,
             (spec_id,),
@@ -1421,7 +1421,7 @@ def get_courses():
         sql = """
             SELECT c.*, s.name AS specialization_name
             FROM courses c
-            LEFT JOIN specialization s
+            LEFT JOIN specializations s
                 ON s.specialization_id = c.specialization_id
             WHERE 1=1
         """
@@ -1433,7 +1433,7 @@ def get_courses():
                 AND (
                     c.title LIKE %s
                     OR c.description LIKE %s
-                    OR c.difficulty LIKE %s
+                    OR c.level LIKE %s
                 )
             """
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
@@ -1465,7 +1465,7 @@ def get_course(course_id):
             """
             SELECT c.*, s.name AS specialization_name
             FROM courses c
-            LEFT JOIN specialization s
+            LEFT JOIN specializations s
                 ON s.specialization_id = c.specialization_id
             WHERE c.course_id = %s
             """,
@@ -1789,7 +1789,7 @@ def get_jobs():
         sql = """
             SELECT j.*, s.name AS specialization_name
             FROM jobs j
-            LEFT JOIN specialization s 
+            LEFT JOIN specializations s 
                 ON s.specialization_id = j.specialization_id
             WHERE 1=1
         """
@@ -1833,7 +1833,7 @@ def get_job(job_id):
             """
             SELECT j.*, s.name AS specialization_name
             FROM jobs j
-            LEFT JOIN specialization s 
+            LEFT JOIN specializations s 
                 ON s.specialization_id = j.specialization_id
             WHERE j.job_id = %s
             """,
@@ -1960,57 +1960,289 @@ def delete_certificate(cert_id):
     return jsonify({"message": "Certificate deleted"})
 
 
+
+
+def sqr_slug(value):
+    value = safe_text(value).lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
+    aliases = {
+        "cyber_security": "cybersecurity",
+        "cybersecurity": "cybersecurity",
+        "digital_forensic": "digital_forensics",
+        "digital_forensics": "digital_forensics",
+        "software_engineer": "software_engineering",
+        "software_engineering": "software_engineering",
+        "web_development": "web_development",
+        "web_developer": "web_development",
+        "data_science": "data_science",
+        "artificial_intelligence": "artificial_intelligence",
+        "ai": "artificial_intelligence",
+        "cloud": "cloud_computing",
+        "cloud_computing": "cloud_computing",
+        "database": "database_administration",
+        "database_administration": "database_administration",
+        "computer_networks": "computer_networks",
+        "networking": "computer_networks",
+        "ui_ux": "ui_ux_engineering",
+        "ui_ux_engineering": "ui_ux_engineering",
+    }
+    return aliases.get(value, value)
+
+
+def sqr_recommendation_questions():
+    questions = globals().get("SQR_RECOMMENDATION_QUESTION_BANK") or []
+    if questions:
+        return questions
+    fallback = []
+    for key, hints in SPECIALIZATION_HINTS.items():
+        clean_key = sqr_slug(key)
+        label = key.title()
+        fallback.append({
+            "id": f"{clean_key}_interest",
+            "specialization_key": clean_key,
+            "specialization": label,
+            "dimension": "interest",
+            "question": f"How interested are you in {label}?",
+            "keywords": hints,
+            "weight": 5,
+        })
+        fallback.append({
+            "id": f"{clean_key}_skill",
+            "specialization_key": clean_key,
+            "specialization": label,
+            "dimension": "skill",
+            "question": f"How confident are you with skills related to {label}?",
+            "keywords": hints,
+            "weight": 5,
+        })
+    return fallback
+
+
+def sqr_rating(value, default=3):
+    text = safe_text(value).lower()
+    aliases = {
+        "very_low": 1, "low": 1, "no": 1, "never": 1,
+        "medium_low": 2, "maybe_no": 2,
+        "medium": 3, "neutral": 3, "maybe": 3,
+        "medium_high": 4, "yes": 4,
+        "very_high": 5, "high": 5, "strong": 5, "love": 5,
+    }
+    if text in aliases:
+        return aliases[text]
+    try:
+        number = int(float(text))
+        return max(1, min(5, number))
+    except Exception:
+        return default
+
+
+def sqr_parse_recommendation_answers(data):
+    answers = []
+    raw = data.get("answers") or data.get("quiz_answers") or data.get("recommendation_answers")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            raw = None
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            answers.append({"id": key, "value": value})
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                answers.append(item)
+    for key, value in (data or {}).items():
+        if key.startswith("q_") or key.startswith("quiz_") or key.startswith("answer_"):
+            clean_key = re.sub(r"^(q_|quiz_|answer_)", "", key)
+            answers.append({"id": clean_key, "value": value})
+    return answers
+
+
+def sqr_score_recommendation_quiz(data):
+    answers = sqr_parse_recommendation_answers(data)
+    questions = sqr_recommendation_questions()
+    by_id = {safe_text(q.get("id")): q for q in questions}
+    scores = {}
+    max_scores = {}
+    chosen = []
+    for answer in answers:
+        qid = safe_text(answer.get("id") or answer.get("question_id") or answer.get("name"))
+        value = sqr_rating(answer.get("value") or answer.get("answer") or answer.get("score"), 3)
+        q = by_id.get(qid)
+        if not q:
+            continue
+        spec_key = sqr_slug(q.get("specialization_key") or q.get("specialization"))
+        weight = safe_int(q.get("weight"), 5) or 5
+        scores[spec_key] = scores.get(spec_key, 0) + (value * weight)
+        max_scores[spec_key] = max_scores.get(spec_key, 0) + (5 * weight)
+        chosen.append({
+            "question_id": qid,
+            "specialization_key": spec_key,
+            "question": q.get("question"),
+            "value": value,
+            "dimension": q.get("dimension"),
+        })
+    percentages = {}
+    for key, score in scores.items():
+        percentages[key] = round((score / max(max_scores.get(key, 1), 1)) * 100)
+    return percentages, chosen
+
+
+def sqr_spec_key(row):
+    return sqr_slug(row_value(row, "key", "slug", "name", "title") or "")
+
+
+def sqr_recommendation_profile_text(data, user=None):
+    parts = [
+        safe_text(data.get("interests")),
+        safe_text(data.get("skills")),
+        safe_text(data.get("technical_skills")),
+        safe_text(data.get("soft_skills")),
+        safe_text(data.get("preferred_work")),
+        safe_text(data.get("work_style")),
+        safe_text(data.get("goal")),
+    ]
+    if user:
+        parts.extend([safe_text(user.get("interests")), safe_text(user.get("skills")), safe_text(user.get("goal"))])
+    # Add keywords from quiz answers so the recommendation still works even when the user only answers the quiz.
+    q_by_id = {safe_text(q.get("id")): q for q in sqr_recommendation_questions()}
+    for answer in sqr_parse_recommendation_answers(data):
+        q = q_by_id.get(safe_text(answer.get("id") or answer.get("question_id")))
+        if q and sqr_rating(answer.get("value") or answer.get("answer"), 3) >= 3:
+            parts.extend(q.get("keywords") or [])
+            parts.append(q.get("specialization") or "")
+    return " ".join([p for p in parts if p]).lower()
+
+
 @app.route("/api/recommendations", methods=["POST"])
 @student_required
 def recommendations():
     data = get_json()
-    interests = safe_text(data.get("interests"))
-    skills = safe_text(data.get("skills"))
-    preferred_work = safe_text(data.get("preferred_work") or data.get("goal"))
-    profile_text = f"{interests} {skills} {preferred_work}".lower()
-    specs = [normalize_specialization(row) for row in (query_db("SELECT * FROM specializations", fetchall=True) or [])]
-    jobs = [normalize_job(row) for row in (query_db("SELECT j.*, s.name AS specialization_name FROM jobs j LEFT JOIN specializations s ON s.specialization_id=j.specialization_id", fetchall=True) or [])]
+    user = request.current_user
+    user_id = user.get("id")
+    profile_text = sqr_recommendation_profile_text(data, user)
+    quiz_scores, quiz_answers = sqr_score_recommendation_quiz(data)
+
+    specs = [normalize_specialization(row) for row in (query_db("SELECT * FROM specializations ORDER BY specialization_id DESC", fetchall=True) or [])]
+    jobs = [normalize_job(row) for row in (query_db(
+        """
+        SELECT j.*, s.name AS specialization_name
+        FROM jobs j
+        LEFT JOIN specializations s ON s.specialization_id=j.specialization_id
+        ORDER BY j.job_id DESC
+        """,
+        fetchall=True
+    ) or [])]
+
     recommended_specs = []
     for spec in specs:
-        target = f"{spec.get('name','')} {spec.get('description','')} {spec.get('skills','')}"
-        score, matches = calculate_match_percentage(profile_text, target)
+        spec_key = sqr_spec_key(spec)
+        target = f"{spec.get('name','')} {spec.get('description','')} {spec.get('skills','')} {spec.get('roadmap','')} {spec.get('career_paths','')}"
+        text_score, matches = calculate_match_percentage(profile_text, target)
+        quiz_score = safe_int(quiz_scores.get(spec_key), 0)
         lower_name = safe_text(spec.get("name")).lower()
+        hint_score = 0
         for key, hints in SPECIALIZATION_HINTS.items():
-            if key in lower_name:
-                score = max(score, min(100, len([h for h in hints if h in profile_text]) * 18))
-        recommended_specs.append({"id": spec.get("id"), "name": spec.get("name"), "match_percentage": score, "matched_skills": matches, "reason": "Matched your interests and skills with specialization content."})
+            if sqr_slug(key) == spec_key or key in lower_name:
+                hint_score = min(100, len([h for h in hints if h in profile_text]) * 18)
+        if quiz_answers:
+            final_score = round((quiz_score * 0.72) + (max(text_score, hint_score) * 0.28))
+            reason = "Matched from your recommendation quiz answers and your skill/profile text."
+        else:
+            final_score = max(text_score, hint_score)
+            reason = "Matched from your interests, skills, and profile text."
+        final_score = max(0, min(100, final_score))
+        recommended_specs.append({
+            "id": spec.get("id"),
+            "specialization_id": spec.get("specialization_id") or spec.get("id"),
+            "name": spec.get("name"),
+            "description": spec.get("description") or "",
+            "match_percentage": final_score,
+            "score": final_score,
+            "quiz_score": quiz_score,
+            "text_score": text_score,
+            "matched_skills": matches,
+            "reason": reason,
+        })
+
+    recommended_specs.sort(key=lambda item: item["match_percentage"], reverse=True)
+    spec_score_by_id = {safe_int(s.get("specialization_id") or s.get("id")): s.get("match_percentage", 0) for s in recommended_specs}
+    top_spec_names = [s.get("name") for s in recommended_specs[:3] if s.get("name")]
+
     recommended_jobs = []
     for job in jobs:
-        target = f"{job.get('title','')} {job.get('description','')} {job.get('skills','')} {job.get('specialization','')}"
-        score, matches = calculate_match_percentage(profile_text, target)
-        recommended_jobs.append({"id": job.get("id"), "title": job.get("title"), "match_percentage": score, "matched_skills": matches, "salary": job.get("salary"), "reason": "Matched your profile with job skills and description."})
-    recommended_specs.sort(key=lambda item: item["match_percentage"], reverse=True)
+        target = f"{job.get('title','')} {job.get('description','')} {job.get('skills','')} {job.get('required_skills','')} {job.get('specialization','')}"
+        skill_score, matches = calculate_match_percentage(profile_text, target)
+        related_spec_score = safe_int(spec_score_by_id.get(safe_int(job.get("specialization_id")), 0), 0)
+        if quiz_answers:
+            final_score = round((related_spec_score * 0.55) + (skill_score * 0.45))
+            reason = "Matched separately using the quiz-based specialization score plus job skill keywords."
+        else:
+            final_score = skill_score
+            reason = "Matched separately using your profile text and job skill keywords."
+        final_score = max(0, min(100, final_score))
+        recommended_jobs.append({
+            "id": job.get("id"),
+            "job_id": job.get("job_id") or job.get("id"),
+            "specialization_id": job.get("specialization_id"),
+            "title": job.get("title"),
+            "description": job.get("description") or "",
+            "match_percentage": final_score,
+            "score": final_score,
+            "matched_skills": matches,
+            "salary": job.get("salary") or job.get("average_salary"),
+            "reason": reason,
+        })
     recommended_jobs.sort(key=lambda item: item["match_percentage"], reverse=True)
-    fallback = {
+
+    summary = "Your specialization recommendation and job recommendation are calculated separately from the recommendation quiz."
+    if top_spec_names:
+        summary = f"Best specialization matches: {', '.join(top_spec_names)}. Jobs are ranked separately using those quiz results plus job skills."
+    roadmap = [
+        "Start with the highest quiz-matched specialization.",
+        "Open its beginner courses and complete the linked quizzes to create real progress.",
+        "Compare the separately ranked jobs and note missing skills.",
+        "Use the ATS checker/generator to align your resume with the top job match.",
+    ]
+
+    # AI is allowed to improve only the wording of summary/roadmap, not the actual scores or IDs.
+    ai_payload = ai_json(
+        "Return valid JSON only with summary and roadmap. Do not change scores. "
+        f"Top specializations: {json.dumps(recommended_specs[:3])}. Top jobs: {json.dumps(recommended_jobs[:5])}. Quiz answers: {json.dumps(quiz_answers[:20])}.",
+        {"summary": summary, "roadmap": roadmap}
+    )
+    summary = safe_text(ai_payload.get("summary")) or summary
+    ai_roadmap = ai_payload.get("roadmap")
+    if isinstance(ai_roadmap, list) and ai_roadmap:
+        roadmap = [safe_text(x) for x in ai_roadmap if safe_text(x)][:6] or roadmap
+
+    result = {
+        "summary": summary,
+        "recommendation_basis": "quiz" if quiz_answers else "profile_text",
+        "quiz_answers": quiz_answers,
+        "quiz_scores": quiz_scores,
         "recommended_specializations": recommended_specs[:5],
         "recommended_jobs": recommended_jobs[:8],
-        "roadmap": [
-            "Choose the highest matching specialization.",
-            "Start beginner courses, then move to intermediate and advanced content.",
-            "Complete course quizzes to update your profile progress.",
-            "Use ATS tools to improve your resume for the highest matching jobs."
-        ],
-        "summary": "Recommendations are based on your answers and current database content."
+        "roadmap": roadmap,
     }
-    prompt = f"Return JSON with recommended_specializations, recommended_jobs, roadmap, summary. User interests: {interests}. Skills: {skills}. Preferred work: {preferred_work}. Specs: {json.dumps(specs[:20])}. Jobs: {json.dumps(jobs[:30])}."
-    result = ai_json(prompt, fallback)
+
     try:
         if table_exists("recommendation_results"):
-            query_db("INSERT INTO recommendation_results (user_id,recommendation_json) VALUES (%s,%s)", (request.current_user["id"], json.dumps(result)), commit=True)
+            query_db(
+                "INSERT INTO recommendation_results (user_id,recommendation_json) VALUES (%s,%s)",
+                (user_id, json.dumps(result)),
+                commit=True
+            )
         elif table_exists("recommendations") and recommended_specs:
             top = recommended_specs[0]
             query_db(
                 "INSERT INTO recommendations (user_id,specialization_id,match_score,explanation) VALUES (%s,%s,%s,%s)",
-                (request.current_user["id"], top.get("id"), top.get("match_percentage", 0), json.dumps(result)),
+                (user_id, top.get("specialization_id") or top.get("id"), top.get("match_percentage", 0), json.dumps(result)),
                 commit=True
             )
     except Exception as exc:
         print("RECOMMENDATION SAVE ERROR:", exc)
+
     return jsonify(result)
 
 
@@ -2067,67 +2299,81 @@ def ats_check():
     return jsonify(result)
 
 
+
+
+def sqr_compact_list(text, limit=10):
+    parts = re.split(r"[,\n;|]+", safe_text(text))
+    clean_parts = []
+    for part in parts:
+        item = safe_text(part)
+        if item and item.lower() not in [x.lower() for x in clean_parts]:
+            clean_parts.append(item)
+    return clean_parts[:limit]
+
+
+def sqr_local_enhanced_summary(target_role, original_summary, technical_skills, soft_skills, education, experience, projects, certifications):
+    role = safe_text(target_role) or "technology role"
+    tech = sqr_compact_list(technical_skills, 6)
+    soft = sqr_compact_list(soft_skills, 3)
+    tech_text = ", ".join(tech) if tech else "relevant technical tools"
+    soft_text = ", ".join(soft) if soft else "communication and problem solving"
+    education_text = safe_text(education)
+    base = f"{role} professional with skills in {tech_text} and strengths in {soft_text}."
+    if projects:
+        base += " Experienced in building practical projects and presenting technical work clearly."
+    elif experience:
+        base += " Experienced in applying technical knowledge in practical environments."
+    else:
+        base += " Prepared to apply academic knowledge, projects, and continuous learning to real technical work."
+    if education_text:
+        base += f" Education background includes {education_text[:140]}."
+    if original_summary:
+        base += " " + safe_text(original_summary)[:180]
+    base = re.sub(r"\b(candidate|ATS-friendly career readiness)\b", "", base, flags=re.I)
+    base = re.sub(r"\s+", " ", base).strip()
+    return base[:650]
+
+
 @app.route("/api/ats/generate", methods=["POST"])
 @student_required
 def ats_generate():
     try:
         data = request.get_json(silent=True)
-
         if not data:
             data = request.form.to_dict()
 
-        name = (data.get("name") or "").strip()
-        email = (data.get("email") or "").strip()
-        phone = (data.get("phone") or "").strip()
-        location = (data.get("location") or "").strip()
-        target_role = (data.get("target_role") or data.get("target_job") or "").strip()
-        linkedin = (data.get("linkedin") or "").strip()
-        summary = (data.get("summary") or "").strip()
-
-        technical_skills = (
-            data.get("technical_skills")
-            or data.get("technicalSkills")
-            or data.get("tech_skills")
-            or data.get("skills")
-            or ""
-        ).strip()
-
-        soft_skills = (
-            data.get("soft_skills")
-            or data.get("softSkills")
-            or ""
-        ).strip()
-
-        education = (data.get("education") or "").strip()
-        experience = (data.get("experience") or "").strip()
-        projects = (data.get("projects") or "").strip()
-        certifications = (data.get("certifications") or "").strip()
+        name = safe_text(data.get("name"))
+        email = safe_text(data.get("email"))
+        phone = safe_text(data.get("phone"))
+        location = safe_text(data.get("location"))
+        target_role = safe_text(data.get("target_role") or data.get("target_job"))
+        linkedin = safe_text(data.get("linkedin"))
+        summary = safe_text(data.get("summary"))
+        technical_skills = safe_text(data.get("technical_skills") or data.get("technicalSkills") or data.get("tech_skills") or data.get("skills"))
+        soft_skills = safe_text(data.get("soft_skills") or data.get("softSkills"))
+        education = safe_text(data.get("education"))
+        experience = safe_text(data.get("experience"))
+        projects = safe_text(data.get("projects"))
+        certifications = safe_text(data.get("certifications"))
 
         if not name or not email or not phone or not target_role or not summary or not technical_skills or not soft_skills or not education:
             return jsonify({
                 "error": "Name, email, phone, target role, summary, technical skills, soft skills, and education are required"
             }), 400
 
-        fallback_summary = summary
-
+        fallback_summary = sqr_local_enhanced_summary(target_role, summary, technical_skills, soft_skills, education, experience, projects, certifications)
         ai_prompt = f"""
-Return valid JSON only.
+Return valid JSON only using this format: {{"summary": "..."}}.
 
-Create a professional resume summary for this user.
-
+Generate an enhanced professional resume summary.
 Rules:
-- Return only this JSON format: {{"summary": "..."}}
 - Write 2 to 3 strong resume sentences.
 - Do not use first person words like I, me, or my.
-- Do not say "ATS-friendly career readiness".
-- Do not say "candidate".
-- Do not invent experience, companies, GPA, certificates, or jobs.
-- Use the user's real technical skills and soft skills naturally.
+- Do not use the words candidate or ATS-friendly career readiness.
+- Do not invent companies, GPA, certificates, years of experience, or jobs.
+- Use technical skills and soft skills naturally.
 - Make it suitable for the target role.
-- Keep it professional and clear.
 
-User information:
-Name: {name}
 Target role: {target_role}
 Original summary: {summary}
 Technical skills: {technical_skills}
@@ -2137,83 +2383,59 @@ Experience: {experience}
 Projects: {projects}
 Certifications: {certifications}
 """
-
         ai_result = ai_json(ai_prompt, {"summary": fallback_summary})
         enhanced_summary = safe_text(ai_result.get("summary")) or fallback_summary
+        enhanced_summary = re.sub(r"\b(candidate|ATS-friendly career readiness)\b", "", enhanced_summary, flags=re.I)
+        enhanced_summary = re.sub(r"\s+", " ", enhanced_summary).strip() or fallback_summary
 
-        resume_parts = []
-
-        resume_parts.append(name.upper())
-
-        contact_line = f"{email} | {phone}"
-        if location:
-            contact_line += f" | {location}"
-        if linkedin:
-            contact_line += f" | {linkedin}"
-
-        resume_parts.append(contact_line)
-
-        resume_parts.append("\nPROFESSIONAL SUMMARY")
-        resume_parts.append(enhanced_summary)
-
-        resume_parts.append("\nTARGET ROLE")
-        resume_parts.append(target_role)
-
-        resume_parts.append("\nTECHNICAL SKILLS")
-        resume_parts.append(technical_skills)
-
-        resume_parts.append("\nSOFT SKILLS")
-        resume_parts.append(soft_skills)
-
-        resume_parts.append("\nEDUCATION")
-        resume_parts.append(education)
-
+        resume_parts = [
+            name.upper(),
+            " | ".join([x for x in [email, phone, location, linkedin] if x]),
+            "\nPROFESSIONAL SUMMARY",
+            enhanced_summary,
+            "\nTARGET ROLE",
+            target_role,
+            "\nTECHNICAL SKILLS",
+            technical_skills,
+            "\nSOFT SKILLS",
+            soft_skills,
+            "\nEDUCATION",
+            education,
+        ]
         if experience:
-            resume_parts.append("\nEXPERIENCE")
-            resume_parts.append(experience)
-
+            resume_parts.extend(["\nEXPERIENCE", experience])
         if projects:
-            resume_parts.append("\nPROJECTS")
-            resume_parts.append(projects)
-
+            resume_parts.extend(["\nPROJECTS", projects])
         if certifications:
-            resume_parts.append("\nCERTIFICATIONS")
-            resume_parts.append(certifications)
-
+            resume_parts.extend(["\nCERTIFICATIONS", certifications])
         resume = "\n".join(resume_parts)
 
-        keyword_text = " ".join([
-            target_role,
-            enhanced_summary,
-            technical_skills,
-            soft_skills,
-            education,
-            experience,
-            projects,
-            certifications
-        ]).lower()
-
-        ats_keywords = [
-            "python", "java", "sql", "linux", "flask", "html", "css",
-            "javascript", "git", "api", "database", "project",
-            "communication", "teamwork", "problem solving", "leadership"
-        ]
-
+        keyword_text = " ".join([target_role, enhanced_summary, technical_skills, soft_skills, education, experience, projects, certifications]).lower()
+        ats_keywords = sorted(set(TECH_SKILLS + [
+            "leadership", "communication", "teamwork", "problem solving", "analysis", "documentation", "project"
+        ]))
         matched = [kw for kw in ats_keywords if kw in keyword_text]
-        ats_score = min(100, 55 + len(matched) * 5)
+        section_bonus = 20 if all(x in resume.lower() for x in ["professional summary", "technical skills", "education"]) else 10
+        ats_score = max(60, min(100, 45 + len(matched) * 4 + section_bonus))
 
         return jsonify({
             "resume": resume,
+            "summary": enhanced_summary,
             "enhanced_summary": enhanced_summary,
+            "ai_enhanced_summary": enhanced_summary,
+            "summary_source": "openai" if client else "local_fallback_no_openai_key",
+            "ai_used": bool(client),
             "ats_score": ats_score,
-            "matched_keywords": matched,
+            "score": ats_score,
+            "matched_keywords": matched[:30],
             "message": "ATS resume generated successfully"
         }), 200
 
     except Exception as e:
         print("ATS GENERATE ERROR:", e)
-        return jsonify({"error": "Could not generate ATS resume"}), 500
-        
+        return jsonify({"error": "Could not generate ATS resume", "details": str(e)}), 500
+
+
 @app.route("/api/ats/export/pdf", methods=["POST"])
 @student_required
 def export_pdf():
