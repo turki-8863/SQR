@@ -192,8 +192,6 @@ async function safeFetch(url, options = {}) {
       localStorage.getItem("token") ||
       localStorage.getItem("authToken") ||
       localStorage.getItem("access_token") ||
-      localStorage.getItem("authToken") ||
-      localStorage.getItem("access_token") ||
       localStorage.getItem("jwt") ||
       ""
     );
@@ -1283,69 +1281,105 @@ async function loadSpecializationDetails() {
   }
 
   function setupAtsGenerator() {
-  const form = document.getElementById("atsGenerateForm");
-  if (!form || form.dataset.ready) return;
-  form.dataset.ready = "1";
+    const form = byId("atsGenerateForm");
+    if (!form || form.dataset.ready) return;
+    form.dataset.ready = "1";
 
-  form.addEventListener("submit", async function (e) {
-    e.preventDefault();
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      if (!requireLogin()) return;
 
-    const summaryBox = document.getElementById("atsSummaryResult");
-    const messageBox = document.getElementById("message");
+      const btn = form.querySelector("button[type='submit']");
+      const summaryBox = byId("atsSummaryResult");
+      const resultBox = byId("generatedResume") || byId("atsGeneratedResume") || summaryBox;
 
-    if (summaryBox) {
-      summaryBox.textContent = "Generating enhanced summary...";
-    }
+      try {
+        setLoading(btn, true, "Generating with AI...");
 
-    try {
-      const formData = new FormData(form);
+        if (summaryBox) {
+          summaryBox.textContent = "Generating AI enhanced summary...";
+        }
 
-      const data = await api("/api/ats/generate", {
-        method: "POST",
-        body: formData,
-        redirectOnUnauthorized: false
-      });
+        if (resultBox && resultBox !== summaryBox) {
+          resultBox.classList.remove("hidden");
+          resultBox.innerHTML = `
+            <article class="card colorful-card">
+              <h2>Generating your resume with AI...</h2>
+              <p>SQR is improving your summary and building your ATS resume from your details.</p>
+            </article>`;
+        }
 
-      const enhancedSummary = data.enhanced_summary || data.ai_enhanced_summary || data.summary || "";
-      STATE.lastResume = data.resume || STATE.lastResume || "";
+        const result = await api("/api/ats/generate", {
+          method: "POST",
+          body: new FormData(form),
+          redirectOnUnauthorized: false
+        });
 
-      if (summaryBox) {
-        summaryBox.textContent = enhancedSummary;
+        if (!result || !result.enhanced_summary || !result.resume) {
+          throw new Error(result && result.error ? result.error : "Backend did not return an AI-generated resume.");
+        }
+
+        STATE.lastResume = result.resume;
+
+        if (summaryBox) summaryBox.textContent = result.enhanced_summary;
+        renderGeneratedResume(result);
+        showMessage(result.ai_used ? "AI resume generated successfully." : "Resume generated successfully. Add OPENAI_API_KEY for stronger AI enhancement.", "success");
+      } catch (err) {
+        const message = err.status === 401 ? "Unauthorized. Please sign in again before generating." : (err.message || "ATS generation failed.");
+        if (summaryBox) summaryBox.textContent = "";
+        if (resultBox) {
+          resultBox.classList.remove("hidden");
+          resultBox.innerHTML = `
+            <article class="card error-card">
+              <h2>ATS generation failed</h2>
+              <p>${escapeHtml(message)}</p>
+            </article>`;
+        }
+        showMessage(message, "error");
+      } finally {
+        setLoading(btn, false);
       }
+    });
+  }
 
-      if (typeof renderGeneratedResume === "function") {
-        renderGeneratedResume(data);
-      }
-
-      if (messageBox) {
-        messageBox.innerHTML = `<div class="success">Enhanced summary generated successfully.</div>`;
-      }
-
-    } catch (err) {
-      if (summaryBox) {
-        summaryBox.textContent = "";
-      }
-
-      if (messageBox) {
-        const message = err.status === 401 ? "Unauthorized. Please sign in again before generating." : err.message;
-        messageBox.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
-      }
-    }
-  });
-}
   function renderGeneratedResume(result) {
-    const box = byId("generatedResume");
+    const box = byId("generatedResume") || byId("atsGeneratedResume");
     if (!box) return;
     box.classList.remove("hidden");
-    const resume = result.resume || "No resume returned from backend.";
-    const enhanced = pick(result, ["enhanced_summary", "ai_enhanced_summary", "summary"], "");
-    const source = result.ai_used ? "AI enhanced" : "Enhanced summary";
+
+    const resume = clean(result.resume || "");
+    const enhanced = clean(pick(result, ["enhanced_summary", "ai_enhanced_summary", "summary"], ""));
+
+    if (!resume || !enhanced) {
+      box.innerHTML = `
+        <article class="card error-card">
+          <h2>ATS generator did not return enough data</h2>
+          <p>The backend must return both <strong>resume</strong> and <strong>enhanced_summary</strong>.</p>
+        </article>`;
+      return;
+    }
+
+    const source = result.ai_used ? "AI Enhanced Summary" : "Enhanced Summary";
+    const score = result.ats_score || result.score || 0;
+    const improvements = asArray(result.improvements || [], []);
+
     box.innerHTML = `
       <article class="card colorful-card resume-preview">
-        <div class="resume-head"><h2>Generated ATS Resume</h2>${circleStat(result.ats_score || result.score || 0, "ATS")}</div>
-        ${enhanced ? `<section class="enhanced-summary-card"><h3>${escapeHtml(source)} Summary</h3><p>${escapeHtml(enhanced)}</p></section>` : ""}
+        <div class="resume-head">
+          <h2>Generated ATS Resume</h2>
+          ${circleStat(score, "ATS")}
+        </div>
+        <section class="enhanced-summary-card">
+          <h3>${escapeHtml(source)}</h3>
+          <p>${escapeHtml(enhanced)}</p>
+        </section>
+        ${improvements.length ? `<section class="result-list"><h3>Recommended Improvements</h3><ul>${improvements.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></section>` : ""}
         <pre class="resume-text">${escapeHtml(resume)}</pre>
-        <div class="details-actions"><button type="button" class="btn btn-secondary" data-copy-resume>Copy</button><button type="button" class="btn btn-primary" data-export-pdf>Export PDF</button><button type="button" class="btn btn-primary" data-export-docx>Export DOCX</button></div>
+        <div class="details-actions">
+          <button type="button" class="btn btn-secondary" data-copy-resume>Copy</button>
+          <button type="button" class="btn btn-primary" data-export-pdf>Export PDF</button>
+          <button type="button" class="btn btn-primary" data-export-docx>Export DOCX</button>
+        </div>
       </article>`;
   }
 
@@ -2037,7 +2071,7 @@ async function loadSpecializationDetails() {
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function percent(value) { return clamp(Math.round(toNumber(value)), 0, 100); }
   function html(value) { return clean(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
-  function token() { return localStorage.getItem("sqr_token") || localStorage.getItem("token") || ""; }
+  function token() { return localStorage.getItem("sqr_token") || localStorage.getItem("token") || localStorage.getItem("authToken") || localStorage.getItem("access_token") || localStorage.getItem("jwt") || ""; }
   function authHeaders() { return token() ? { Authorization: "Bearer " + token() } : {}; }
 
   async function getJson(path, options) {
