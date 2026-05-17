@@ -1260,7 +1260,6 @@ document.addEventListener("click", async function (e) {
     box.innerHTML = `
       <article class="card colorful-card resume-preview">
         <div class="resume-head"><h2>Generated ATS Resume</h2>${circleStat(result.ats_score || 0, "ATS")}</div>
-        ${result.enhanced_summary ? `<h3>Enhanced Summary</h3><p>${escapeHtml(result.enhanced_summary)}</p>` : ""}
         <pre class="resume-text">${escapeHtml(resume)}</pre>
         <div class="details-actions"><button type="button" class="btn btn-secondary" data-copy-resume>Copy</button><button type="button" class="btn btn-primary" data-export-pdf>Export PDF</button><button type="button" class="btn btn-primary" data-export-docx>Export DOCX</button></div>
       </article>`;
