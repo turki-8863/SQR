@@ -1397,35 +1397,30 @@ def add_specialization():
     return jsonify({"message": "Specialization added", "id": spec_id, "specialization_id": spec_id})
 
 
-@app.route("/api/specializations/<int:spec_id>", methods=["PUT"])
+@app.route("/api/admin/specializations/<int:spec_id>", methods=["PUT"])
 @admin_required
-def update_specialization(spec_id):
-    data = request_data()
-    old = query_db("SELECT * FROM specializations WHERE specialization_id=%s", (spec_id,), fetchone=True)
-    if not old:
-        return jsonify({"error": "Specialization not found"}), 404
-    image = save_file("image") or safe_text(data.get("image") or data.get("image_url")) or row_value(old, "image_url", "image")
-    exec_db(
+def admin_update_specialization(spec_id):
+    data = get_json()
+
+    name = safe_text(data.get("name"))
+    description = safe_text(data.get("description"))
+    image_url = safe_text(data.get("image_url"))
+
+    if not name:
+        return jsonify({"error": "Specialization name is required"}), 400
+
+    query_db(
         """
         UPDATE specializations
-        SET name=%s, description=%s, roadmap=%s, job_titles=%s, career_paths=%s, skills=%s, image_url=%s, image=%s
+        SET name=%s, description=%s, image_url=%s
         WHERE specialization_id=%s
         """,
-        (
-            safe_text(data.get("name")) or old.get("name"),
-            safe_text(data.get("description")) or old.get("description"),
-            safe_text(data.get("roadmap")) or old.get("roadmap"),
-            safe_text(data.get("job_titles")) or old.get("job_titles"),
-            safe_text(data.get("career_paths")) or old.get("career_paths"),
-            safe_text(data.get("skills")) or old.get("skills"),
-            image,
-            image,
-            spec_id,
-        )
+        (name, description, image_url, spec_id),
+        commit=True
     )
-    return jsonify({"message": "Specialization updated"})
 
-
+    return jsonify({"success": True, "message": "Specialization updated successfully"})
+    
 @app.route("/api/specializations/<int:spec_id>", methods=["DELETE"])
 @admin_required
 def delete_specialization(spec_id):
@@ -1560,40 +1555,32 @@ def add_course():
     return jsonify({"message": "Course added", "id": course_id, "course_id": course_id})
 
 
-@app.route("/api/courses/<int:course_id>", methods=["PUT"])
+@app.route("/api/admin/courses/<int:course_id>", methods=["PUT"])
 @admin_required
-def update_course(course_id):
-    data = request_data()
-    old = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
-    if not old:
-        return jsonify({"error": "Course not found"}), 404
-    image = save_file("image") or safe_text(data.get("image") or data.get("image_url")) or row_value(old, "image_url", "image")
-    video = save_file("video") or safe_text(data.get("video") or data.get("video_url")) or row_value(old, "video_url", "video")
-    spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), row_value(old, "specialization_id", "spec_id"))
-    level = normalize_level(data.get("level") or old.get("level")).capitalize()
-    exec_db(
+def admin_update_course(course_id):
+    data = get_json()
+
+    title = safe_text(data.get("title"))
+    description = safe_text(data.get("description"))
+    specialization_id = data.get("specialization_id")
+    difficulty = safe_text(data.get("difficulty"))
+    image_url = safe_text(data.get("image_url"))
+    video_url = safe_text(data.get("video_url"))
+
+    if not title:
+        return jsonify({"error": "Course title is required"}), 400
+
+    query_db(
         """
         UPDATE courses
-        SET specialization_id=%s, spec_id=%s, title=%s, description=%s, level=%s,
-            course_link=%s, link=%s, image_url=%s, image=%s, video_url=%s, video=%s
+        SET title=%s, description=%s, specialization_id=%s, difficulty=%s, image_url=%s, video_url=%s
         WHERE course_id=%s
         """,
-        (
-            spec_id,
-            spec_id,
-            safe_text(data.get("title")) or old.get("title"),
-            safe_text(data.get("description")) or old.get("description"),
-            level,
-            safe_text(data.get("course_link") or data.get("link") or row_value(old, "course_link", "link")),
-            safe_text(data.get("course_link") or data.get("link") or row_value(old, "course_link", "link")),
-            image,
-            image,
-            video,
-            video,
-            course_id,
-        )
+        (title, description, specialization_id, difficulty, image_url, video_url, course_id),
+        commit=True
     )
-    return jsonify({"message": "Course updated"})
+
+    return jsonify({"success": True, "message": "Course updated successfully"})
 
 
 @app.route("/api/courses/<int:course_id>", methods=["DELETE"])
@@ -1899,30 +1886,30 @@ def add_job():
     return jsonify({"message": "Job added", "id": job_id, "job_id": job_id})
 
 
-@app.route("/api/jobs/<int:job_id>", methods=["PUT"])
+@app.route("/api/admin/jobs/<int:job_id>", methods=["PUT"])
 @admin_required
-def update_job(job_id):
+def admin_update_job(job_id):
     data = get_json()
-    old = query_db("SELECT * FROM jobs WHERE job_id=%s", (job_id,), fetchone=True)
-    if not old:
-        return jsonify({"error": "Job not found"}), 404
-    exec_db(
+
+    title = safe_text(data.get("title"))
+    description = safe_text(data.get("description"))
+    required_skills = safe_text(data.get("required_skills"))
+    specialization_id = data.get("specialization_id")
+
+    if not title:
+        return jsonify({"error": "Job title is required"}), 400
+
+    query_db(
         """
         UPDATE jobs
-        SET specialization_id=%s,title=%s,description=%s,required_skills=%s,average_salary=%s,job_link=%s
+        SET title=%s, description=%s, required_skills=%s, specialization_id=%s
         WHERE job_id=%s
         """,
-        (
-            safe_int(data.get("specialization_id") or data.get("spec_id"), old.get("specialization_id")),
-            safe_text(data.get("title")) or old.get("title"),
-            safe_text(data.get("description")) or old.get("description"),
-            safe_text(data.get("required_skills") or data.get("skills") or old.get("required_skills")),
-            safe_text(data.get("average_salary") or data.get("salary") or old.get("average_salary")),
-            safe_text(data.get("job_link") or data.get("link") or old.get("job_link")),
-            job_id,
-        )
+        (title, description, required_skills, specialization_id, job_id),
+        commit=True
     )
-    return jsonify({"message": "Job updated"})
+
+    return jsonify({"success": True, "message": "Job updated successfully"})
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
@@ -2357,108 +2344,147 @@ def sqr_local_enhanced_summary(target_role, original_summary, technical_skills, 
     return base[:650]
 
 
-@app.route("/api/ats/generate", methods=["POST"])
-@student_required
-def ats_generate():
+def extract_resume_text_from_upload(file):
+    if not file or not file.filename:
+        return ""
+
+    filename = secure_filename(file.filename)
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
     try:
-        data = request.get_json(silent=True)
-        if not data:
-            data = request.form.to_dict()
+        if ext == "pdf":
+            reader = PdfReader(file)
+            text = []
+            for page in reader.pages:
+                text.append(page.extract_text() or "")
+            return "\n".join(text).strip()
 
-        name = safe_text(data.get("name"))
-        email = safe_text(data.get("email"))
-        phone = safe_text(data.get("phone"))
-        location = safe_text(data.get("location"))
-        target_role = safe_text(data.get("target_role") or data.get("target_job"))
-        linkedin = safe_text(data.get("linkedin"))
-        summary = safe_text(data.get("summary"))
-        technical_skills = safe_text(data.get("technical_skills") or data.get("technicalSkills") or data.get("tech_skills") or data.get("skills"))
-        soft_skills = safe_text(data.get("soft_skills") or data.get("softSkills"))
-        education = safe_text(data.get("education"))
-        experience = safe_text(data.get("experience"))
-        projects = safe_text(data.get("projects"))
-        certifications = safe_text(data.get("certifications"))
+        if ext == "docx":
+            doc = Document(file)
+            return "\n".join([p.text for p in doc.paragraphs]).strip()
 
-        if not name or not email or not phone or not target_role or not summary or not technical_skills or not soft_skills or not education:
-            return jsonify({
-                "error": "Name, email, phone, target role, summary, technical skills, soft skills, and education are required"
-            }), 400
+        if ext == "txt":
+            return file.read().decode("utf-8", errors="ignore").strip()
 
-        fallback_summary = sqr_local_enhanced_summary(target_role, summary, technical_skills, soft_skills, education, experience, projects, certifications)
-        ai_prompt = f"""
-Return valid JSON only using this format: {{"summary": "..."}}.
+    except Exception:
+        return ""
 
-Generate an enhanced professional resume summary.
+    return ""
+
+
+def local_dynamic_summary(name, target_role, technical_skills, soft_skills, resume_text):
+    name = safe_text(name) or "This candidate"
+    target_role = safe_text(target_role) or "the selected technology role"
+
+    tech = [s.strip() for s in re.split(r"[,|\n]", technical_skills or "") if s.strip()]
+    soft = [s.strip() for s in re.split(r"[,|\n]", soft_skills or "") if s.strip()]
+
+    resume_words = re.findall(r"[A-Za-z][A-Za-z+#.\-]{2,}", resume_text or "")
+    resume_keywords = []
+    for word in resume_words:
+        clean = word.strip().lower()
+        if clean not in resume_keywords and len(clean) > 2:
+            resume_keywords.append(clean)
+        if len(resume_keywords) >= 8:
+            break
+
+    tech_sentence = ", ".join(tech[:8]) if tech else ", ".join(resume_keywords[:6]) if resume_keywords else "technical problem solving"
+    soft_sentence = ", ".join(soft[:5]) if soft else "communication, teamwork, and continuous learning"
+
+    return (
+        f"{name} is building a focused profile for {target_role}, with strengths in {tech_sentence}. "
+        f"The candidate also shows important workplace abilities such as {soft_sentence}. "
+        f"This summary is tailored from the submitted resume details and should be improved further by adding measurable achievements, project results, tools used, and role-specific keywords."
+    )
+
+
+def generate_ai_enhanced_summary(name, target_role, technical_skills, soft_skills, resume_text):
+    fallback = local_dynamic_summary(name, target_role, technical_skills, soft_skills, resume_text)
+
+    if OpenAI is None or not os.getenv("OPENAI_API_KEY"):
+        return fallback
+
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        prompt = f"""
+Create one ATS-friendly professional summary.
+
 Rules:
-- Write 2 to 3 strong resume sentences.
-- Do not use first person words like I, me, or my.
-- Do not use the words candidate or ATS-friendly career readiness.
-- Do not invent companies, GPA, certificates, years of experience, or jobs.
-- Use technical skills and soft skills naturally.
-- Make it suitable for the target role.
+- Do not use fixed generic text.
+- Do not say "ATS-friendly career readiness".
+- Do not invent experience.
+- Use only the provided information.
+- Make it sound natural and specific.
+- 3 to 5 sentences only.
 
+Name: {name}
 Target role: {target_role}
-Original summary: {summary}
 Technical skills: {technical_skills}
 Soft skills: {soft_skills}
-Education: {education}
-Experience: {experience}
-Projects: {projects}
-Certifications: {certifications}
+
+Resume text:
+{resume_text[:5000]}
 """
-        ai_result = ai_json(ai_prompt, {"summary": fallback_summary})
-        enhanced_summary = safe_text(ai_result.get("summary")) or fallback_summary
-        enhanced_summary = re.sub(r"\b(candidate|ATS-friendly career readiness)\b", "", enhanced_summary, flags=re.I)
-        enhanced_summary = re.sub(r"\s+", " ", enhanced_summary).strip() or fallback_summary
 
-        resume_parts = [
-            name.upper(),
-            " | ".join([x for x in [email, phone, location, linkedin] if x]),
-            "\nPROFESSIONAL SUMMARY",
-            enhanced_summary,
-            "\nTARGET ROLE",
-            target_role,
-            "\nTECHNICAL SKILLS",
-            technical_skills,
-            "\nSOFT SKILLS",
-            soft_skills,
-            "\nEDUCATION",
-            education,
+        response = client.responses.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            input=prompt
+        )
+
+        text = getattr(response, "output_text", "").strip()
+
+        if not text:
+            return fallback
+
+        blocked = [
+            "ATS-friendly career readiness",
+            "fixed text",
+            "lorem ipsum"
         ]
-        if experience:
-            resume_parts.extend(["\nEXPERIENCE", experience])
-        if projects:
-            resume_parts.extend(["\nPROJECTS", projects])
-        if certifications:
-            resume_parts.extend(["\nCERTIFICATIONS", certifications])
-        resume = "\n".join(resume_parts)
 
-        keyword_text = " ".join([target_role, enhanced_summary, technical_skills, soft_skills, education, experience, projects, certifications]).lower()
-        ats_keywords = sorted(set(TECH_SKILLS + [
-            "leadership", "communication", "teamwork", "problem solving", "analysis", "documentation", "project"
-        ]))
-        matched = [kw for kw in ats_keywords if kw in keyword_text]
-        section_bonus = 20 if all(x in resume.lower() for x in ["professional summary", "technical skills", "education"]) else 10
-        ats_score = max(60, min(100, 45 + len(matched) * 4 + section_bonus))
+        if any(b.lower() in text.lower() for b in blocked):
+            return fallback
 
-        return jsonify({
-            "resume": resume,
-            "summary": enhanced_summary,
-            "enhanced_summary": enhanced_summary,
-            "ai_enhanced_summary": enhanced_summary,
-            "summary_source": "openai" if client else "local_fallback_no_openai_key",
-            "ai_used": bool(client),
-            "ats_score": ats_score,
-            "score": ats_score,
-            "matched_keywords": matched[:30],
-            "message": "ATS resume generated successfully"
-        }), 200
+        return text
 
-    except Exception as e:
-        print("ATS GENERATE ERROR:", e)
-        return jsonify({"error": "Could not generate ATS resume", "details": str(e)}), 500
+    except Exception:
+        return fallback
 
 
+@app.route("/api/ats/generate", methods=["POST"])
+@login_required
+def ats_generate():
+    if request.content_type and "multipart/form-data" in request.content_type:
+        name = safe_text(request.form.get("name"))
+        target_role = safe_text(request.form.get("target_role") or request.form.get("role"))
+        technical_skills = safe_text(request.form.get("technical_skills"))
+        soft_skills = safe_text(request.form.get("soft_skills"))
+        resume_file = request.files.get("resume") or request.files.get("file")
+        resume_text = extract_resume_text_from_upload(resume_file)
+    else:
+        data = get_json()
+        name = safe_text(data.get("name"))
+        target_role = safe_text(data.get("target_role") or data.get("role"))
+        technical_skills = safe_text(data.get("technical_skills"))
+        soft_skills = safe_text(data.get("soft_skills"))
+        resume_text = safe_text(data.get("resume_text"))
+
+    enhanced_summary = generate_ai_enhanced_summary(
+        name=name,
+        target_role=target_role,
+        technical_skills=technical_skills,
+        soft_skills=soft_skills,
+        resume_text=resume_text
+    )
+
+    return jsonify({
+        "success": True,
+        "summary": enhanced_summary,
+        "enhanced_summary": enhanced_summary,
+        "technical_skills": technical_skills,
+        "soft_skills": soft_skills
+    })
 @app.route("/api/ats/export/pdf", methods=["POST"])
 @student_required
 def export_pdf():
