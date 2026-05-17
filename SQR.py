@@ -947,7 +947,7 @@ def get_specializations():
     except Exception as e:
         print("GET SPECIALIZATIONS ERROR:", str(e))
         return jsonify({"error": "Could not load specializations", "details": str(e)}), 500
-
+        
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
 @login_required
 def specialization_enrollment_status(spec_id):
