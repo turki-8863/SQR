@@ -2145,7 +2145,165 @@ document.addEventListener("click", async function (e) {
       });
     });
   }
+function openAdminEditModal(type, item) {
+  const modal = document.getElementById("adminEditModal");
+  const title = document.getElementById("adminEditTitle");
+  const fields = document.getElementById("adminEditFields");
 
+  if (!modal || !title || !fields) return;
+
+  document.getElementById("editType").value = type;
+
+  let idValue = "";
+
+  if (type === "specialization") {
+    idValue = item.specialization_id || item.id;
+    title.textContent = "Edit Specialization";
+
+    fields.innerHTML = `
+      <label>Name</label>
+      <input id="editName" value="${escapeInput(item.name || "")}" required>
+
+      <label>Description</label>
+      <textarea id="editDescription">${escapeInput(item.description || "")}</textarea>
+
+      <label>Image URL</label>
+      <input id="editImageUrl" value="${escapeInput(item.image_url || "")}">
+    `;
+  }
+
+  if (type === "course") {
+    idValue = item.course_id || item.id;
+    title.textContent = "Edit Course";
+
+    fields.innerHTML = `
+      <label>Title</label>
+      <input id="editTitleInput" value="${escapeInput(item.title || "")}" required>
+
+      <label>Description</label>
+      <textarea id="editDescription">${escapeInput(item.description || "")}</textarea>
+
+      <label>Specialization ID</label>
+      <input id="editSpecializationId" value="${escapeInput(item.specialization_id || "")}">
+
+      <label>Difficulty</label>
+      <select id="editDifficulty">
+        <option value="beginner" ${item.difficulty === "beginner" ? "selected" : ""}>Beginner</option>
+        <option value="intermediate" ${item.difficulty === "intermediate" ? "selected" : ""}>Intermediate</option>
+        <option value="advanced" ${item.difficulty === "advanced" ? "selected" : ""}>Advanced</option>
+      </select>
+
+      <label>Image URL</label>
+      <input id="editImageUrl" value="${escapeInput(item.image_url || "")}">
+
+      <label>Video URL</label>
+      <input id="editVideoUrl" value="${escapeInput(item.video_url || "")}">
+    `;
+  }
+
+  if (type === "job") {
+    idValue = item.job_id || item.id;
+    title.textContent = "Edit Job";
+
+    fields.innerHTML = `
+      <label>Title</label>
+      <input id="editTitleInput" value="${escapeInput(item.title || "")}" required>
+
+      <label>Description</label>
+      <textarea id="editDescription">${escapeInput(item.description || "")}</textarea>
+
+      <label>Required Skills</label>
+      <textarea id="editRequiredSkills">${escapeInput(item.required_skills || "")}</textarea>
+
+      <label>Specialization ID</label>
+      <input id="editSpecializationId" value="${escapeInput(item.specialization_id || "")}">
+    `;
+  }
+
+  document.getElementById("editId").value = idValue;
+  modal.classList.remove("hidden");
+}
+
+function closeAdminEditModal() {
+  const modal = document.getElementById("adminEditModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function escapeInput(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function setupAdminEditForm() {
+  const form = document.getElementById("adminEditForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+
+    const type = document.getElementById("editType").value;
+    const id = document.getElementById("editId").value;
+
+    let endpoint = "";
+    let payload = {};
+
+    if (type === "specialization") {
+      endpoint = `/api/admin/specializations/${id}`;
+      payload = {
+        name: document.getElementById("editName").value,
+        description: document.getElementById("editDescription").value,
+        image_url: document.getElementById("editImageUrl").value
+      };
+    }
+
+    if (type === "course") {
+      endpoint = `/api/admin/courses/${id}`;
+      payload = {
+        title: document.getElementById("editTitleInput").value,
+        description: document.getElementById("editDescription").value,
+        specialization_id: document.getElementById("editSpecializationId").value,
+        difficulty: document.getElementById("editDifficulty").value,
+        image_url: document.getElementById("editImageUrl").value,
+        video_url: document.getElementById("editVideoUrl").value
+      };
+    }
+
+    if (type === "job") {
+      endpoint = `/api/admin/jobs/${id}`;
+      payload = {
+        title: document.getElementById("editTitleInput").value,
+        description: document.getElementById("editDescription").value,
+        required_skills: document.getElementById("editRequiredSkills").value,
+        specialization_id: document.getElementById("editSpecializationId").value
+      };
+    }
+
+    const res = await fetch(endpoint, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + localStorage.getItem("token")
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || "Update failed");
+      return;
+    }
+
+    closeAdminEditModal();
+
+    if (typeof loadAdmin === "function") {
+      loadAdmin();
+    }
+  });
+}
   function addRequiredStars() {
     qsa("input[required], textarea[required], select[required]").forEach(function (input) {
       const id = input.id;
