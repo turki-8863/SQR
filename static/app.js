@@ -42,9 +42,11 @@
   };
 function getToken() {
   return (
+    localStorage.getItem("sqr_token") ||
     localStorage.getItem("token") ||
     localStorage.getItem("authToken") ||
     localStorage.getItem("access_token") ||
+    localStorage.getItem("jwt") ||
     ""
   );
 }
@@ -147,7 +149,7 @@ async function safeFetch(url, options = {}) {
   }
 
   function itemId(item) {
-    return pick(item, ["id", "user_id", "specialization_id", "spec_id", "course_id", "job_id", "quiz_id", "certificate_id", "attempt_id"], "");
+    return pick(item, ["specialization_id", "spec_id", "course_id", "job_id", "quiz_id", "certificate_id", "attempt_id", "user_id", "id"], "");
   }
 
   function asArray(result, keys) {
@@ -190,6 +192,9 @@ async function safeFetch(url, options = {}) {
       localStorage.getItem("token") ||
       localStorage.getItem("authToken") ||
       localStorage.getItem("access_token") ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("jwt") ||
       ""
     );
   }
@@ -206,11 +211,13 @@ async function safeFetch(url, options = {}) {
     if (authToken) {
       localStorage.setItem("sqr_token", authToken);
       localStorage.setItem("token", authToken);
+      localStorage.setItem("authToken", authToken);
+      localStorage.setItem("access_token", authToken);
     }
     if (user) {
-      const userJson = JSON.stringify(user);
-      localStorage.setItem("sqr_user", userJson);
-      localStorage.setItem("user", userJson);
+      const userText = JSON.stringify(user);
+      localStorage.setItem("sqr_user", userText);
+      localStorage.setItem("user", userText);
     }
   }
 
@@ -218,6 +225,9 @@ async function safeFetch(url, options = {}) {
     localStorage.removeItem("sqr_token");
     localStorage.removeItem("sqr_user");
     localStorage.removeItem("token");
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("jwt");
     localStorage.removeItem("user");
   }
 
@@ -271,28 +281,32 @@ async function safeFetch(url, options = {}) {
   async function api(path, options) {
     const config = Object.assign({ method: "GET" }, options || {});
     const isForm = config.body instanceof FormData;
+
+    const silentUnauthorized = config.silentUnauthorized === true;
+    const redirectOnUnauthorized = config.redirectOnUnauthorized !== false;
+    delete config.silentUnauthorized;
+    delete config.redirectOnUnauthorized;
+
     config.headers = authHeaders(config.headers);
+
     if (config.body && !isForm && typeof config.body !== "string") {
       config.body = JSON.stringify(config.body);
     }
+
     if (config.body && !isForm) {
       config.headers["Content-Type"] = config.headers["Content-Type"] || "application/json";
     }
+
     const response = await fetch(/^https?:\/\//i.test(path) ? path : `${API}${path}`, config);
+
     if (response.status === 401) {
-      const pathText = String(path || "");
-      const specializationAuthCheck =
-        pathText.includes("/api/specializations/") &&
-        (pathText.includes("/enrollment-status") || pathText.includes("/enroll") || pathText.includes("/unenroll"));
-      const shouldRedirect =
-        config.redirectOnUnauthorized !== false &&
-        config.silentUnauthorized !== true &&
-        specializationAuthCheck !== true;
-      if (shouldRedirect && !isPublicPage()) {
+      const shouldRedirect = redirectOnUnauthorized && !silentUnauthorized && !isPublicPage();
+      if (shouldRedirect) {
         clearAuth();
         setTimeout(() => go(route("signin")), 450);
       }
     }
+
     return parseResponse(response);
   }
 
@@ -751,7 +765,14 @@ async function loadSpecializationDetails() {
 
   if (!box || !id) return;
 
-  const isLoggedIn = () => Boolean(getToken());
+  const isLoggedIn = () => {
+    return Boolean(
+      localStorage.getItem("sqr_token") ||
+      localStorage.getItem("token") ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("access_token")
+    );
+  };
 
   const getSpecializationStatus = async (sid, spec) => {
     const fromSpec =
@@ -909,9 +930,6 @@ async function loadSpecializationDetails() {
 
         if (!enrollBtn && !unenrollBtn) return;
 
-        e.preventDefault();
-        e.stopPropagation();
-
         const isEnroll = Boolean(enrollBtn);
         const btn = enrollBtn || unenrollBtn;
 
@@ -923,7 +941,6 @@ async function loadSpecializationDetails() {
             `/api/specializations/${encodeURIComponent(sid)}/${isEnroll ? "enroll" : "unenroll"}`,
             {
               method: "POST",
-              silentUnauthorized: true,
               redirectOnUnauthorized: false
             }
           );
@@ -949,10 +966,14 @@ async function loadSpecializationDetails() {
           btn.disabled = false;
           btn.textContent = isEnroll ? "Enroll" : "Unenroll";
 
+          const message = err.status === 401
+            ? "Unauthorized. Please sign in again, then try enrolling."
+            : (err.message || "Enrollment failed.");
+
           if (typeof showMessage === "function") {
-            showMessage(err.message || "Enrollment failed.", "error");
+            showMessage(message, "error");
           } else {
-            alert(err.message || "Enrollment failed.");
+            alert(message);
           }
         }
       });
@@ -961,7 +982,7 @@ async function loadSpecializationDetails() {
     box.innerHTML = emptyState("Specialization not found", err.message);
   }
 }
-  
+
   async function loadCourses() {
     const box = byId("coursesBox");
     if (!box) return;
@@ -1261,51 +1282,54 @@ async function loadSpecializationDetails() {
       </article>`;
   }
 
- function setupAtsGenerator() {
+  function setupAtsGenerator() {
   const form = document.getElementById("atsGenerateForm");
   if (!form || form.dataset.ready) return;
   form.dataset.ready = "1";
 
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
-    if (!requireLogin()) return;
 
     const summaryBox = document.getElementById("atsSummaryResult");
     const messageBox = document.getElementById("message");
-    const resumeBox = document.getElementById("generatedResume");
-    const btn = form.querySelector("button[type='submit']");
 
-    if (summaryBox) summaryBox.textContent = "Generating enhanced summary...";
+    if (summaryBox) {
+      summaryBox.textContent = "Generating enhanced summary...";
+    }
 
     try {
-      setLoading(btn, true, "Generating...");
-      const result = await api("/api/ats/generate", {
+      const formData = new FormData(form);
+
+      const data = await api("/api/ats/generate", {
         method: "POST",
-        body: new FormData(form),
+        body: formData,
         redirectOnUnauthorized: false
       });
 
-      const enhancedSummary = result.enhanced_summary || result.ai_enhanced_summary || result.summary || "";
+      const enhancedSummary = data.enhanced_summary || data.ai_enhanced_summary || data.summary || "";
+      STATE.lastResume = data.resume || STATE.lastResume || "";
 
       if (summaryBox) {
-        summaryBox.textContent = enhancedSummary || "No enhanced summary returned from backend.";
+        summaryBox.textContent = enhancedSummary;
       }
 
-      if (result.resume || resumeBox) {
-        renderGeneratedResume(result);
+      if (typeof renderGeneratedResume === "function") {
+        renderGeneratedResume(data);
       }
 
-      showMessage("Enhanced summary generated successfully.", "success");
-
-      if (messageBox && messageBox !== byId("message")) {
+      if (messageBox) {
         messageBox.innerHTML = `<div class="success">Enhanced summary generated successfully.</div>`;
       }
+
     } catch (err) {
-      if (summaryBox) summaryBox.textContent = "";
-      if (messageBox) messageBox.innerHTML = `<div class="error">${escapeHtml(err.message || "ATS generation failed")}</div>`;
-      showMessage(err.message || "ATS generation failed", "error");
-    } finally {
-      setLoading(btn, false);
+      if (summaryBox) {
+        summaryBox.textContent = "";
+      }
+
+      if (messageBox) {
+        const message = err.status === 401 ? "Unauthorized. Please sign in again before generating." : err.message;
+        messageBox.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
+      }
     }
   });
 }
@@ -1529,12 +1553,13 @@ async function loadSpecializationDetails() {
   }
 
   function adminRow(title, subtitle, type, id, item) {
-    const payload = escapeAttr(JSON.stringify(item || {}));
+    const editable = ["specialization", "course", "job"].includes(type);
+    const encodedItem = editable ? encodeURIComponent(JSON.stringify(item || {})) : "";
     return `
       <article class="admin-row">
         <div><strong>${escapeHtml(title || type)}</strong><span>${escapeHtml(subtitle || "")}</span></div>
         <div class="row-actions">
-          ${button("Edit", "btn btn-mini btn-secondary", `data-edit-type="${escapeAttr(type)}" data-edit-id="${escapeAttr(id)}" data-edit-payload="${payload}"`)}
+          ${editable ? button("Edit", "btn btn-mini btn-secondary", `data-admin-edit="${escapeAttr(type)}" data-admin-item="${escapeAttr(encodedItem)}"`) : ""}
           ${button("Delete", "btn btn-mini btn-danger", `data-delete-${escapeAttr(type)}="${escapeAttr(id)}"`)}
         </div>
       </article>`;
@@ -1677,6 +1702,17 @@ async function loadSpecializationDetails() {
         await switchMode(mode.dataset.switchMode);
         return;
       }
+      const edit = event.target.closest("[data-admin-edit]");
+      if (edit) {
+        try {
+          const item = JSON.parse(decodeURIComponent(edit.dataset.adminItem || "%7B%7D"));
+          openAdminEditModal(edit.dataset.adminEdit, item);
+        } catch (_) {
+          showMessage("Could not open edit form.", "error");
+        }
+        return;
+      }
+
       const tracked = event.target.closest("[data-track-course]");
       if (tracked) {
         await trackCourseOpened(tracked.dataset.trackCourse, true);
@@ -1704,24 +1740,6 @@ async function loadSpecializationDetails() {
       const banBtn = event.target.closest("[data-ban-user]");
       if (banBtn) {
         await updateUserBan(banBtn.dataset.banUser, banBtn.dataset.banValue);
-        return;
-      }
-      const editBtn = event.target.closest("[data-edit-type]");
-      if (editBtn) {
-        let item = {};
-        try {
-          item = JSON.parse(editBtn.dataset.editPayload || "{}");
-        } catch (_) {
-          item = {};
-        }
-        if (!item.id && !item.specialization_id && !item.course_id && !item.job_id && !item.quiz_id && !item.certificate_id) {
-          item.id = editBtn.dataset.editId;
-        }
-        if (typeof window.openAdminEditModal === "function") {
-          window.openAdminEditModal(editBtn.dataset.editType, item);
-        } else {
-          showMessage("Edit modal is not ready. Refresh the page and try again.", "error");
-        }
         return;
       }
       for (const type of ["specialization", "course", "job", "quiz", "certificate"]) {
@@ -2019,9 +2037,7 @@ async function loadSpecializationDetails() {
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function percent(value) { return clamp(Math.round(toNumber(value)), 0, 100); }
   function html(value) { return clean(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
-  function token() {
-    return localStorage.getItem("sqr_token") || localStorage.getItem("token") || localStorage.getItem("authToken") || localStorage.getItem("access_token") || "";
-  }
+  function token() { return localStorage.getItem("sqr_token") || localStorage.getItem("token") || ""; }
   function authHeaders() { return token() ? { Authorization: "Bearer " + token() } : {}; }
 
   async function getJson(path, options) {
@@ -2196,14 +2212,18 @@ async function loadSpecializationDetails() {
       });
     });
   }
-function ensureAdminEditModal() {
-  if (document.getElementById("adminEditModal")) return;
-  document.body.insertAdjacentHTML("beforeend", `
-    <div id="adminEditModal" class="admin-modal hidden">
+  function ensureAdminEditModal() {
+    let modal = document.getElementById("adminEditModal");
+    if (modal) return modal;
+
+    modal = document.createElement("div");
+    modal.id = "adminEditModal";
+    modal.className = "admin-modal hidden";
+    modal.innerHTML = `
       <div class="admin-modal-box">
         <div class="admin-modal-head">
           <h2 id="adminEditTitle">Edit</h2>
-          <button type="button" id="adminEditCloseBtn" aria-label="Close edit modal">×</button>
+          <button type="button" data-close-admin-edit aria-label="Close edit modal">×</button>
         </div>
         <form id="adminEditForm">
           <input type="hidden" id="editType">
@@ -2211,16 +2231,21 @@ function ensureAdminEditModal() {
           <div id="adminEditFields"></div>
           <button type="submit" class="btn btn-primary">Save Changes</button>
         </form>
-      </div>
-    </div>
-  `);
-  const closeBtn = document.getElementById("adminEditCloseBtn");
-  if (closeBtn) closeBtn.addEventListener("click", closeAdminEditModal);
-}
+      </div>`;
+    document.body.appendChild(modal);
+
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal || event.target.closest("[data-close-admin-edit]")) {
+        closeAdminEditModal();
+      }
+    });
+
+    setupAdminEditForm();
+    return modal;
+  }
 
 function openAdminEditModal(type, item) {
-  ensureAdminEditModal();
-  const modal = document.getElementById("adminEditModal");
+  const modal = ensureAdminEditModal();
   const title = document.getElementById("adminEditTitle");
   const fields = document.getElementById("adminEditFields");
 
@@ -2274,16 +2299,16 @@ function openAdminEditModal(type, item) {
 
       <label>Difficulty</label>
       <select id="editDifficulty">
-        <option value="beginner" ${(item.level || item.difficulty) === "beginner" ? "selected" : ""}>Beginner</option>
-        <option value="intermediate" ${(item.level || item.difficulty) === "intermediate" ? "selected" : ""}>Intermediate</option>
-        <option value="advanced" ${(item.level || item.difficulty) === "advanced" ? "selected" : ""}>Advanced</option>
+        <option value="beginner" ${item.difficulty === "beginner" ? "selected" : ""}>Beginner</option>
+        <option value="intermediate" ${item.difficulty === "intermediate" ? "selected" : ""}>Intermediate</option>
+        <option value="advanced" ${item.difficulty === "advanced" ? "selected" : ""}>Advanced</option>
       </select>
 
       <label>Image URL</label>
-      <input id="editImageUrl" value="${escapeInput(item.image_url || item.image || "")}">
+      <input id="editImageUrl" value="${escapeInput(item.image_url || "")}">
 
       <label>Video URL</label>
-      <input id="editVideoUrl" value="${escapeInput(item.video_url || item.video || item.media_url || "")}">
+      <input id="editVideoUrl" value="${escapeInput(item.video_url || "")}">
     `;
   }
 
@@ -2302,13 +2327,7 @@ function openAdminEditModal(type, item) {
       <textarea id="editRequiredSkills">${escapeInput(item.required_skills || "")}</textarea>
 
       <label>Specialization ID</label>
-      <input id="editSpecializationId" value="${escapeInput(item.specialization_id || item.spec_id || "")}">
-
-      <label>Salary</label>
-      <input id="editSalary" value="${escapeInput(item.salary || "")}">
-
-      <label>Job Link</label>
-      <input id="editJobLink" value="${escapeInput(item.link || item.job_link || "")}">
+      <input id="editSpecializationId" value="${escapeInput(item.specialization_id || "")}">
     `;
   }
 
@@ -2330,7 +2349,6 @@ function escapeInput(value) {
 }
 
 function setupAdminEditForm() {
-  ensureAdminEditModal();
   const form = document.getElementById("adminEditForm");
   if (!form || form.dataset.ready) return;
   form.dataset.ready = "1";
@@ -2363,8 +2381,8 @@ function setupAdminEditForm() {
         title: document.getElementById("editTitleInput").value,
         description: document.getElementById("editDescription").value,
         specialization_id: document.getElementById("editSpecializationId").value,
-        level: document.getElementById("editDifficulty").value,
         difficulty: document.getElementById("editDifficulty").value,
+        level: document.getElementById("editDifficulty").value,
         image_url: document.getElementById("editImageUrl").value,
         video_url: document.getElementById("editVideoUrl").value
       };
@@ -2376,59 +2394,37 @@ function setupAdminEditForm() {
         title: document.getElementById("editTitleInput").value,
         description: document.getElementById("editDescription").value,
         required_skills: document.getElementById("editRequiredSkills").value,
-        skills: document.getElementById("editRequiredSkills").value,
-        specialization_id: document.getElementById("editSpecializationId").value,
-        salary: document.getElementById("editSalary")?.value || "",
-        link: document.getElementById("editJobLink")?.value || "",
-        job_link: document.getElementById("editJobLink")?.value || ""
+        specialization_id: document.getElementById("editSpecializationId").value
       };
     }
 
-    const fallbackEndpoints = {
-      specialization: [`/api/admin/specializations/${id}`, `/api/specializations/${id}`],
-      course: [`/api/admin/courses/${id}`, `/api/courses/${id}`],
-      job: [`/api/admin/jobs/${id}`, `/api/jobs/${id}`]
-    };
+    try {
+      const fallbackEndpoint = type === "specialization"
+        ? `/api/specializations/${id}`
+        : type === "course"
+          ? `/api/courses/${id}`
+          : type === "job"
+            ? `/api/jobs/${id}`
+            : endpoint;
 
-    const endpoints = fallbackEndpoints[type] || [endpoint];
-    let data = {};
-    let updated = false;
-    let lastError = "Update failed";
-
-    for (const currentEndpoint of endpoints) {
-      const res = await fetch(/^https?:\/\//i.test(currentEndpoint) ? currentEndpoint : getApiBase() + currentEndpoint, {
+      await apiAny([endpoint, fallbackEndpoint], {
         method: "PUT",
-        headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
-        body: JSON.stringify(payload)
+        body: payload,
+        redirectOnUnauthorized: false
       });
 
-      try { data = await res.json(); } catch (_) { data = {}; }
+      closeAdminEditModal();
+      showMessage("Updated successfully", "success");
 
-      if (res.ok) {
-        updated = true;
-        break;
+      if (typeof loadAdmin === "function") {
+        loadAdmin();
       }
-
-      lastError = data.error || data.message || `Update failed (${res.status})`;
-      if (![404, 405].includes(res.status)) break;
+    } catch (err) {
+      const message = err.status === 401 ? "Unauthorized. Sign in as admin again." : (err.message || "Update failed");
+      alert(message);
     }
-
-    if (!updated) {
-      alert(lastError);
-      return;
-    }
-
-    closeAdminEditModal();
-
-    if (window.SQR && typeof window.SQR.loadAdmin === "function") {
-      window.SQR.loadAdmin();
-    }
-    alert(data.message || "Updated successfully");
   });
 }
-  window.openAdminEditModal = openAdminEditModal;
-  window.closeAdminEditModal = closeAdminEditModal;
-
   function addRequiredStars() {
     qsa("input[required], textarea[required], select[required]").forEach(function (input) {
       const id = input.id;
