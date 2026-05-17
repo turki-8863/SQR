@@ -280,7 +280,14 @@ async function safeFetch(url, options = {}) {
     }
     const response = await fetch(/^https?:\/\//i.test(path) ? path : `${API}${path}`, config);
     if (response.status === 401) {
-      const shouldRedirect = config.redirectOnUnauthorized !== false && config.silentUnauthorized !== true;
+      const pathText = String(path || "");
+      const specializationAuthCheck =
+        pathText.includes("/api/specializations/") &&
+        (pathText.includes("/enrollment-status") || pathText.includes("/enroll") || pathText.includes("/unenroll"));
+      const shouldRedirect =
+        config.redirectOnUnauthorized !== false &&
+        config.silentUnauthorized !== true &&
+        specializationAuthCheck !== true;
       if (shouldRedirect && !isPublicPage()) {
         clearAuth();
         setTimeout(() => go(route("signin")), 450);
@@ -902,6 +909,9 @@ async function loadSpecializationDetails() {
 
         if (!enrollBtn && !unenrollBtn) return;
 
+        e.preventDefault();
+        e.stopPropagation();
+
         const isEnroll = Boolean(enrollBtn);
         const btn = enrollBtn || unenrollBtn;
 
@@ -911,7 +921,11 @@ async function loadSpecializationDetails() {
         try {
           await api(
             `/api/specializations/${encodeURIComponent(sid)}/${isEnroll ? "enroll" : "unenroll"}`,
-            { method: "POST" }
+            {
+              method: "POST",
+              silentUnauthorized: true,
+              redirectOnUnauthorized: false
+            }
           );
 
           enrolled = isEnroll;
@@ -947,43 +961,6 @@ async function loadSpecializationDetails() {
     box.innerHTML = emptyState("Specialization not found", err.message);
   }
 }
-document.addEventListener("click", async function (e) {
-  const enrollBtn = e.target.closest("[data-enroll-specialization]");
-  const unenrollBtn = e.target.closest("[data-unenroll-specialization]");
-
-  if (!enrollBtn && !unenrollBtn) return;
-
-  const isEnroll = Boolean(enrollBtn);
-  const btn = enrollBtn || unenrollBtn;
-  const sid = btn.dataset.enrollSpecialization || btn.dataset.unenrollSpecialization;
-
-  if (!sid) return;
-
-  btn.disabled = true;
-  btn.textContent = isEnroll ? "Enrolling..." : "Unenrolling...";
-
-  try {
-    await api(`/api/specializations/${encodeURIComponent(sid)}/${isEnroll ? "enroll" : "unenroll"}`, {
-      method: "POST"
-    });
-
-    await loadSpecializationDetails();
-
-    if (typeof showMessage === "function") {
-      showMessage(isEnroll ? "Enrolled successfully." : "Unenrolled successfully.", "success");
-    }
-  } catch (err) {
-    btn.disabled = false;
-    btn.textContent = isEnroll ? "Enroll" : "Unenroll";
-
-    if (typeof showMessage === "function") {
-      showMessage(err.message || "Enrollment failed.", "error");
-    } else {
-      alert(err.message || "Enrollment failed.");
-    }
-  }
-});
-  
   
   async function loadCourses() {
     const box = byId("coursesBox");
