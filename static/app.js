@@ -40,7 +40,51 @@
     lastResume: "",
     loading: false
   };
+function getToken() {
+  return (
+    localStorage.getItem("token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("access_token") ||
+    ""
+  );
+}
 
+function getAuthHeaders(extraHeaders = {}) {
+  const token = getToken();
+
+  const headers = {
+    ...extraHeaders
+  };
+
+  if (token) {
+    headers.Authorization = "Bearer " + token;
+  }
+
+  return headers;
+}
+
+async function safeFetch(url, options = {}) {
+  const headers = getAuthHeaders(options.headers || {});
+
+  const res = await fetch(url, {
+    ...options,
+    headers
+  });
+
+  let data = {};
+
+  try {
+    data = await res.json();
+  } catch (e) {
+    data = {};
+  }
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    data
+  };
+}
   function pageName() {
     return window.location.pathname.split("/").pop() || "gp.html";
   }
