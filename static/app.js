@@ -1230,28 +1230,58 @@ document.addEventListener("click", async function (e) {
       </article>`;
   }
 
-  function setupAtsGenerator() {
-    const form = byId("atsGenerateForm");
-    if (!form || form.dataset.ready) return;
-    form.dataset.ready = "1";
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (!requireLogin()) return;
-      const btn = form.querySelector("button[type='submit']");
-      try {
-        setLoading(btn, true, "Generating...");
-        const result = await api("/api/ats/generate", { method: "POST", body: formDataObject(form) });
-        STATE.lastResume = result.resume || "";
-        renderGeneratedResume(result);
-        showMessage("ATS resume generated", "success");
-      } catch (err) {
-        showMessage(err.message, "error");
-      } finally {
-        setLoading(btn, false);
-      }
-    });
-  }
+ function setupATS() {
+  const form = document.getElementById("atsGenerateForm");
+  if (!form) return;
 
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+
+    const summaryBox = document.getElementById("atsSummaryResult");
+    const messageBox = document.getElementById("message");
+
+    if (summaryBox) {
+      summaryBox.textContent = "Generating enhanced summary...";
+    }
+
+    try {
+      const formData = new FormData(form);
+
+      const res = await fetch("/api/ats/generate", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + localStorage.getItem("token")
+        },
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "ATS generation failed");
+      }
+
+      const enhancedSummary = data.enhanced_summary || data.summary || "";
+
+      if (summaryBox) {
+        summaryBox.textContent = enhancedSummary;
+      }
+
+      if (messageBox) {
+        messageBox.innerHTML = `<div class="success">Enhanced summary generated successfully.</div>`;
+      }
+
+    } catch (err) {
+      if (summaryBox) {
+        summaryBox.textContent = "";
+      }
+
+      if (messageBox) {
+        messageBox.innerHTML = `<div class="error">${err.message}</div>`;
+      }
+    }
+  });
+}
   function renderGeneratedResume(result) {
     const box = byId("generatedResume");
     if (!box) return;
