@@ -4269,6 +4269,72 @@ select:focus { border-color: rgba(34, 211, 238, 0.72); box-shadow: 0 0 0 4px rgb
   font-weight: 750;
   line-height: 1.5;
 }
+.admin-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 20, 0.72);
+  backdrop-filter: blur(10px);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.admin-modal.hidden {
+  display: none;
+}
+
+.admin-modal-box {
+  width: min(720px, 96vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #101827;
+  border: 1px solid rgba(120, 170, 255, 0.25);
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  color: #f7fbff;
+}
+
+.admin-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.admin-modal-head button {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-size: 26px;
+  cursor: pointer;
+}
+
+#adminEditFields {
+  display: grid;
+  gap: 12px;
+}
+
+#adminEditFields input,
+#adminEditFields textarea,
+#adminEditFields select {
+  width: 100%;
+  border: 1px solid rgba(160, 190, 255, 0.24);
+  border-radius: 14px;
+  background: #0a1020;
+  color: #ffffff;
+  padding: 13px 14px;
+}
+
+#adminEditFields textarea {
+  min-height: 110px;
+  resize: vertical;
+}
 
 .dashboard-stats-side .purple-card strong {
   color: #a78bfa;
