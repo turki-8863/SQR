@@ -501,6 +501,15 @@ def init_db():
     This version matches the Railway dump tables: specialization_id, course_id,
     quiz_id, job_id, specialization_enrollments, course_enrollments, and ats_id.
     """
+    # Compatibility for old local databases that used the singular table name.
+    # The Railway dump and this backend use `specializations` plural.
+    try:
+        if table_exists("specialization") and not table_exists("specializations"):
+            exec_db("RENAME TABLE specialization TO specializations")
+            print("Renamed specialization table to specializations")
+    except Exception as exc:
+        print("specialization table compatibility rename skipped:", exc)
+
     statements = [
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -778,6 +787,20 @@ def init_db():
             exec_db(statement)
         except Exception as exc:
             print("init_db statement skipped:", exc)
+
+    try:
+        if table_exists("specialization") and table_exists("specializations"):
+            source_count = query_db("SELECT COUNT(*) AS total FROM specialization", fetchone=True) or {"total": 0}
+            target_count = query_db("SELECT COUNT(*) AS total FROM specializations", fetchone=True) or {"total": 0}
+            if safe_int(source_count.get("total"), 0) > 0 and safe_int(target_count.get("total"), 0) == 0:
+                exec_db("""
+                    INSERT INTO specializations (specialization_id, name, description, roadmap, job_titles, career_paths, image_url, created_at, id, skills, image)
+                    SELECT specialization_id, name, description, roadmap, job_titles, career_paths, image_url, created_at, id, skills, image
+                    FROM specialization
+                """)
+                print("Copied old specialization data into specializations")
+    except Exception as exc:
+        print("specialization table compatibility copy skipped:", exc)
 
     compatibility_columns = {
         "users": [
