@@ -1184,24 +1184,54 @@ def profile_progress():
 @app.route("/api/specializations", methods=["GET"])
 def get_specializations():
     try:
-        rows = query_db(
-            """
+        search = safe_text(request.args.get("search"))
+
+        sql = """
             SELECT *
-            FROM specializations
-            ORDER BY specialization_id DESC
-            """,
-            fetchall=True
-        ) or []
-        return jsonify({"specializations": [normalize_specialization(row) for row in rows]}), 200
+            FROM specialization
+            WHERE 1=1
+        """
+
+        params = []
+
+        if search:
+            sql += """
+                AND (
+                    name LIKE %s
+                    OR description LIKE %s
+                )
+            """
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        sql += " ORDER BY specialization_id DESC"
+
+        rows = query_db(sql, tuple(params), fetchall=True) or []
+
+        return jsonify({
+            "specializations": [normalize_specialization(row) for row in rows]
+        }), 200
+
     except Exception as e:
-        print("GET SPECIALIZATIONS ERROR:", str(e))
-        return jsonify({"error": "Could not load specializations", "details": str(e)}), 500
+        print("GET /api/specializations ERROR:", e)
+        return jsonify({
+            "error": "Server error",
+            "details": str(e)
+        }), 500
 
 
 @app.route("/api/specializations/<int:spec_id>", methods=["GET"])
 def get_specialization(spec_id):
     try:
-        spec = query_db("SELECT * FROM specializations WHERE specialization_id=%s", (spec_id,), fetchone=True)
+        spec = query_db(
+            """
+            SELECT *
+            FROM specialization
+            WHERE specialization_id = %s
+            """,
+            (spec_id,),
+            fetchone=True
+        )
+
         if not spec:
             return jsonify({"error": "Specialization not found"}), 404
 
@@ -1209,7 +1239,7 @@ def get_specialization(spec_id):
             """
             SELECT *
             FROM courses
-            WHERE specialization_id=%s
+            WHERE specialization_id = %s
             ORDER BY course_id DESC
             """,
             (spec_id,),
@@ -1220,50 +1250,25 @@ def get_specialization(spec_id):
             """
             SELECT *
             FROM jobs
-            WHERE specialization_id=%s
+            WHERE specialization_id = %s
             ORDER BY job_id DESC
             """,
             (spec_id,),
             fetchall=True
         ) or []
 
-        certificates = []
-        if table_exists("certificates"):
-            certificates = query_db(
-                """
-                SELECT id, spec_id AS specialization_id, name, description, link, price, type, created_at
-                FROM certificates
-                WHERE spec_id=%s
-                ORDER BY id DESC
-                """,
-                (spec_id,),
-                fetchall=True
-            ) or []
-        certifications = []
-        if table_exists("certifications"):
-            certifications = query_db(
-                """
-                SELECT certification_id AS id, specialization_id, name, description, official_link AS link, price, type, created_at
-                FROM certifications
-                WHERE specialization_id=%s
-                ORDER BY certification_id DESC
-                """,
-                (spec_id,),
-                fetchall=True
-            ) or []
-
-        merged_certs = certificates + certifications
         return jsonify({
             "specialization": normalize_specialization(spec),
             "courses": [normalize_course(row) for row in courses],
-            "jobs": [normalize_job(row) for row in jobs],
-            "certificates": merged_certs,
-            "certifications": merged_certs
+            "jobs": [normalize_job(row) for row in jobs]
         }), 200
-    except Exception as e:
-        print("SPECIALIZATION DETAILS ERROR:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
 
+    except Exception as e:
+        print("GET /api/specializations/<id> ERROR:", e)
+        return jsonify({
+            "error": "Server error",
+            "details": str(e)
+        }), 500
 
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
 @login_required
@@ -1409,43 +1414,90 @@ def delete_specialization(spec_id):
 
 @app.route("/api/courses", methods=["GET"])
 def get_courses():
-    spec_id = request.args.get("spec_id") or request.args.get("specialization_id")
-    search = safe_text(request.args.get("search"))
-    sql = """
-        SELECT c.*, s.name AS specialization_name
-        FROM courses c
-        LEFT JOIN specializations s ON s.specialization_id=c.specialization_id
-        WHERE 1=1
-    """
-    params = []
-    if spec_id:
-        sql += " AND c.specialization_id=%s"
-        params.append(spec_id)
-    if search:
-        sql += " AND (c.title LIKE %s OR c.description LIKE %s OR c.level LIKE %s)"
-        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-    sql += " ORDER BY c.course_id DESC"
-    rows = query_db(sql, tuple(params), fetchall=True) or []
-    return jsonify({"courses": [normalize_course(row) for row in rows]})
+    try:
+        search = safe_text(request.args.get("search"))
+        spec_id = request.args.get("specialization_id") or request.args.get("spec_id")
+
+        sql = """
+            SELECT c.*, s.name AS specialization_name
+            FROM courses c
+            LEFT JOIN specialization s
+                ON s.specialization_id = c.specialization_id
+            WHERE 1=1
+        """
+
+        params = []
+
+        if search:
+            sql += """
+                AND (
+                    c.title LIKE %s
+                    OR c.description LIKE %s
+                    OR c.difficulty LIKE %s
+                )
+            """
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+
+        if spec_id:
+            sql += " AND c.specialization_id = %s"
+            params.append(spec_id)
+
+        sql += " ORDER BY c.course_id DESC"
+
+        rows = query_db(sql, tuple(params), fetchall=True) or []
+
+        return jsonify({
+            "courses": [normalize_course(row) for row in rows]
+        }), 200
+
+    except Exception as e:
+        print("GET /api/courses ERROR:", e)
+        return jsonify({
+            "error": "Server error",
+            "details": str(e)
+        }), 500
 
 
 @app.route("/api/courses/<int:course_id>", methods=["GET"])
 def get_course(course_id):
-    course = query_db(
-        """
-        SELECT c.*, s.name AS specialization_name
-        FROM courses c
-        LEFT JOIN specializations s ON s.specialization_id=c.specialization_id
-        WHERE c.course_id=%s
-        """,
-        (course_id,),
-        fetchone=True
-    )
-    if not course:
-        return jsonify({"error": "Course not found"}), 404
-    quizzes = query_db("SELECT * FROM quizzes WHERE course_id=%s ORDER BY quiz_id DESC", (course_id,), fetchall=True) or []
-    return jsonify({"course": normalize_course(course), "quizzes": [normalize_quiz(row) for row in quizzes]})
+    try:
+        row = query_db(
+            """
+            SELECT c.*, s.name AS specialization_name
+            FROM courses c
+            LEFT JOIN specialization s
+                ON s.specialization_id = c.specialization_id
+            WHERE c.course_id = %s
+            """,
+            (course_id,),
+            fetchone=True
+        )
 
+        if not row:
+            return jsonify({"error": "Course not found"}), 404
+
+        quizzes = query_db(
+            """
+            SELECT *
+            FROM quizzes
+            WHERE course_id = %s
+            ORDER BY quiz_id DESC
+            """,
+            (course_id,),
+            fetchall=True
+        ) or []
+
+        return jsonify({
+            "course": normalize_course(row),
+            "quizzes": [normalize_quiz(q) for q in quizzes]
+        }), 200
+
+    except Exception as e:
+        print("GET /api/courses/<id> ERROR:", e)
+        return jsonify({
+            "error": "Server error",
+            "details": str(e)
+        }), 500
 
 @app.route("/api/courses", methods=["POST"])
 @admin_required
@@ -1730,42 +1782,78 @@ def submit_quiz(quiz_id):
 
 @app.route("/api/jobs", methods=["GET"])
 def get_jobs():
-    search = safe_text(request.args.get("search"))
-    spec_id = request.args.get("specialization_id") or request.args.get("spec_id")
-    sql = """
-        SELECT j.*, s.name AS specialization_name
-        FROM jobs j
-        LEFT JOIN specializations s ON s.specialization_id=j.specialization_id
-        WHERE 1=1
-    """
-    params = []
-    if search:
-        sql += " AND (j.title LIKE %s OR j.description LIKE %s OR j.required_skills LIKE %s)"
-        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-    if spec_id:
-        sql += " AND j.specialization_id=%s"
-        params.append(spec_id)
-    sql += " ORDER BY j.job_id DESC"
-    rows = query_db(sql, tuple(params), fetchall=True) or []
-    return jsonify({"jobs": [normalize_job(row) for row in rows]})
+    try:
+        search = safe_text(request.args.get("search"))
+        spec_id = request.args.get("specialization_id") or request.args.get("spec_id")
+
+        sql = """
+            SELECT j.*, s.name AS specialization_name
+            FROM jobs j
+            LEFT JOIN specialization s 
+                ON s.specialization_id = j.specialization_id
+            WHERE 1=1
+        """
+
+        params = []
+
+        if search:
+            sql += """
+                AND (
+                    j.title LIKE %s 
+                    OR j.description LIKE %s 
+                    OR j.required_skills LIKE %s
+                )
+            """
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+
+        if spec_id:
+            sql += " AND j.specialization_id = %s"
+            params.append(spec_id)
+
+        sql += " ORDER BY j.job_id DESC"
+
+        rows = query_db(sql, tuple(params), fetchall=True) or []
+
+        return jsonify({
+            "jobs": [normalize_job(row) for row in rows]
+        }), 200
+
+    except Exception as e:
+        print("GET /api/jobs ERROR:", e)
+        return jsonify({
+            "error": "Server error",
+            "details": str(e)
+        }), 500
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["GET"])
 def get_job(job_id):
-    row = query_db(
-        """
-        SELECT j.*, s.name AS specialization_name
-        FROM jobs j
-        LEFT JOIN specializations s ON s.specialization_id=j.specialization_id
-        WHERE j.job_id=%s
-        """,
-        (job_id,),
-        fetchone=True
-    )
-    if not row:
-        return jsonify({"error": "Job not found"}), 404
-    return jsonify({"job": normalize_job(row)})
+    try:
+        row = query_db(
+            """
+            SELECT j.*, s.name AS specialization_name
+            FROM jobs j
+            LEFT JOIN specialization s 
+                ON s.specialization_id = j.specialization_id
+            WHERE j.job_id = %s
+            """,
+            (job_id,),
+            fetchone=True
+        )
 
+        if not row:
+            return jsonify({"error": "Job not found"}), 404
+
+        return jsonify({
+            "job": normalize_job(row)
+        }), 200
+
+    except Exception as e:
+        print("GET /api/jobs/<id> ERROR:", e)
+        return jsonify({
+            "error": "Server error",
+            "details": str(e)
+        }), 500
 
 @app.route("/api/jobs", methods=["POST"])
 @admin_required
