@@ -928,81 +928,36 @@ def get_specializations():
     }), 200
 
 
-@app.route("/api/specializations/<int:spec_id>", methods=["GET"])
-def get_specialization(spec_id):
+@app.route("/api/specializations", methods=["GET"])
+def get_specializations():
     try:
-        spec = query_db(
+        rows = query_db(
             """
             SELECT *
             FROM specializations
-            WHERE specialization_id = %s
-            """,
-            (spec_id,),
-            fetchone=True
-        )
-
-        if not spec:
-            return jsonify({"error": "Specialization not found"}), 404
-
-        courses = query_db(
-            """
-            SELECT *
-            FROM courses
-            WHERE specialization_id = %s
             ORDER BY id DESC
             """,
-            (spec_id,),
             fetchall=True
         ) or []
-
-        jobs = query_db(
-            """
-            SELECT *
-            FROM jobs
-            WHERE specialization_id = %s
-            ORDER BY id DESC
-            """,
-            (spec_id,),
-            fetchall=True
-        ) or []
-
-        certifications = []
-        try:
-            certifications = query_db(
-                """
-                SELECT *
-                FROM certifications
-                WHERE specialization_id = %s
-                ORDER BY id DESC
-                """,
-                (spec_id,),
-                fetchall=True
-            ) or []
-        except Exception:
-            certifications = []
 
         return jsonify({
-            "specialization": normalize_specialization(spec),
-            "courses": courses,
-            "jobs": jobs,
-            "certifications": certifications
+            "specializations": [normalize_specialization(row) for row in rows]
         }), 200
 
     except Exception as e:
-        print("SPECIALIZATION DETAILS ERROR:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
-
+        print("GET SPECIALIZATIONS ERROR:", str(e))
+        return jsonify({"error": "Could not load specializations", "details": str(e)}), 500
 
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
 @login_required
 def specialization_enrollment_status(spec_id):
     try:
-        user_id = request.user["id"]
+        user_id = request.current_user["id"]
 
         row = query_db(
             """
             SELECT 1
-            FROM student_specializations
+            FROM specialization_enrollments
             WHERE user_id = %s AND specialization_id = %s
             LIMIT 1
             """,
@@ -1021,13 +976,13 @@ def specialization_enrollment_status(spec_id):
 @login_required
 def enroll_specialization(spec_id):
     try:
-        user_id = request.user["id"]
+        user_id = request.current_user["id"]
 
         spec = query_db(
             """
-            SELECT specialization_id
+            SELECT id
             FROM specializations
-            WHERE specialization_id = %s
+            WHERE id = %s
             """,
             (spec_id,),
             fetchone=True
@@ -1039,7 +994,7 @@ def enroll_specialization(spec_id):
         existing = query_db(
             """
             SELECT 1
-            FROM student_specializations
+            FROM specialization_enrollments
             WHERE user_id = %s AND specialization_id = %s
             LIMIT 1
             """,
@@ -1055,7 +1010,7 @@ def enroll_specialization(spec_id):
 
         query_db(
             """
-            INSERT INTO student_specializations (user_id, specialization_id)
+            INSERT INTO specialization_enrollments (user_id, specialization_id)
             VALUES (%s, %s)
             """,
             (user_id, spec_id),
@@ -1076,11 +1031,11 @@ def enroll_specialization(spec_id):
 @login_required
 def unenroll_specialization(spec_id):
     try:
-        user_id = request.user["id"]
+        user_id = request.current_user["id"]
 
         query_db(
             """
-            DELETE FROM student_specializations
+            DELETE FROM specialization_enrollments
             WHERE user_id = %s AND specialization_id = %s
             """,
             (user_id, spec_id),
@@ -1542,8 +1497,8 @@ def ats_check():
 
 
 @app.route("/api/ats/generate", methods=["POST"])
-@token_required
-def ats_generate(current_user):
+@student_required
+def ats_generate():
     try:
         data = request.get_json(silent=True)
 
