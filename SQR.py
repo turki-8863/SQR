@@ -1542,53 +1542,123 @@ def ats_check():
 
 
 @app.route("/api/ats/generate", methods=["POST"])
-@student_required
-def ats_generate():
-    data = get_json()
-    name = safe_text(data.get("name") or request.current_user.get("name"))
-    target_role = safe_text(data.get("target_role") or data.get("target_job"))
-    summary = safe_text(data.get("summary"))
-    skills = safe_text(data.get("skills"))
-    projects = safe_text(data.get("projects"))
-    education = safe_text(data.get("education"))
-    if not name or not target_role or not skills or not summary:
-        return jsonify({"error": "Name, target role, summary, and skills are required"}), 400
-    resume = f"""{name}\n{target_role}\n\nSUMMARY\n{summary}\n\nSKILLS\n{skills}\n\nPROJECTS\n{projects or 'Add relevant projects with tools and measurable results.'}\n\nEDUCATION\n{education or 'Add education details.'}\n"""
-    fallback = {
-        "resume": resume,
-        "enhanced_summary": summary,
-        "ats_score": 82,
-        "matched_keywords": [skill for skill in TECH_SKILLS if skill in skills.lower()][:12],
-    }
-    prompt = f"Return JSON with resume, enhanced_summary, ats_score, matched_keywords. Create ATS-friendly resume text, no fake claims. Name: {name}. Role: {target_role}. Summary: {summary}. Skills: {skills}. Projects: {projects}. Education: {education}."
-    result = ai_json(prompt, fallback)
-    return jsonify(result)
+@token_required
+def ats_generate(current_user):
+    try:
+        data = request.get_json(silent=True)
 
+        if not data:
+            data = request.form.to_dict()
 
-def build_resume_pdf(text):
-    if not SimpleDocTemplate:
-        return None
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=42, leftMargin=42, topMargin=38, bottomMargin=38)
-    styles = getSampleStyleSheet()
-    body = ParagraphStyle("Body", parent=styles["Normal"], fontName="Helvetica", fontSize=10, leading=14, textColor=colors.HexColor("#111827"))
-    heading = ParagraphStyle("Heading", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=colors.HexColor("#111827"), spaceBefore=10)
-    story = []
-    lines = str(text or "").splitlines()
-    for line in lines:
-        value = line.strip()
-        if not value:
-            story.append(Spacer(1, 8))
-        elif value.isupper() and len(value) < 35:
-            story.append(Paragraph(value, heading))
-            story.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#d1d5db")))
-        else:
-            story.append(Paragraph(value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), body))
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
+        name = (data.get("name") or "").strip()
+        email = (data.get("email") or "").strip()
+        phone = (data.get("phone") or "").strip()
+        location = (data.get("location") or "").strip()
+        target_role = (data.get("target_role") or data.get("target_job") or "").strip()
+        linkedin = (data.get("linkedin") or "").strip()
+        summary = (data.get("summary") or "").strip()
 
+        technical_skills = (
+            data.get("technical_skills")
+            or data.get("technicalSkills")
+            or data.get("tech_skills")
+            or data.get("skills")
+            or ""
+        ).strip()
 
+        soft_skills = (
+            data.get("soft_skills")
+            or data.get("softSkills")
+            or ""
+        ).strip()
+
+        education = (data.get("education") or "").strip()
+        experience = (data.get("experience") or "").strip()
+        projects = (data.get("projects") or "").strip()
+        certifications = (data.get("certifications") or "").strip()
+
+        if not name or not email or not phone or not target_role or not summary or not technical_skills or not soft_skills or not education:
+            return jsonify({
+                "error": "Name, email, phone, target role, summary, technical skills, soft skills, and education are required"
+            }), 400
+
+        enhanced_summary = (
+            f"{name} is an aspiring {target_role} with experience in {technical_skills}. "
+            f"The candidate demonstrates {soft_skills} and is focused on building practical, "
+            f"ATS-friendly career readiness through projects, education, and continuous learning."
+        )
+
+        resume_parts = []
+
+        resume_parts.append(name.upper())
+        contact_line = f"{email} | {phone}"
+        if location:
+            contact_line += f" | {location}"
+        if linkedin:
+            contact_line += f" | {linkedin}"
+        resume_parts.append(contact_line)
+
+        resume_parts.append("\nPROFESSIONAL SUMMARY")
+        resume_parts.append(summary)
+
+        resume_parts.append("\nTARGET ROLE")
+        resume_parts.append(target_role)
+
+        resume_parts.append("\nTECHNICAL SKILLS")
+        resume_parts.append(technical_skills)
+
+        resume_parts.append("\nSOFT SKILLS")
+        resume_parts.append(soft_skills)
+
+        resume_parts.append("\nEDUCATION")
+        resume_parts.append(education)
+
+        if experience:
+            resume_parts.append("\nEXPERIENCE")
+            resume_parts.append(experience)
+
+        if projects:
+            resume_parts.append("\nPROJECTS")
+            resume_parts.append(projects)
+
+        if certifications:
+            resume_parts.append("\nCERTIFICATIONS")
+            resume_parts.append(certifications)
+
+        resume = "\n".join(resume_parts)
+
+        keyword_text = " ".join([
+            target_role,
+            summary,
+            technical_skills,
+            soft_skills,
+            education,
+            experience,
+            projects,
+            certifications
+        ]).lower()
+
+        ats_keywords = [
+            "python", "java", "sql", "linux", "flask", "html", "css",
+            "javascript", "git", "api", "database", "project",
+            "communication", "teamwork", "problem solving", "leadership"
+        ]
+
+        matched = [kw for kw in ats_keywords if kw in keyword_text]
+        ats_score = min(100, 55 + len(matched) * 5)
+
+        return jsonify({
+            "resume": resume,
+            "enhanced_summary": enhanced_summary,
+            "ats_score": ats_score,
+            "matched_keywords": matched,
+            "message": "ATS resume generated successfully"
+        }), 200
+
+    except Exception as e:
+        print("ATS GENERATE ERROR:", e)
+        return jsonify({"error": "Could not generate ATS resume"}), 500
+        
 @app.route("/api/ats/export/pdf", methods=["POST"])
 @student_required
 def export_pdf():
