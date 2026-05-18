@@ -886,7 +886,7 @@
     box.innerHTML = `
       <section class="card sqr-card">
         <div class="sqr-card-top">
-          <span class="badge">${result.ai_powered ? "AI Generated" : "Generated"}</span>
+          <span class="badge">${result.ai_powered ? `AI Generated: ${escapeHTML(result.ai_provider || "gemini")}` : "Dynamic fallback"}</span>
           ${result.target_role ? `<span class="badge badge-soft">${escapeHTML(result.target_role)}</span>` : ""}
         </div>
         <h2>Enhanced Summary</h2>
