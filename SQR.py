@@ -21,13 +21,6 @@ except Exception:
     OpenAI = None
 
 try:
-    from google import genai as google_genai
-    from google.genai import types as google_genai_types
-except Exception:
-    google_genai = None
-    google_genai_types = None
-
-try:
     from PyPDF2 import PdfReader
 except Exception:
     PdfReader = None
@@ -83,13 +76,6 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if OpenAI and os.getenv("OP
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GEIMINI_API_KEY") or "").strip()
 GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or os.getenv("GEIMINI_MODEL") or "gemini-2.0-flash").strip()
-gemini_client = None
-if GEMINI_API_KEY and google_genai:
-    try:
-        gemini_client = google_genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as exc:
-        print("GOOGLE GENAI CLIENT ERROR:", exc)
-        gemini_client = None
 
 TECH_SKILLS = [
     "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql",
@@ -620,58 +606,21 @@ def extract_json_object(text_value):
 def gemini_json(prompt, fallback):
     if not GEMINI_API_KEY:
         return None
-
-    prompt_text = (
-        "Return valid JSON only. Do not use markdown. "
-        "Do not invent user facts, companies, years, GPA, certificates, or experience.\n\n"
-        + safe_text(prompt)
-    )
-
-    if gemini_client:
-        try:
-            if google_genai_types:
-                config = google_genai_types.GenerateContentConfig(
-                    temperature=0.35,
-                    top_p=0.9,
-                    max_output_tokens=4096,
-                    response_mime_type="application/json",
-                )
-            else:
-                config = {
-                    "temperature": 0.35,
-                    "top_p": 0.9,
-                    "max_output_tokens": 4096,
-                    "response_mime_type": "application/json",
-                }
-
-            response = gemini_client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt_text,
-                config=config,
-            )
-            text_value = safe_text(getattr(response, "text", ""))
-            if not text_value and getattr(response, "candidates", None):
-                parts_text = []
-                for candidate in response.candidates or []:
-                    content = getattr(candidate, "content", None)
-                    for part in getattr(content, "parts", []) or []:
-                        parts_text.append(safe_text(getattr(part, "text", "")))
-                text_value = "\n".join([part for part in parts_text if part])
-            parsed = extract_json_object(text_value)
-            if isinstance(parsed, dict):
-                parsed["ai_provider"] = "gemini"
-                parsed["ai_sdk"] = "google-genai"
-                return parsed
-        except Exception as exc:
-            print("GOOGLE GENAI JSON ERROR:", exc)
-
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
         body = {
             "contents": [
                 {
                     "role": "user",
-                    "parts": [{"text": prompt_text}],
+                    "parts": [
+                        {
+                            "text": (
+                                "Return valid JSON only. Do not use markdown. "
+                                "Do not invent user facts, companies, years, GPA, certificates, or experience.\n\n"
+                                + safe_text(prompt)
+                            )
+                        }
+                    ],
                 }
             ],
             "generationConfig": {
@@ -697,12 +646,12 @@ def gemini_json(prompt, fallback):
         parsed = extract_json_object(text_value)
         if isinstance(parsed, dict):
             parsed["ai_provider"] = "gemini"
-            parsed["ai_sdk"] = "rest_fallback"
             return parsed
         return None
     except Exception as exc:
-        print("GEMINI REST JSON ERROR:", exc)
+        print("GEMINI JSON ERROR:", exc)
         return None
+
 
 def ai_json(prompt, fallback):
     gemini_result = gemini_json(prompt, fallback)
@@ -1081,6 +1030,87 @@ def init_db():
             except Exception as exc:
                 print(f"init_db alter skipped for {table}.{column}:", exc)
 
+    # Strong compatibility patch: many older SQR databases use *_id columns
+    # while some routes use id/spec_id/progress aliases. Add safe alias columns
+    # and backfill them without deleting any existing data.
+    def ensure_column(table, column, definition):
+        try:
+            if table_exists(table) and not column_exists(table, column):
+                exec_db(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {definition}")
+        except Exception as exc:
+            print(f"compat column skipped for {table}.{column}:", exc)
+
+    alias_columns = {
+        "specializations": [("id", "INT NULL")],
+        "courses": [("id", "INT NULL"), ("name", "VARCHAR(150)"), ("difficulty", "VARCHAR(50)")],
+        "jobs": [("id", "INT NULL"), ("skills", "TEXT"), ("salary", "VARCHAR(100)"), ("link", "VARCHAR(255)"), ("specialization", "VARCHAR(150)")],
+        "quizzes": [("id", "INT NULL"), ("name", "VARCHAR(150)")],
+        "quiz_questions": [("id", "INT NULL")],
+        "specialization_enrollments": [("id", "INT NULL"), ("spec_id", "INT NULL"), ("progress", "INT DEFAULT 0")],
+        "course_enrollments": [("id", "INT NULL"), ("progress", "INT DEFAULT 0")],
+        "quiz_attempts": [("id", "INT NULL"), ("course_id", "INT NULL"), ("percentage", "DECIMAL(5,2) DEFAULT 0.00"), ("total", "INT DEFAULT 0")],
+        "ats_results": [("id", "INT NULL"), ("score", "DECIMAL(5,2) DEFAULT 0.00")],
+        "certificates": [("certification_id", "INT NULL"), ("specialization_id", "INT NULL"), ("official_link", "VARCHAR(255)")],
+        "certifications": [("id", "INT NULL"), ("spec_id", "INT NULL"), ("link", "VARCHAR(255)")],
+        "recommendations": [("id", "INT NULL")],
+        "recommendation_results": [("recommendation_id", "INT NULL")],
+    }
+    for table, columns in alias_columns.items():
+        for column, definition in columns:
+            ensure_column(table, column, definition)
+
+    # Lower-case values are used by routes; make existing Railway ENUM tables accept them safely.
+    for table in ["specialization_enrollments", "course_enrollments"]:
+        try:
+            if table_exists(table) and column_exists(table, "status"):
+                exec_db(f"ALTER TABLE `{table}` MODIFY COLUMN `status` VARCHAR(50) DEFAULT 'not_started'")
+        except Exception as exc:
+            print(f"status compatibility skipped for {table}:", exc)
+    try:
+        if table_exists("courses") and column_exists("courses", "level"):
+            exec_db("ALTER TABLE `courses` MODIFY COLUMN `level` VARCHAR(50) DEFAULT 'beginner'")
+    except Exception as exc:
+        print("course level compatibility skipped:", exc)
+
+    backfill_statements = [
+        "UPDATE specializations SET id=specialization_id WHERE (id IS NULL OR id=0)",
+        "UPDATE courses SET id=course_id WHERE (id IS NULL OR id=0)",
+        "UPDATE courses SET name=title WHERE (name IS NULL OR name='') AND title IS NOT NULL",
+        "UPDATE courses SET difficulty=level WHERE (difficulty IS NULL OR difficulty='') AND level IS NOT NULL",
+        "UPDATE courses SET spec_id=specialization_id WHERE (spec_id IS NULL OR spec_id=0) AND specialization_id IS NOT NULL",
+        "UPDATE jobs SET id=job_id WHERE (id IS NULL OR id=0)",
+        "UPDATE jobs SET skills=required_skills WHERE (skills IS NULL OR skills='') AND required_skills IS NOT NULL",
+        "UPDATE jobs SET salary=average_salary WHERE (salary IS NULL OR salary='') AND average_salary IS NOT NULL",
+        "UPDATE jobs SET link=job_link WHERE (link IS NULL OR link='') AND job_link IS NOT NULL",
+        "UPDATE quizzes SET id=quiz_id WHERE (id IS NULL OR id=0)",
+        "UPDATE quizzes SET name=title WHERE (name IS NULL OR name='') AND title IS NOT NULL",
+        "UPDATE quiz_questions SET id=question_id WHERE (id IS NULL OR id=0)",
+        "UPDATE specialization_enrollments SET id=enrollment_id WHERE (id IS NULL OR id=0)",
+        "UPDATE specialization_enrollments SET spec_id=specialization_id WHERE (spec_id IS NULL OR spec_id=0) AND specialization_id IS NOT NULL",
+        "UPDATE specialization_enrollments SET progress=COALESCE(progress_percentage,0) WHERE progress IS NULL OR progress=0",
+        "UPDATE course_enrollments SET id=enrollment_id WHERE (id IS NULL OR id=0)",
+        "UPDATE course_enrollments SET progress=COALESCE(progress_percentage,0) WHERE progress IS NULL OR progress=0",
+        "UPDATE quiz_attempts SET id=attempt_id WHERE (id IS NULL OR id=0)",
+        "UPDATE quiz_attempts SET percentage=score WHERE (percentage IS NULL OR percentage=0) AND score IS NOT NULL",
+        "UPDATE ats_results SET id=ats_id WHERE (id IS NULL OR id=0)",
+        "UPDATE ats_results SET score=ats_score WHERE (score IS NULL OR score=0) AND ats_score IS NOT NULL",
+        "UPDATE certificates SET certification_id=id WHERE (certification_id IS NULL OR certification_id=0)",
+        "UPDATE certificates SET specialization_id=spec_id WHERE (specialization_id IS NULL OR specialization_id=0) AND spec_id IS NOT NULL",
+        "UPDATE certificates SET official_link=link WHERE (official_link IS NULL OR official_link='') AND link IS NOT NULL",
+        "UPDATE certifications SET id=certification_id WHERE (id IS NULL OR id=0)",
+        "UPDATE certifications SET spec_id=specialization_id WHERE (spec_id IS NULL OR spec_id=0) AND specialization_id IS NOT NULL",
+        "UPDATE certifications SET link=official_link WHERE (link IS NULL OR link='') AND official_link IS NOT NULL",
+        "UPDATE recommendations SET id=recommendation_id WHERE (id IS NULL OR id=0)",
+        "UPDATE recommendation_results SET recommendation_id=id WHERE (recommendation_id IS NULL OR recommendation_id=0)",
+    ]
+    for statement in backfill_statements:
+        try:
+            table_name = statement.split()[1].strip('`')
+            if table_exists(table_name):
+                exec_db(statement)
+        except Exception as exc:
+            print("compat backfill skipped:", exc)
+
 
 
 def render_page(template_name):
@@ -1179,14 +1209,7 @@ def health():
     return jsonify({
         "message": "SQR Backend is running",
         "features": ["auth", "admin", "specializations", "courses", "quizzes", "jobs", "profile", "progress", "ATS", "recommendation"],
-        "database": DB_CONFIG.get("database"),
-        "ai": {
-            "gemini_api_key_set": bool(GEMINI_API_KEY),
-            "gemini_model": GEMINI_MODEL,
-            "google_genai_installed": bool(google_genai),
-            "gemini_client_ready": bool(gemini_client),
-            "openai_enabled": bool(client),
-        }
+        "database": DB_CONFIG.get("database")
     })
 
 
@@ -1600,13 +1623,17 @@ def enroll_specialization(spec_id):
         real_spec_id = safe_int(spec.get("id"), spec_id)
         query_db(
             """
-            INSERT INTO specialization_enrollments (user_id, spec_id, progress, status, enrolled_at)
-            VALUES (%s, %s, 0, 'in_progress', CURRENT_TIMESTAMP)
+            INSERT INTO specialization_enrollments
+                (user_id, specialization_id, spec_id, progress, progress_percentage, status, enrolled_at)
+            VALUES (%s, %s, %s, 0, 0, 'in_progress', CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
+                spec_id=VALUES(spec_id),
+                progress=GREATEST(COALESCE(progress,0), 0),
+                progress_percentage=GREATEST(COALESCE(progress_percentage,0), 0),
                 status=CASE WHEN status='completed' THEN status ELSE 'in_progress' END,
                 enrolled_at=enrolled_at
             """,
-            (user_id, real_spec_id),
+            (user_id, real_spec_id, real_spec_id),
             commit=True
         )
         compute_user_progress(user_id)
@@ -1683,6 +1710,10 @@ def add_specialization():
         ),
         commit=True
     )
+    try:
+        query_db("UPDATE specializations SET id=specialization_id WHERE specialization_id=%s AND (id IS NULL OR id=0)", (spec_id,), commit=True)
+    except Exception as exc:
+        print("SPECIALIZATION ID BACKFILL ERROR:", exc)
     return jsonify({"message": "Specialization added", "id": spec_id, "specialization_id": spec_id})
 
 
@@ -1833,6 +1864,10 @@ def add_course():
         ),
         commit=True
     )
+    try:
+        query_db("UPDATE courses SET id=course_id, name=COALESCE(NULLIF(name,''), title), difficulty=COALESCE(NULLIF(difficulty,''), level), spec_id=COALESCE(spec_id, specialization_id) WHERE course_id=%s", (course_id,), commit=True)
+    except Exception as exc:
+        print("COURSE ID BACKFILL ERROR:", exc)
     return jsonify({"message": "Course added", "id": course_id, "course_id": course_id})
 
 
@@ -5373,10 +5408,6 @@ def sqr_patch_runtime_report():
         "db_host_set": bool(DB_CONFIG.get("host")),
         "db_name_set": bool(DB_CONFIG.get("database")),
         "openai_enabled": bool(client),
-        "gemini_api_key_set": bool(GEMINI_API_KEY),
-        "gemini_model": GEMINI_MODEL,
-        "google_genai_installed": bool(google_genai),
-        "gemini_client_ready": bool(gemini_client),
         "upload_folder": app.config.get("UPLOAD_FOLDER"),
         "public_stats": sqr_patch_public_stats(),
         "page_targets": SQR_PAGE_BLUEPRINTS
