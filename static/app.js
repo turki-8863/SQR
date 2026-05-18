@@ -315,6 +315,198 @@
     return `<div class="sqr-card-media sqr-card-placeholder"><span>${esc((item?.name || item?.title || label || "SQR").slice(0, 2).toUpperCase())}</span></div>`;
   }
 
+
+  function injectSqrCriticalStyles() {
+    if (byId("sqrCriticalFixStyles")) return;
+    const style = document.createElement("style");
+    style.id = "sqrCriticalFixStyles";
+    style.textContent = `
+      :root { --sqr-nav-h: 82px; }
+      body { padding-top: 0 !important; }
+      #sqrNavbar.sqr-navbar {
+        box-sizing: border-box !important;
+        position: sticky !important;
+        top: 12px !important;
+        z-index: 9999 !important;
+        width: calc(100% - 32px) !important;
+        max-width: 1540px !important;
+        min-height: 78px !important;
+        margin: 12px auto 28px auto !important;
+        padding: 0 !important;
+        border-radius: 26px !important;
+        border: 1px solid rgba(96, 165, 250, .24) !important;
+        background: linear-gradient(135deg, rgba(2, 6, 23, .96), rgba(15, 23, 42, .95), rgba(24, 10, 48, .94)) !important;
+        box-shadow: 0 18px 45px rgba(0, 0, 0, .28) !important;
+        backdrop-filter: blur(18px) !important;
+        overflow: visible !important;
+      }
+      #sqrNavbar .sqr-nav-inner {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        min-height: 78px !important;
+        padding: 14px 20px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 16px !important;
+        flex-wrap: nowrap !important;
+      }
+      #sqrNavbar .sqr-brand {
+        flex: 0 0 auto !important;
+        min-width: 128px !important;
+        text-decoration: none !important;
+        display: grid !important;
+        line-height: 1 !important;
+      }
+      #sqrNavbar .sqr-brand span {
+        font-weight: 900 !important;
+        font-size: 1.45rem !important;
+        letter-spacing: .09em !important;
+        background: linear-gradient(90deg, #38bdf8, #a78bfa) !important;
+        -webkit-background-clip: text !important;
+        background-clip: text !important;
+        color: transparent !important;
+      }
+      #sqrNavbar .sqr-brand small {
+        color: rgba(226, 232, 240, .78) !important;
+        font-weight: 700 !important;
+        letter-spacing: .03em !important;
+        margin-top: 6px !important;
+      }
+      #sqrNavbar .sqr-nav-toggle {
+        display: none !important;
+        width: 44px !important;
+        height: 44px !important;
+        border-radius: 16px !important;
+        border: 1px solid rgba(148, 163, 184, .28) !important;
+        background: rgba(15, 23, 42, .82) !important;
+        color: #e5e7eb !important;
+        font-size: 1.2rem !important;
+        cursor: pointer !important;
+      }
+      #sqrNavbar .sqr-nav-links {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 8px !important;
+        flex-wrap: wrap !important;
+      }
+      #sqrNavbar .sqr-nav-links a {
+        display: inline-flex !important;
+        align-items: center !important;
+        min-height: 38px !important;
+        padding: 9px 14px !important;
+        border-radius: 999px !important;
+        color: rgba(226, 232, 240, .92) !important;
+        text-decoration: none !important;
+        font-size: .95rem !important;
+        font-weight: 800 !important;
+        letter-spacing: .01em !important;
+        white-space: nowrap !important;
+        border: 1px solid transparent !important;
+        transition: .18s ease !important;
+      }
+      #sqrNavbar .sqr-nav-links a:hover,
+      #sqrNavbar .sqr-nav-links a.active {
+        color: #fff !important;
+        background: rgba(59, 130, 246, .22) !important;
+        border-color: rgba(96, 165, 250, .25) !important;
+      }
+      #sqrNavbar .sqr-nav-actions {
+        flex: 0 0 auto !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 10px !important;
+        white-space: nowrap !important;
+      }
+      #sqrNavbar .sqr-profile-pill {
+        color: #f8fafc !important;
+        text-decoration: none !important;
+        max-width: 150px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        font-weight: 800 !important;
+      }
+      #sqrNavbar .sqr-btn,
+      #sqrNavbar button.sqr-btn {
+        min-height: 40px !important;
+        padding: 9px 16px !important;
+        border-radius: 999px !important;
+        font-weight: 900 !important;
+        border: 1px solid rgba(148, 163, 184, .24) !important;
+        cursor: pointer !important;
+        text-decoration: none !important;
+      }
+      #sqrNavbar .sqr-btn.ghost { background: rgba(255,255,255,.92) !important; color: #020617 !important; }
+      #sqrNavbar .sqr-btn.primary { background: linear-gradient(135deg, #2563eb, #7c3aed) !important; color: #fff !important; }
+      .sqr-panel, .card, .glass-card { scroll-margin-top: 110px !important; }
+      #sqrNavbar .sqr-nav-toggle { display: none !important; visibility: hidden !important; }
+      #sqrNavbar .sqr-nav-links { display: flex !important; visibility: visible !important; }
+      @media (min-width: 721px) {
+        #sqrNavbar .sqr-nav-inner { flex-wrap: nowrap !important; }
+        #sqrNavbar .sqr-nav-toggle { display: none !important; visibility: hidden !important; }
+        #sqrNavbar .sqr-nav-links { display: flex !important; visibility: visible !important; flex-basis: auto !important; }
+      }
+      @media (max-width: 720px) {
+        #sqrNavbar.sqr-navbar { width: calc(100% - 18px) !important; top: 8px !important; margin-bottom: 18px !important; }
+        #sqrNavbar .sqr-nav-inner { flex-wrap: wrap !important; padding: 12px !important; }
+        #sqrNavbar .sqr-nav-toggle { display: inline-flex !important; visibility: visible !important; align-items: center !important; justify-content: center !important; order: 2 !important; }
+        #sqrNavbar .sqr-brand { order: 1 !important; }
+        #sqrNavbar .sqr-nav-actions { order: 3 !important; margin-left: auto !important; }
+        #sqrNavbar .sqr-nav-links { order: 4 !important; flex-basis: 100% !important; display: none !important; visibility: visible !important; justify-content: flex-start !important; padding-top: 8px !important; }
+        #sqrNavbar.open .sqr-nav-links { display: flex !important; }
+        #sqrNavbar .sqr-nav-links a { flex: 1 1 calc(50% - 8px) !important; justify-content: center !important; }
+      }
+      @media (max-width: 560px) {
+        #sqrNavbar .sqr-profile-pill { max-width: 96px !important; }
+        #sqrNavbar .sqr-nav-actions { width: 100% !important; justify-content: space-between !important; }
+        #sqrNavbar .sqr-nav-links a { flex-basis: 100% !important; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function inferFieldValue(form, patterns) {
+    const inputs = $$("input, textarea, select", form);
+    for (const el of inputs) {
+      if (el.type === "file") continue;
+      const label = el.id ? (document.querySelector(`label[for='${CSS.escape(el.id)}']`)?.textContent || "") : "";
+      const meta = [el.name, el.id, el.placeholder, el.getAttribute("aria-label"), label].filter(Boolean).join(" ").toLowerCase();
+      if (patterns.some(p => p.test(meta)) && trim(el.value)) return trim(el.value);
+    }
+    return "";
+  }
+
+  function firstPayloadValue(payload, form, keys, patterns = []) {
+    for (const key of keys) {
+      if (trim(payload[key])) return trim(payload[key]);
+      const v = valueFrom(form, key);
+      if (v) return v;
+    }
+    return patterns.length ? inferFieldValue(form, patterns) : "";
+  }
+
+  function normalizeAtsGeneratePayload(payload, form) {
+    payload.name = firstPayloadValue(payload, form, ["name", "full_name", "fullName", "fullname", "full-name"], [/full\s*name/, /^name$/]);
+    payload.email = firstPayloadValue(payload, form, ["email", "email_address", "emailAddress"], [/email/]);
+    payload.phone = firstPayloadValue(payload, form, ["phone", "phone_number", "phoneNumber", "mobile"], [/phone/, /mobile/]);
+    payload.location = firstPayloadValue(payload, form, ["location", "city", "address"], [/location/, /city/, /address/]);
+    payload.target_job = firstPayloadValue(payload, form, ["target_job", "targetJob", "target_role", "targetRole", "job_title", "jobTitle", "role", "position", "desired_role", "desiredRole"], [/target\s*(job|role)/, /job\s*title/, /desired\s*role/, /position/]);
+    payload.skills = firstPayloadValue(payload, form, ["skills", "technical_skills", "technicalSkills", "tech_skills", "techSkills", "technical", "technologies", "tools", "programming_languages", "programmingLanguages"], [/technical\s*skills/, /\bskills\b/, /technolog/, /tools/, /programming/]);
+    payload.soft_skills = firstPayloadValue(payload, form, ["soft_skills", "softSkills", "soft", "personal_skills"], [/soft\s*skills/, /personal\s*skills/]);
+    payload.linkedin = firstPayloadValue(payload, form, ["linkedin", "linkedIn", "linkedin_url", "linkedinUrl", "portfolio", "website", "links", "linkedin_portfolio", "linkedinPortfolio"], [/linkedin/, /portfolio/, /github/, /website/, /links?/]);
+    payload.summary = firstPayloadValue(payload, form, ["summary", "professional_summary", "professionalSummary", "profile", "about"], [/summary/, /profile/, /about/]);
+    payload.education = firstPayloadValue(payload, form, ["education", "degree", "university", "college"], [/education/, /degree/, /university/, /college/]);
+    payload.experience = firstPayloadValue(payload, form, ["experience", "work_experience", "workExperience", "employment", "internship"], [/experience/, /employment/, /internship/]);
+    payload.projects = firstPayloadValue(payload, form, ["projects", "project", "portfolio_projects"], [/projects?/]);
+    payload.certifications = firstPayloadValue(payload, form, ["certifications", "certificates", "certificate"], [/certif/, /certificate/]);
+    payload.job_description = firstPayloadValue(payload, form, ["job_description", "jobDescription", "description", "target_description", "targetDescription"], [/job\s*description/, /target\s*description/]);
+    return payload;
+  }
+
   function navLink(page, label, aliases = []) {
     const current = lower(pageName());
     const active = [page, ...aliases].some(p => lower(p) === current) ? "active" : "";
@@ -322,6 +514,7 @@
   }
 
   function navbar() {
+    injectSqrCriticalStyles();
     const run = () => {
       if (byId("sqrNavbar")) return;
       const user = getStoredUser();
@@ -884,6 +1077,14 @@
       const fd = formToData(form);
       const file = form.querySelector("input[type='file']")?.files?.[0];
       if (file && !fd.has("resume")) fd.set("resume", file);
+      if (!fd.get("target_job")) {
+        const tj = inferFieldValue(form, [/target\s*(job|role)/, /job\s*title/, /position/]);
+        if (tj) fd.set("target_job", tj);
+      }
+      if (!fd.get("job_description")) {
+        const jd = inferFieldValue(form, [/job\s*description/, /requirements?/, /description/]);
+        if (jd) fd.set("job_description", jd);
+      }
       const btn = form.querySelector("button[type='submit']") || form.querySelector("button");
       setLoading(btn, true, "Checking...");
       resultBox.innerHTML = emptyState("Analyzing resume...");
@@ -907,9 +1108,18 @@
     form.addEventListener("submit", async e => {
       e.preventDefault();
       if (!getToken()) return redirectToLogin();
-      const payload = formToObject(form);
-      if (!payload.target_job && payload.job_title) payload.target_job = payload.job_title;
+      const payload = normalizeAtsGeneratePayload(formToObject(form), form);
       const btn = form.querySelector("button[type='submit']") || form.querySelector("button");
+      const missing = [];
+      if (!payload.name) missing.push("Full Name");
+      if (!payload.email) missing.push("Email");
+      if (!payload.target_job) missing.push("Target Role");
+      if (!payload.skills) missing.push("Technical Skills");
+      if (missing.length) {
+        resultBox.innerHTML = emptyState("Complete the required fields", `Missing: ${missing.join(", ")}.`);
+        showMessage(`Missing required fields: ${missing.join(", ")}`, "error");
+        return;
+      }
       setLoading(btn, true, "Generating...");
       resultBox.innerHTML = emptyState("Generating ATS-friendly resume...");
       try {
