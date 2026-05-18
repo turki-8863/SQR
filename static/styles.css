@@ -4541,3 +4541,431 @@ p {
 .dark-card {
   background: linear-gradient(145deg, #0f172a, #1e293b) !important;
 }
+/* ============================================================
+   SQR PRESENTATION DARK OVERRIDE
+   Keeps the original CSS above. This section is appended last
+   so white cards/loading boxes/filter panels become dark.
+   ============================================================ */
+
+:root {
+  --bg: #030712;
+  --card: rgba(15, 23, 42, 0.96);
+  --text: #f8fafc;
+  --muted: #cbd5e1;
+  --line: rgba(148, 163, 184, 0.24);
+  --soft: rgba(30, 41, 59, 0.92);
+  --primary: #38bdf8;
+  --primary-2: #8b5cf6;
+  --danger: #fb7185;
+  --success: #22c55e;
+  --warning: #facc15;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.44);
+  --shadow-soft: 0 16px 42px rgba(0, 0, 0, 0.32);
+  --radius: 24px;
+
+  --sqr-bg: #030712;
+  --sqr-card: rgba(15, 23, 42, 0.96);
+  --sqr-text: #f8fafc;
+  --sqr-muted: #cbd5e1;
+  --sqr-border: rgba(148, 163, 184, 0.24);
+  --sqr-primary: #38bdf8;
+  --sqr-primary-2: #8b5cf6;
+  --sqr-danger: #fb7185;
+  --sqr-success: #22c55e;
+  --sqr-shadow: 0 24px 70px rgba(0, 0, 0, 0.44);
+}
+
+html,
+body {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 34%),
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.18), transparent 34%),
+    radial-gradient(circle at 50% 100%, rgba(20, 184, 166, 0.10), transparent 38%),
+    linear-gradient(135deg, #020617 0%, #0f172a 46%, #111827 100%) !important;
+  color: #e5e7eb !important;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent 78%);
+  z-index: -1;
+}
+
+/* main shells */
+.container,
+main.container,
+.page,
+.recommendation-page,
+.sqr-shell,
+.main-shell,
+.page-container,
+.main-content {
+  background: transparent !important;
+  color: #e5e7eb !important;
+}
+
+/* navigation */
+.sqr-navbar,
+.top-nav,
+.navbar,
+.nav,
+.bottom-dashboard-nav {
+  background: rgba(2, 6, 23, 0.82) !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32) !important;
+  backdrop-filter: blur(18px);
+}
+
+.sqr-brand,
+.brand,
+.bottom-nav-brand,
+.sqr-brand span,
+.brand span,
+.bottom-nav-brand strong {
+  color: #f8fafc !important;
+}
+
+.sqr-brand small,
+.brand small,
+.bottom-nav-brand span,
+.sqr-nav-user {
+  color: #cbd5e1 !important;
+}
+
+.sqr-nav-links a,
+.nav-links a,
+.bottom-nav-links a {
+  color: #dbeafe !important;
+}
+
+.sqr-nav-links a:hover,
+.nav-links a:hover,
+.bottom-nav-links a:hover {
+  color: #ffffff !important;
+  background: rgba(56, 189, 248, 0.14) !important;
+}
+
+/* page headers and hero panels */
+.sqr-page-title,
+.page-title,
+.hero > div,
+.rec-hero > div:first-child,
+.profile-hero-card,
+.detail-hero,
+.rec-hero-main,
+.rec-hero-side,
+.hero-card,
+.header-card,
+.page-hero,
+.section-hero {
+  background:
+    linear-gradient(145deg, rgba(15, 23, 42, 0.97), rgba(30, 41, 59, 0.92)) !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.40) !important;
+  color: #e5e7eb !important;
+}
+
+/* cards, filters, loading boxes */
+.card,
+form,
+.feature-card,
+.rec-card,
+.progress-card,
+.loading-card,
+.empty-state,
+.error-card,
+.result-panel,
+.generated-resume-card,
+.video-card,
+.admin-form-card,
+.admin-panel,
+.profile-card,
+.stat-card,
+.admin-stat-grid article,
+.profile-mini-stats article,
+.rec-result-main,
+.rec-score-card,
+.rec-mini-card,
+.ats-score-card,
+.quiz-question,
+.table-wrap,
+.filter-card,
+.filters,
+.filter-panel,
+.search-card,
+.search-panel,
+.course-filters,
+.specialization-filters,
+.jobs-filters,
+.filter-box,
+.sqr-filter-box,
+#courseFilters,
+#specializationFilters,
+#coursesBox,
+#specializationsBox,
+#coursesGrid,
+#specializationGrid,
+#courseList,
+#specializationList,
+#message,
+#msg,
+#alert {
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92)) !important;
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  color: #e5e7eb !important;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.30) !important;
+}
+
+.loading-card,
+.empty-state {
+  color: #cbd5e1 !important;
+}
+
+.error-card,
+.message.error,
+#message.error {
+  background: rgba(127, 29, 29, 0.42) !important;
+  border-color: rgba(248, 113, 113, 0.34) !important;
+  color: #fecaca !important;
+}
+
+.message.success,
+#message.success {
+  background: rgba(20, 83, 45, 0.42) !important;
+  border-color: rgba(74, 222, 128, 0.34) !important;
+  color: #bbf7d0 !important;
+}
+
+/* typography */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.card-body h3,
+.progress-card h3,
+.rec-mini-card h3,
+.section-heading h2,
+.sqr-page-title h1,
+.page-title h1,
+.hero h1,
+.rec-hero h1,
+.detail-hero h1,
+.profile-hero-card h1 {
+  color: #f8fafc !important;
+}
+
+p,
+.subtitle,
+.small-muted,
+.card-body p,
+.progress-meta,
+.section-heading p,
+.sqr-page-title p,
+.page-title p,
+.hero p,
+.rec-hero p,
+.detail-hero p,
+.profile-hero-card p,
+.rec-mini-card ul,
+li,
+td {
+  color: #cbd5e1 !important;
+}
+
+strong,
+b,
+th,
+label,
+.progress-top strong {
+  color: #f8fafc !important;
+}
+
+.eyebrow,
+.level-pill,
+.status-pill {
+  border: 1px solid rgba(148, 163, 184, 0.20) !important;
+}
+
+/* forms */
+input,
+textarea,
+select,
+.form-control,
+.rec-field textarea,
+.rec-field input,
+.rec-field select {
+  background: rgba(15, 23, 42, 0.94) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.28) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+select option {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+.form-control:focus {
+  background: rgba(2, 6, 23, 0.96) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.16) !important;
+  outline: none !important;
+}
+
+/* buttons */
+.btn-primary,
+.signup-link,
+input[type="submit"],
+button[type="submit"] {
+  background: linear-gradient(135deg, #38bdf8, #8b5cf6) !important;
+  color: #ffffff !important;
+  box-shadow: 0 15px 35px rgba(56, 189, 248, 0.22) !important;
+}
+
+.btn-soft,
+.signin-link,
+.admin-menu button,
+.sqr-menu-btn {
+  background: rgba(30, 41, 59, 0.92) !important;
+  color: #dbeafe !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+}
+
+.btn-soft:hover,
+.signin-link:hover,
+.admin-menu button:hover,
+.sqr-menu-btn:hover {
+  background: rgba(56, 189, 248, 0.14) !important;
+  color: #ffffff !important;
+}
+
+.btn-danger,
+.logout-btn {
+  background: rgba(127, 29, 29, 0.65) !important;
+  color: #fecaca !important;
+  border: 1px solid rgba(248, 113, 113, 0.28) !important;
+}
+
+/* course/specialization cards */
+.feature-card {
+  overflow: hidden;
+}
+
+.feature-card img,
+.card-media,
+.detail-hero img {
+  background: rgba(30, 41, 59, 0.96) !important;
+}
+
+.card-body {
+  color: #e5e7eb !important;
+}
+
+.interactive-card:hover,
+.card[data-open-url]:hover,
+.feature-card.interactive-card:hover {
+  border-color: rgba(56, 189, 248, 0.50) !important;
+  box-shadow: 0 26px 75px rgba(56, 189, 248, 0.12), 0 24px 70px rgba(0,0,0,0.36) !important;
+}
+
+/* progress and score */
+.progress,
+.progress-bar {
+  background: rgba(51, 65, 85, 0.96) !important;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #38bdf8, #8b5cf6, #14b8a6) !important;
+}
+
+.score-circle {
+  background: conic-gradient(#38bdf8 calc(var(--score) * 1%), rgba(51, 65, 85, 0.96) 0) !important;
+}
+
+.score-circle-inner {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+}
+
+.done-icon {
+  background: rgba(51, 65, 85, 0.96) !important;
+  color: #94a3b8 !important;
+}
+
+.done-icon.done {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #86efac !important;
+}
+
+/* tables */
+table {
+  background: rgba(15, 23, 42, 0.96) !important;
+  color: #e5e7eb !important;
+}
+
+th {
+  background: rgba(2, 6, 23, 0.86) !important;
+  color: #f8fafc !important;
+}
+
+td,
+th {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+/* ATS output and generated text */
+.generated-resume-card pre,
+pre,
+code {
+  background: rgba(2, 6, 23, 0.92) !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  color: #e5e7eb !important;
+}
+
+/* common white leftovers */
+[class*="white"],
+[class*="light"],
+.bg-white,
+.bg-light {
+  background-color: rgba(15, 23, 42, 0.96) !important;
+  color: #e5e7eb !important;
+}
+
+hr,
+.HRFlowable {
+  border-color: rgba(148, 163, 184, 0.20) !important;
+}
+
+/* keep required star visible */
+.required::after,
+.required-star {
+  color: #fb7185 !important;
+}
+
+/* mobile */
+@media (max-width: 950px) {
+  .sqr-navbar.open .sqr-nav-links,
+  .sqr-navbar.open .sqr-nav-actions {
+    background: rgba(2, 6, 23, 0.20) !important;
+    border-radius: 18px;
+    padding: 8px;
+  }
+}
