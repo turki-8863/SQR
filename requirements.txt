@@ -7,6 +7,6 @@ cryptography
 reportlab
 python-docx
 PyPDF2
-openai
 gunicorn
 python-dotenv
+google-genai
