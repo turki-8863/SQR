@@ -151,6 +151,8 @@
       if (type === "error") console.error(text);
       return;
     }
+    box.classList.remove("hidden");
+    box.hidden = false;
     box.innerHTML = `<div class="sqr-alert sqr-alert-${escapeHTML(type)}">${escapeHTML(text)}</div>`;
     setTimeout(() => {
       const alert = box.querySelector(".sqr-alert");
@@ -159,7 +161,11 @@
   }
 
   function setLoading(container, text = "Loading...") {
-    if (container) container.innerHTML = `<div class="card sqr-card"><p>${escapeHTML(text)}</p></div>`;
+    if (container) {
+      container.classList.remove("hidden");
+      container.hidden = false;
+      container.innerHTML = `<div class="card sqr-card"><p>${escapeHTML(text)}</p></div>`;
+    }
   }
 
 
@@ -183,7 +189,7 @@
     const hasCourseDetailId = getParam("id", "course_id");
 
     if (pageName.includes("specialization") && !hasSpecDetailId) {
-      if (!first("#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "[data-specializations]")) {
+      if (!first("#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "#specializationsBox", "#specializationGrid", "[data-specializations]")) {
         const section = document.createElement("section");
         section.className = "sqr-section";
         section.innerHTML = `
@@ -210,7 +216,7 @@
     }
 
     if (pageName.includes("course") && !hasCourseDetailId) {
-      if (!first("#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "[data-courses]")) {
+      if (!first("#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "#coursesBox", "[data-courses]")) {
         const section = document.createElement("section");
         section.className = "sqr-section";
         section.innerHTML = `
@@ -565,7 +571,7 @@
       return;
     }
 
-    const box = first("#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "[data-specializations]");
+    const box = first("#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "#specializationsBox", "#specializationGrid", "[data-specializations]");
     if (!box) return;
     setLoading(box);
     try {
@@ -671,7 +677,7 @@
       return;
     }
 
-    const box = first("#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "[data-courses]");
+    const box = first("#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "#coursesBox", "[data-courses]");
     if (!box) return;
     setLoading(box);
 
@@ -1002,7 +1008,7 @@
   function setupATS() {
     const generateForm = first("#atsGenerateForm", "#atsGeneratorForm", "form[data-ats='generate']");
     const checkForm = first("#atsCheckForm", "#atsCheckerForm", "form[data-ats='check']");
-    const output = first("#atsOutput", "#atsResult", "#resumeResult", "#generatedResume", "[data-ats-output]");
+    const output = first("#atsOutput", "#atsGeneratedResult", "#generatedResume", "#atsResult", "#resumeResult", "[data-ats-output]");
 
     if (generateForm) {
       generateForm.addEventListener("submit", async (event) => {
@@ -1038,8 +1044,11 @@
   }
 
   function renderATSGenerate(result, output) {
-    const box = output || first("#atsOutput", "#atsResult", "#resumeResult", "#generatedResume", "[data-ats-output]");
+    const box = output || first("#atsOutput", "#atsGeneratedResult", "#generatedResume", "#atsResult", "#resumeResult", "[data-ats-output]");
     if (!box) return;
+    box.classList.remove("hidden");
+    box.hidden = false;
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
     const fullResume = result.full_resume || result.resume || "";
     box.innerHTML = `
       <section class="card sqr-card">
@@ -1077,8 +1086,11 @@
   }
 
   function renderATSCheck(result, output) {
-    const box = output || first("#atsOutput", "#atsResult", "[data-ats-output]");
+    const box = output || first("#atsOutput", "#atsGeneratedResult", "#generatedResume", "#atsResult", "[data-ats-output]");
     if (!box) return;
+    box.classList.remove("hidden");
+    box.hidden = false;
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
     const score = pct(result.ats_score || result.score);
     box.innerHTML = `
       <section class="card sqr-card">
