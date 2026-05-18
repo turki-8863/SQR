@@ -18,10 +18,7 @@
     <section class="page-hero compact-hero gradient-profile">
       <div>
         <span class="eyebrow">Student dashboard</span>
-        <h1>Your profile is the only page that shows progress bars.</h1>
-        <p>Progress is dynamic. It is calculated from real opened/enrolled courses and submitted quiz attempts saved in the database.</p>
       </div>
-      <div class="hero-actions"><a href="Courses.html" class="btn btn-light">Continue Learning</a><a href="Quiz.html" class="btn btn-glass">Take Quizzes</a></div>
     </section>
 
     <section id="profileSummary" class="profile-summary-grid grid cards-3">
@@ -34,7 +31,6 @@
       <article class="card color-card profile-form-card">
         <span class="panel-kicker">Profile information</span>
         <h2>Update your skills and interests</h2>
-        <p>Recommendation and job matching use this information together with the database content.</p>
         <form id="profileForm" class="stack-form">
           <label for="profileName">Name</label>
           <input id="profileName" name="name" placeholder="Your name">
@@ -51,74 +47,13 @@
       <article class="card color-card profile-progress-card only-profile-progress">
         <span class="panel-kicker">Live progress</span>
         <h2>Specialization progress</h2>
-        <p>Each bar is generated from database activity, not from fixed numbers.</p>
         <div id="profileProgressBars" class="profile-progress-list">
           <p class="muted">Loading real progress...</p>
         </div>
       </article>
     </section>
 
-    <section class="section-block color-panel purple-panel">
-      <div class="section-heading split-heading">
-        <div>
-          <span>Quiz history</span>
-          <h2>Your recent quiz activity</h2>
-          <p>Scores shown here come from submitted attempts.</p>
-        </div>
-        <a href="Quiz.html" class="btn btn-light">Open Quizzes</a>
-      </div>
-      <div id="profileQuizHistory" class="grid cards-3 dynamic-grid">
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-      </div>
-    </section>
-
-    <section class="section-block color-panel orange-panel">
-      <div class="section-heading split-heading">
-        <div>
-          <span>ATS activity</span>
-          <h2>Resume checks and generated resumes</h2>
-          <p>ATS results are separated per user account and shown only for the signed-in profile.</p>
-        </div>
-        <a href="ATS.html" class="btn btn-light">Open ATS Tools</a>
-      </div>
-      <div id="profileAtsHistory" class="grid cards-3 dynamic-grid">
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-        <article class="card skeleton-card" aria-hidden="true">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-      </div>
-    </section>
+    
 
 
     <section class="hidden-template-bank" hidden aria-hidden="true">
@@ -142,7 +77,6 @@
         <article class="card empty-state">
           <div class="empty-state-icon">◇</div>
           <h3 data-field="title">No data yet</h3>
-          <p data-field="description">Admin content will appear here after it is added to the database.</p>
         </article>
       </template>
 
