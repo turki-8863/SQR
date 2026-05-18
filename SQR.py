@@ -74,8 +74,8 @@ DB_CONFIG = {
 pool = None
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if OpenAI and os.getenv("OPENAI_API_KEY") else None
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GEIMINI_API_KEY") or "").strip()
+GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or os.getenv("GEIMINI_MODEL") or "gemini-2.0-flash").strip()
 
 TECH_SKILLS = [
     "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql",
@@ -308,6 +308,111 @@ def normalize_job(row):
     row["job_link"] = row["link"]
     row["specialization"] = row_value(row, "specialization_name", "specialization") or ""
     return row
+
+
+def table_column_names(table_name):
+    try:
+        rows = query_db(
+            """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+            """,
+            (DB_CONFIG["database"], table_name),
+            fetchall=True
+        ) or []
+        return {row.get("COLUMN_NAME") for row in rows}
+    except Exception:
+        return set()
+
+
+def _condition_for_existing_columns(table_name, alias, candidates):
+    existing = table_column_names(table_name)
+    pieces = []
+    for column in candidates:
+        if column in existing:
+            pieces.append(f"{alias}.`{column}`=%s")
+    if not pieces:
+        pieces.append(f"{alias}.`id`=%s")
+    return "(" + " OR ".join(pieces) + ")", len(pieces)
+
+
+def fetch_specialization_by_any_id(spec_id):
+    spec_id = safe_int(spec_id, None)
+    if not spec_id:
+        return None
+    condition, count = _condition_for_existing_columns("specializations", "s", ["id", "specialization_id"])
+    return query_db(f"SELECT s.* FROM specializations s WHERE {condition} LIMIT 1", tuple([spec_id] * count), fetchone=True)
+
+
+def fetch_course_by_any_id(course_id):
+    course_id = safe_int(course_id, None)
+    if not course_id:
+        return None
+    condition, count = _condition_for_existing_columns("courses", "c", ["id", "course_id"])
+    return query_db(f"SELECT c.* FROM courses c WHERE {condition} LIMIT 1", tuple([course_id] * count), fetchone=True)
+
+
+def fetch_quiz_by_any_id(quiz_id):
+    quiz_id = safe_int(quiz_id, None)
+    if not quiz_id:
+        return None
+    condition, count = _condition_for_existing_columns("quizzes", "q", ["id", "quiz_id"])
+    return query_db(f"SELECT q.* FROM quizzes q WHERE {condition} LIMIT 1", tuple([quiz_id] * count), fetchone=True)
+
+
+def real_id(row):
+    return safe_int(row_value(row or {}, "id", "specialization_id", "course_id", "quiz_id", "job_id"), None)
+
+
+def specialization_filter_sql(alias="c"):
+    existing = table_column_names("courses")
+    pieces = []
+    if "spec_id" in existing:
+        pieces.append(f"{alias}.spec_id=%s")
+    if "specialization_id" in existing:
+        pieces.append(f"{alias}.specialization_id=%s")
+    if not pieces:
+        pieces.append(f"{alias}.spec_id=%s")
+    return "(" + " OR ".join(pieces) + ")", len(pieces)
+
+
+def set_course_progress(user_id, course_id, progress_value, completed=False):
+    progress_value = max(0, min(100, safe_int(progress_value, 0)))
+    status = "completed" if completed or progress_value >= 100 else ("in_progress" if progress_value > 0 else "not_started")
+    query_db(
+        """
+        UPDATE course_enrollments
+        SET progress=GREATEST(COALESCE(progress,0),%s),
+            progress_percentage=GREATEST(COALESCE(progress_percentage,0),%s),
+            status=%s,
+            completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+        WHERE user_id=%s AND course_id=%s
+        """,
+        (progress_value, progress_value, status, progress_value, user_id, course_id),
+        commit=True
+    )
+
+
+def ensure_course_enrollment(user_id, course_id, start_progress=0):
+    start_progress = max(0, min(100, safe_int(start_progress, 0)))
+    status = "in_progress" if start_progress > 0 else "not_started"
+    query_db(
+        """
+        INSERT INTO course_enrollments (user_id, course_id, progress, progress_percentage, status, enrolled_at)
+        VALUES (%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
+        ON DUPLICATE KEY UPDATE
+            progress=GREATEST(COALESCE(progress,0), VALUES(progress)),
+            progress_percentage=GREATEST(COALESCE(progress_percentage,0), VALUES(progress_percentage)),
+            status=CASE
+                WHEN status='completed' THEN status
+                WHEN VALUES(progress) > 0 THEN 'in_progress'
+                ELSE status
+            END
+        """,
+        (user_id, course_id, start_progress, start_progress, status),
+        commit=True
+    )
 
 
 def clean_user(user):
@@ -1085,6 +1190,7 @@ def me():
 
 
 
+
 @app.route("/api/profile", methods=["GET"])
 @login_required
 def get_profile():
@@ -1095,22 +1201,19 @@ def get_profile():
         quiz_history = query_db(
             """
             SELECT
-                qa.attempt_id AS id,
-                qa.attempt_id,
+                qa.id,
+                qa.id AS attempt_id,
                 qa.score,
                 qa.passed,
                 qa.attempted_at AS created_at,
-                q.title AS quiz_title,
-                c.title AS course_title,
-                c.course_id,
-                CASE
-                    WHEN qa.score <= 1 THEN ROUND(qa.score * 100)
-                    ELSE ROUND(qa.score)
-                END AS score_percentage,
-                COALESCE((SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id=qa.quiz_id), 0) AS total
+                COALESCE(q.title, q.name) AS quiz_title,
+                COALESCE(c.title, c.name) AS course_title,
+                c.id AS course_id,
+                COALESCE(qa.percentage, qa.score) AS score_percentage,
+                COALESCE(qa.total, (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id=qa.quiz_id), 0) AS total
             FROM quiz_attempts qa
-            LEFT JOIN quizzes q ON q.quiz_id=qa.quiz_id
-            LEFT JOIN courses c ON c.course_id=q.course_id
+            LEFT JOIN quizzes q ON q.id=qa.quiz_id
+            LEFT JOIN courses c ON c.id=qa.course_id OR c.id=q.course_id
             WHERE qa.user_id=%s
             ORDER BY qa.attempted_at DESC
             LIMIT 30
@@ -1126,11 +1229,11 @@ def get_profile():
         ats_history = query_db(
             """
             SELECT
-                ats_id AS id,
-                ats_id,
+                id,
+                id AS ats_id,
                 target_job,
-                ats_score AS score,
-                ats_score,
+                COALESCE(ats_score, score, 0) AS score,
+                COALESCE(ats_score, score, 0) AS ats_score,
                 suggestions AS summary,
                 matched_keywords,
                 missing_keywords,
@@ -1147,7 +1250,6 @@ def get_profile():
         print("PROFILE ATS HISTORY ERROR:", exc)
 
     return jsonify({"user": user, "quiz_history": quiz_history, "ats_history": ats_history})
-
 
 
 @app.route("/api/profile", methods=["PUT"])
@@ -1167,6 +1269,7 @@ def update_profile():
 
 
 
+
 def compute_user_progress(user_id):
     if not table_exists("specialization_enrollments"):
         return []
@@ -1175,12 +1278,12 @@ def compute_user_progress(user_id):
         """
         SELECT
             s.*,
-            se.enrollment_id,
-            se.progress_percentage AS enrollment_progress,
+            se.id AS enrollment_id,
+            COALESCE(se.progress, 0) AS enrollment_progress,
             se.status AS enrollment_status,
             se.enrolled_at
         FROM specialization_enrollments se
-        JOIN specializations s ON s.specialization_id=se.specialization_id
+        JOIN specializations s ON s.id=se.spec_id
         WHERE se.user_id=%s
         ORDER BY se.enrolled_at DESC, s.name
         """,
@@ -1190,13 +1293,13 @@ def compute_user_progress(user_id):
 
     progress_rows = []
     for spec in specs:
-        spec_id = row_value(spec, "specialization_id", "id")
+        spec_id = safe_int(spec.get("id"), None)
         if not spec_id:
             continue
 
         total_courses_row = query_db(
-            "SELECT COUNT(*) AS total FROM courses WHERE specialization_id=%s",
-            (spec_id,),
+            "SELECT COUNT(*) AS total FROM courses WHERE spec_id=%s OR specialization_id=%s",
+            (spec_id, spec_id),
             fetchone=True
         ) or {"total": 0}
         total_courses = safe_int(total_courses_row.get("total"), 0)
@@ -1205,13 +1308,13 @@ def compute_user_progress(user_id):
             """
             SELECT
                 COUNT(DISTINCT ce.course_id) AS enrolled_courses,
-                SUM(CASE WHEN ce.progress_percentage > 0 OR ce.status IN ('In Progress','Completed') THEN 1 ELSE 0 END) AS opened_courses,
-                SUM(CASE WHEN ce.progress_percentage >= 100 OR ce.status='Completed' THEN 1 ELSE 0 END) AS completed_courses
+                SUM(CASE WHEN COALESCE(ce.progress_percentage, ce.progress, 0) > 0 OR ce.status IN ('in_progress','completed') THEN 1 ELSE 0 END) AS opened_courses,
+                SUM(CASE WHEN COALESCE(ce.progress_percentage, ce.progress, 0) >= 100 OR ce.status='completed' THEN 1 ELSE 0 END) AS completed_courses
             FROM course_enrollments ce
-            JOIN courses c ON c.course_id=ce.course_id
-            WHERE ce.user_id=%s AND c.specialization_id=%s
+            JOIN courses c ON c.id=ce.course_id
+            WHERE ce.user_id=%s AND (c.spec_id=%s OR c.specialization_id=%s)
             """,
-            (user_id, spec_id),
+            (user_id, spec_id, spec_id),
             fetchone=True
         ) or {"enrolled_courses": 0, "opened_courses": 0, "completed_courses": 0}
 
@@ -1219,27 +1322,27 @@ def compute_user_progress(user_id):
             """
             SELECT
                 COUNT(DISTINCT qa.quiz_id) AS completed_quizzes,
-                COALESCE(ROUND(AVG(CASE WHEN qa.score <= 1 THEN qa.score * 100 ELSE qa.score END),0),0) AS average_score
+                COALESCE(ROUND(AVG(COALESCE(qa.percentage, qa.score)),0),0) AS average_score
             FROM quiz_attempts qa
-            JOIN quizzes q ON q.quiz_id=qa.quiz_id
-            JOIN courses c ON c.course_id=q.course_id
-            JOIN course_enrollments ce ON ce.course_id=c.course_id AND ce.user_id=qa.user_id
+            JOIN quizzes q ON q.id=qa.quiz_id
+            JOIN courses c ON c.id=COALESCE(qa.course_id, q.course_id)
+            JOIN course_enrollments ce ON ce.course_id=c.id AND ce.user_id=qa.user_id
             WHERE qa.user_id=%s
-              AND c.specialization_id=%s
-              AND (qa.passed=1 OR qa.score >= 60 OR qa.score >= 0.6)
+              AND (c.spec_id=%s OR c.specialization_id=%s)
+              AND (qa.passed=1 OR COALESCE(qa.percentage, qa.score) >= 60)
             """,
-            (user_id, spec_id),
+            (user_id, spec_id, spec_id),
             fetchone=True
         ) or {"completed_quizzes": 0, "average_score": 0}
 
         total_quizzes_row = query_db(
             """
-            SELECT COUNT(DISTINCT q.quiz_id) AS total
+            SELECT COUNT(DISTINCT q.id) AS total
             FROM quizzes q
-            JOIN courses c ON c.course_id=q.course_id
-            WHERE c.specialization_id=%s
+            JOIN courses c ON c.id=q.course_id
+            WHERE c.spec_id=%s OR c.specialization_id=%s
             """,
-            (spec_id,),
+            (spec_id, spec_id),
             fetchone=True
         ) or {"total": 0}
 
@@ -1273,12 +1376,12 @@ def compute_user_progress(user_id):
             print("SPECIALIZATION_PROGRESS SAVE ERROR:", exc)
 
         try:
-            status = "Completed" if percent_value >= 100 else ("In Progress" if percent_value > 0 else "Not Started")
+            status = "completed" if percent_value >= 100 else ("in_progress" if percent_value > 0 else "not_started")
             query_db(
                 """
                 UPDATE specialization_enrollments
-                SET progress_percentage=%s, status=%s, completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
-                WHERE user_id=%s AND specialization_id=%s
+                SET progress=%s, status=%s, completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+                WHERE user_id=%s AND spec_id=%s
                 """,
                 (percent_value, status, percent_value, user_id, spec_id),
                 commit=True
@@ -1299,12 +1402,12 @@ def compute_user_progress(user_id):
             "completed_quizzes": completed_quizzes,
             "average_quiz_score": average_score,
             "progress": percent_value,
+            "progress_percentage": percent_value,
             "percentage": percent_value,
             "status": "completed" if percent_value >= 100 else ("in_progress" if percent_value > 0 else "not_started"),
         })
 
     return progress_rows
-
 
 
 
@@ -1315,79 +1418,53 @@ def profile_progress():
 
 
 
+
 @app.route("/api/specializations", methods=["GET"])
 def get_specializations():
     try:
         search = safe_text(request.args.get("search"))
-
-        sql = """
-            SELECT *
-            FROM specializations
-            WHERE 1=1
-        """
-
+        sql = "SELECT * FROM specializations WHERE 1=1"
         params = []
-
         if search:
-            sql += """
-                AND (
-                    name LIKE %s
-                    OR description LIKE %s
-                )
-            """
-            params.extend([f"%{search}%", f"%{search}%"])
-
-        sql += " ORDER BY specialization_id DESC"
-
+            sql += " AND (name LIKE %s OR title LIKE %s OR description LIKE %s)"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+        sql += " ORDER BY id DESC"
         rows = query_db(sql, tuple(params), fetchall=True) or []
-
-        return jsonify({
-            "specializations": [normalize_specialization(row) for row in rows]
-        }), 200
-
+        return jsonify({"specializations": [normalize_specialization(row) for row in rows]}), 200
     except Exception as e:
         print("GET /api/specializations ERROR:", e)
-        return jsonify({
-            "error": "Server error",
-            "details": str(e)
-        }), 500
+        return jsonify({"error": "Server error", "details": str(e)}), 500
 
 
 @app.route("/api/specializations/<int:spec_id>", methods=["GET"])
 def get_specialization(spec_id):
     try:
-        spec = query_db(
-            """
-            SELECT *
-            FROM specializations
-            WHERE specialization_id = %s
-            """,
-            (spec_id,),
-            fetchone=True
-        )
-
+        spec = fetch_specialization_by_any_id(spec_id)
         if not spec:
             return jsonify({"error": "Specialization not found"}), 404
+        real_spec_id = safe_int(spec.get("id"), spec_id)
 
         courses = query_db(
             """
-            SELECT *
-            FROM courses
-            WHERE specialization_id = %s
-            ORDER BY course_id DESC
+            SELECT c.*, s.name AS specialization_name
+            FROM courses c
+            LEFT JOIN specializations s ON s.id=COALESCE(c.spec_id, c.specialization_id)
+            WHERE c.spec_id=%s OR c.specialization_id=%s
+            ORDER BY c.id DESC
             """,
-            (spec_id,),
+            (real_spec_id, real_spec_id),
             fetchall=True
         ) or []
 
         jobs = query_db(
             """
-            SELECT *
-            FROM jobs
-            WHERE specialization_id = %s
-            ORDER BY job_id DESC
+            SELECT j.*, s.name AS specialization_name
+            FROM jobs j
+            LEFT JOIN specializations s ON s.id=j.specialization_id
+            WHERE j.specialization_id=%s OR j.specialization=%s
+            ORDER BY j.id DESC
             """,
-            (spec_id,),
+            (real_spec_id, spec.get("name")),
             fetchall=True
         ) or []
 
@@ -1396,13 +1473,10 @@ def get_specialization(spec_id):
             "courses": [normalize_course(row) for row in courses],
             "jobs": [normalize_job(row) for row in jobs]
         }), 200
-
     except Exception as e:
         print("GET /api/specializations/<id> ERROR:", e)
-        return jsonify({
-            "error": "Server error",
-            "details": str(e)
-        }), 500
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+
 
 def get_logged_user_id():
     user = getattr(request, "current_user", None)
@@ -1424,42 +1498,31 @@ def specialization_enrollment_status(spec_id):
         user_id = get_logged_user_id()
         if not user_id:
             return jsonify({"error": "Unauthorized"}), 401
-
-        spec = query_db(
-            """
-            SELECT specialization_id, name
-            FROM specializations
-            WHERE specialization_id=%s
-            LIMIT 1
-            """,
-            (spec_id,),
-            fetchone=True
-        )
+        spec = fetch_specialization_by_any_id(spec_id)
         if not spec:
             return jsonify({"error": "Specialization not found"}), 404
-
+        real_spec_id = safe_int(spec.get("id"), spec_id)
         enrollment = query_db(
             """
-            SELECT enrollment_id, progress_percentage, status, enrolled_at, completed_at
+            SELECT id AS enrollment_id, progress, progress AS progress_percentage, status, enrolled_at, completed_at
             FROM specialization_enrollments
-            WHERE user_id=%s AND specialization_id=%s
+            WHERE user_id=%s AND spec_id=%s
             LIMIT 1
             """,
-            (user_id, spec_id),
+            (user_id, real_spec_id),
             fetchone=True
         )
         progress = safe_int(row_value(enrollment or {}, "progress_percentage", "progress"), 0)
-        raw_status = safe_text((enrollment or {}).get("status")) or "Not Started"
-        status_key = raw_status.lower().replace(" ", "_")
-
+        raw_status = safe_text((enrollment or {}).get("status")) or "not_started"
         return jsonify({
             "success": True,
-            "specialization_id": spec_id,
+            "specialization_id": real_spec_id,
+            "id": real_spec_id,
             "enrolled": bool(enrollment),
             "progress": progress,
             "progress_percentage": progress,
-            "status": status_key,
-            "status_label": raw_status,
+            "status": raw_status,
+            "status_label": raw_status.replace("_", " ").title(),
         })
     except Exception as e:
         print("SPECIALIZATION STATUS ERROR:", e)
@@ -1473,38 +1536,23 @@ def enroll_specialization(spec_id):
         user_id = get_logged_user_id()
         if not user_id:
             return jsonify({"error": "Unauthorized"}), 401
-
-        spec = query_db(
-            """
-            SELECT specialization_id, name
-            FROM specializations
-            WHERE specialization_id=%s
-            LIMIT 1
-            """,
-            (spec_id,),
-            fetchone=True
-        )
+        spec = fetch_specialization_by_any_id(spec_id)
         if not spec:
             return jsonify({"error": "Specialization not found"}), 404
-
+        real_spec_id = safe_int(spec.get("id"), spec_id)
         query_db(
             """
-            INSERT INTO specialization_enrollments
-                (user_id, specialization_id, progress_percentage, status, enrolled_at)
-            VALUES (%s, %s, 0, 'In Progress', CURRENT_TIMESTAMP)
+            INSERT INTO specialization_enrollments (user_id, spec_id, progress, status, enrolled_at)
+            VALUES (%s, %s, 0, 'in_progress', CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
-                status=CASE WHEN status='Completed' THEN status ELSE 'In Progress' END,
+                status=CASE WHEN status='completed' THEN status ELSE 'in_progress' END,
                 enrolled_at=enrolled_at
             """,
-            (user_id, spec_id),
+            (user_id, real_spec_id),
             commit=True
         )
         compute_user_progress(user_id)
-        return jsonify({
-            "success": True,
-            "message": "Enrolled successfully",
-            "specialization_id": spec_id
-        })
+        return jsonify({"success": True, "message": "Enrolled successfully", "specialization_id": real_spec_id, "id": real_spec_id})
     except Exception as e:
         print("SPECIALIZATION ENROLL ERROR:", e)
         return jsonify({"error": "Failed to enroll specialization", "details": str(e)}), 500
@@ -1517,24 +1565,19 @@ def unenroll_specialization(spec_id):
         user_id = get_logged_user_id()
         if not user_id:
             return jsonify({"error": "Unauthorized"}), 401
+        spec = fetch_specialization_by_any_id(spec_id)
+        real_spec_id = safe_int((spec or {}).get("id"), spec_id)
 
-        query_db(
-            """
-            DELETE FROM specialization_enrollments
-            WHERE user_id=%s AND specialization_id=%s
-            """,
-            (user_id, spec_id),
-            commit=True
-        )
+        query_db("DELETE FROM specialization_enrollments WHERE user_id=%s AND spec_id=%s", (user_id, real_spec_id), commit=True)
         if table_exists("course_enrollments"):
             query_db(
                 """
                 DELETE ce
                 FROM course_enrollments ce
-                JOIN courses c ON c.course_id=ce.course_id
-                WHERE ce.user_id=%s AND c.specialization_id=%s
+                JOIN courses c ON c.id=ce.course_id
+                WHERE ce.user_id=%s AND (c.spec_id=%s OR c.specialization_id=%s)
                 """,
-                (user_id, spec_id),
+                (user_id, real_spec_id, real_spec_id),
                 commit=True
             )
         if table_exists("user_completed_courses"):
@@ -1542,27 +1585,18 @@ def unenroll_specialization(spec_id):
                 """
                 DELETE ucc
                 FROM user_completed_courses ucc
-                JOIN courses c ON c.course_id=ucc.course_id
-                WHERE ucc.user_id=%s AND c.specialization_id=%s
+                JOIN courses c ON c.id=ucc.course_id
+                WHERE ucc.user_id=%s AND (c.spec_id=%s OR c.specialization_id=%s)
                 """,
-                (user_id, spec_id),
+                (user_id, real_spec_id, real_spec_id),
                 commit=True
             )
         if table_exists("specialization_progress"):
-            query_db(
-                "DELETE FROM specialization_progress WHERE user_id=%s AND specialization_id=%s",
-                (user_id, spec_id),
-                commit=True
-            )
-        return jsonify({
-            "success": True,
-            "message": "Unenrolled successfully",
-            "specialization_id": spec_id
-        })
+            query_db("DELETE FROM specialization_progress WHERE user_id=%s AND specialization_id=%s", (user_id, real_spec_id), commit=True)
+        return jsonify({"success": True, "message": "Unenrolled successfully", "specialization_id": real_spec_id, "id": real_spec_id})
     except Exception as e:
         print("SPECIALIZATION UNENROLL ERROR:", e)
         return jsonify({"error": "Failed to unenroll specialization", "details": str(e)}), 500
-
 
 
 
@@ -1615,7 +1649,7 @@ def admin_update_specialization(spec_id):
             skills=%s,
             image_url=COALESCE(NULLIF(%s,''), image_url),
             image=COALESCE(NULLIF(%s,''), image)
-        WHERE specialization_id=%s
+        WHERE id=%s OR specialization_id=%s
         """,
         (
             name,
@@ -1627,6 +1661,7 @@ def admin_update_specialization(spec_id):
             image,
             image,
             spec_id,
+            spec_id,
         ),
         commit=True
     )
@@ -1635,8 +1670,9 @@ def admin_update_specialization(spec_id):
 @app.route("/api/specializations/<int:spec_id>", methods=["DELETE"])
 @admin_required
 def delete_specialization(spec_id):
-    exec_db("DELETE FROM specializations WHERE specialization_id=%s", (spec_id,))
+    exec_db("DELETE FROM specializations WHERE id=%s OR specialization_id=%s", (spec_id, spec_id))
     return jsonify({"message": "Specialization deleted"})
+
 
 
 
@@ -1646,45 +1682,25 @@ def get_courses():
     try:
         search = safe_text(request.args.get("search"))
         spec_id = request.args.get("specialization_id") or request.args.get("spec_id")
-
         sql = """
             SELECT c.*, s.name AS specialization_name
             FROM courses c
-            LEFT JOIN specializations s
-                ON s.specialization_id = c.specialization_id
+            LEFT JOIN specializations s ON s.id=COALESCE(c.spec_id, c.specialization_id)
             WHERE 1=1
         """
-
         params = []
-
         if search:
-            sql += """
-                AND (
-                    c.title LIKE %s
-                    OR c.description LIKE %s
-                    OR c.level LIKE %s
-                )
-            """
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-
+            sql += " AND (c.title LIKE %s OR c.name LIKE %s OR c.description LIKE %s OR c.level LIKE %s OR c.difficulty LIKE %s)"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
         if spec_id:
-            sql += " AND c.specialization_id = %s"
-            params.append(spec_id)
-
-        sql += " ORDER BY c.course_id DESC"
-
+            sql += " AND (c.spec_id=%s OR c.specialization_id=%s)"
+            params.extend([spec_id, spec_id])
+        sql += " ORDER BY c.id DESC"
         rows = query_db(sql, tuple(params), fetchall=True) or []
-
-        return jsonify({
-            "courses": [normalize_course(row) for row in rows]
-        }), 200
-
+        return jsonify({"courses": [normalize_course(row) for row in rows]}), 200
     except Exception as e:
         print("GET /api/courses ERROR:", e)
-        return jsonify({
-            "error": "Server error",
-            "details": str(e)
-        }), 500
+        return jsonify({"error": "Server error", "details": str(e)}), 500
 
 
 @app.route("/api/courses/<int:course_id>", methods=["GET"])
@@ -1694,39 +1710,31 @@ def get_course(course_id):
             """
             SELECT c.*, s.name AS specialization_name
             FROM courses c
-            LEFT JOIN specializations s
-                ON s.specialization_id = c.specialization_id
-            WHERE c.course_id = %s
+            LEFT JOIN specializations s ON s.id=COALESCE(c.spec_id, c.specialization_id)
+            WHERE c.id=%s OR c.course_id=%s
+            LIMIT 1
             """,
-            (course_id,),
+            (course_id, course_id),
             fetchone=True
         )
-
         if not row:
             return jsonify({"error": "Course not found"}), 404
-
+        real_course_id = safe_int(row.get("id"), course_id)
         quizzes = query_db(
             """
             SELECT *
             FROM quizzes
-            WHERE course_id = %s
-            ORDER BY quiz_id DESC
+            WHERE course_id=%s
+            ORDER BY id DESC
             """,
-            (course_id,),
+            (real_course_id,),
             fetchall=True
         ) or []
-
-        return jsonify({
-            "course": normalize_course(row),
-            "quizzes": [normalize_quiz(q) for q in quizzes]
-        }), 200
-
+        return jsonify({"course": normalize_course(row), "quizzes": [normalize_quiz(q) for q in quizzes]}), 200
     except Exception as e:
         print("GET /api/courses/<id> ERROR:", e)
-        return jsonify({
-            "error": "Server error",
-            "details": str(e)
-        }), 500
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+
 
 @app.route("/api/courses", methods=["POST"])
 @admin_required
@@ -1734,25 +1742,29 @@ def add_course():
     data = request_data()
     image = save_file("image") or safe_text(data.get("image") or data.get("image_url"))
     video = save_file("video") or safe_text(data.get("video") or data.get("video_url"))
-    title = safe_text(data.get("title"))
+    title = safe_text(data.get("title") or data.get("name"))
     spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not title:
         return jsonify({"error": "Course title is required"}), 400
     if not spec_id:
         return jsonify({"error": "Specialization is required"}), 400
-    level = normalize_level(data.get("level")).capitalize()
-    if level == "Intermediate":
-        level = "Intermediate"
+    spec = fetch_specialization_by_any_id(spec_id)
+    if not spec:
+        return jsonify({"error": "Specialization not found"}), 404
+    real_spec_id = safe_int(spec.get("id"), spec_id)
+    level = normalize_level(data.get("level") or data.get("difficulty"))
     course_id = query_db(
         """
-        INSERT INTO courses (specialization_id, spec_id, title, description, level, course_link, link, image_url, image, video_url, video)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        INSERT INTO courses (spec_id, specialization_id, title, name, description, level, difficulty, course_link, link, image_url, image, video_url, video)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
-            spec_id,
-            spec_id,
+            real_spec_id,
+            real_spec_id,
             title,
-            safe_text(data.get("description")),
+            title,
+            safe_text(data.get("description") or data.get("content")),
+            level,
             level,
             safe_text(data.get("course_link") or data.get("link")),
             safe_text(data.get("course_link") or data.get("link")),
@@ -1770,49 +1782,39 @@ def add_course():
 @admin_required
 def admin_update_course(course_id):
     data = request_data()
-    title = safe_text(data.get("title"))
+    title = safe_text(data.get("title") or data.get("name"))
     spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not title:
         return jsonify({"error": "Course title is required"}), 400
     if not spec_id:
         return jsonify({"error": "Specialization is required"}), 400
-
+    spec = fetch_specialization_by_any_id(spec_id)
+    if not spec:
+        return jsonify({"error": "Specialization not found"}), 404
+    real_spec_id = safe_int(spec.get("id"), spec_id)
     image = save_file("image") or safe_text(data.get("image") or data.get("image_url"))
     video = save_file("video") or safe_text(data.get("video") or data.get("video_url"))
-    level = normalize_level(data.get("level") or data.get("difficulty")).capitalize()
+    level = normalize_level(data.get("level") or data.get("difficulty"))
     link = safe_text(data.get("course_link") or data.get("link"))
-
     query_db(
         """
         UPDATE courses
-        SET
-            title=%s,
+        SET title=%s,
+            name=%s,
             description=%s,
             specialization_id=%s,
             spec_id=%s,
             level=%s,
+            difficulty=%s,
             course_link=%s,
             link=%s,
             image_url=COALESCE(NULLIF(%s,''), image_url),
             image=COALESCE(NULLIF(%s,''), image),
             video_url=COALESCE(NULLIF(%s,''), video_url),
             video=COALESCE(NULLIF(%s,''), video)
-        WHERE course_id=%s
+        WHERE id=%s OR course_id=%s
         """,
-        (
-            title,
-            safe_text(data.get("description")),
-            spec_id,
-            spec_id,
-            level,
-            link,
-            link,
-            image,
-            image,
-            video,
-            video,
-            course_id,
-        ),
+        (title, title, safe_text(data.get("description") or data.get("content")), real_spec_id, real_spec_id, level, level, link, link, image, image, video, video, course_id, course_id),
         commit=True
     )
     return jsonify({"success": True, "message": "Course updated successfully"})
@@ -1821,7 +1823,7 @@ def admin_update_course(course_id):
 @app.route("/api/courses/<int:course_id>", methods=["DELETE"])
 @admin_required
 def delete_course(course_id):
-    exec_db("DELETE FROM courses WHERE course_id=%s", (course_id,))
+    exec_db("DELETE FROM courses WHERE id=%s OR course_id=%s", (course_id, course_id))
     return jsonify({"message": "Course deleted"})
 
 
@@ -1830,47 +1832,46 @@ def delete_course(course_id):
 def course_enrollment_status(course_id):
     try:
         user_id = request.current_user["id"]
-        course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
+        course = fetch_course_by_any_id(course_id)
         if not course:
             return jsonify({"error": "Course not found"}), 404
-
+        real_course_id = safe_int(course.get("id"), course_id)
         enrollment = query_db(
             """
-            SELECT enrollment_id, progress_percentage, status, enrolled_at, completed_at
+            SELECT id AS enrollment_id, progress, progress_percentage, status, enrolled_at, completed_at
             FROM course_enrollments
             WHERE user_id=%s AND course_id=%s
             LIMIT 1
             """,
-            (user_id, course_id),
+            (user_id, real_course_id),
             fetchone=True
         )
-
-        spec_id = row_value(course, "specialization_id", "spec_id")
+        spec_id = row_value(course, "spec_id", "specialization_id")
         spec_enrollment = None
         if spec_id:
             spec_enrollment = query_db(
                 """
-                SELECT enrollment_id, progress_percentage, status
+                SELECT id AS enrollment_id, progress, status
                 FROM specialization_enrollments
-                WHERE user_id=%s AND specialization_id=%s
+                WHERE user_id=%s AND spec_id=%s
                 LIMIT 1
                 """,
                 (user_id, spec_id),
                 fetchone=True
             )
-
         progress = safe_int(row_value(enrollment or {}, "progress_percentage", "progress"), 0)
-        raw_status = safe_text((enrollment or {}).get("status")) or "Not Started"
+        raw_status = safe_text((enrollment or {}).get("status")) or "not_started"
         return jsonify({
             "success": True,
-            "course_id": course_id,
+            "course_id": real_course_id,
+            "id": real_course_id,
             "specialization_id": spec_id,
             "enrolled": bool(enrollment),
             "specialization_enrolled": bool(spec_enrollment),
             "progress": progress,
             "progress_percentage": progress,
-            "status": raw_status.lower().replace(" ", "_"),
-            "status_label": raw_status,
+            "status": raw_status,
+            "status_label": raw_status.replace("_", " ").title(),
         })
     except Exception as exc:
         print("COURSE STATUS ERROR:", exc)
@@ -1882,42 +1883,18 @@ def course_enrollment_status(course_id):
 def enroll_course(course_id):
     try:
         user_id = request.current_user["id"]
-        course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
+        course = fetch_course_by_any_id(course_id)
         if not course:
             return jsonify({"error": "Course not found"}), 404
-
-        spec_id = row_value(course, "specialization_id", "spec_id")
+        real_course_id = safe_int(course.get("id"), course_id)
+        spec_id = row_value(course, "spec_id", "specialization_id")
         if spec_id:
-            spec_enrollment = query_db(
-                """
-                SELECT enrollment_id
-                FROM specialization_enrollments
-                WHERE user_id=%s AND specialization_id=%s
-                LIMIT 1
-                """,
-                (user_id, spec_id),
-                fetchone=True
-            )
+            spec_enrollment = query_db("SELECT id FROM specialization_enrollments WHERE user_id=%s AND spec_id=%s LIMIT 1", (user_id, spec_id), fetchone=True)
             if not spec_enrollment:
-                return jsonify({
-                    "error": "Enroll in the specialization first. The system will not auto-enroll you.",
-                    "needs_specialization_enrollment": True,
-                    "specialization_id": spec_id,
-                }), 409
-
-        query_db(
-            """
-            INSERT INTO course_enrollments (user_id, course_id, progress_percentage, status, enrolled_at)
-            VALUES (%s,%s,0,'Not Started',CURRENT_TIMESTAMP)
-            ON DUPLICATE KEY UPDATE
-                enrolled_at=enrolled_at,
-                status=CASE WHEN status='Completed' THEN status ELSE status END
-            """,
-            (user_id, course_id),
-            commit=True
-        )
+                return jsonify({"error": "Enroll in the specialization first.", "needs_specialization_enrollment": True, "specialization_id": spec_id}), 409
+        ensure_course_enrollment(user_id, real_course_id, 0)
         compute_user_progress(user_id)
-        return jsonify({"success": True, "message": "Course enrolled successfully", "course_id": course_id})
+        return jsonify({"success": True, "message": "Course enrolled successfully", "course_id": real_course_id, "id": real_course_id})
     except Exception as exc:
         print("COURSE ENROLL ERROR:", exc)
         return jsonify({"error": "Failed to enroll course", "details": str(exc)}), 500
@@ -1928,19 +1905,13 @@ def enroll_course(course_id):
 def unenroll_course(course_id):
     try:
         user_id = request.current_user["id"]
-        query_db(
-            "DELETE FROM course_enrollments WHERE user_id=%s AND course_id=%s",
-            (user_id, course_id),
-            commit=True
-        )
+        course = fetch_course_by_any_id(course_id)
+        real_course_id = safe_int((course or {}).get("id"), course_id)
+        query_db("DELETE FROM course_enrollments WHERE user_id=%s AND course_id=%s", (user_id, real_course_id), commit=True)
         if table_exists("user_completed_courses"):
-            query_db(
-                "DELETE FROM user_completed_courses WHERE user_id=%s AND course_id=%s",
-                (user_id, course_id),
-                commit=True
-            )
+            query_db("DELETE FROM user_completed_courses WHERE user_id=%s AND course_id=%s", (user_id, real_course_id), commit=True)
         compute_user_progress(user_id)
-        return jsonify({"success": True, "message": "Course unenrolled successfully", "course_id": course_id})
+        return jsonify({"success": True, "message": "Course unenrolled successfully", "course_id": real_course_id, "id": real_course_id})
     except Exception as exc:
         print("COURSE UNENROLL ERROR:", exc)
         return jsonify({"error": "Failed to unenroll course", "details": str(exc)}), 500
@@ -1949,67 +1920,39 @@ def unenroll_course(course_id):
 @app.route("/api/courses/<int:course_id>/open", methods=["POST"])
 @student_required
 def open_course(course_id):
-    course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
-    if not course:
-        return jsonify({"error": "Course not found"}), 404
-
-    user_id = request.current_user["id"]
-    enrollment = query_db(
-        """
-        SELECT enrollment_id, progress_percentage, status
-        FROM course_enrollments
-        WHERE user_id=%s AND course_id=%s
-        LIMIT 1
-        """,
-        (user_id, course_id),
-        fetchone=True
-    )
-
-    # Important: opening/viewing a course must NOT create enrollment.
-    if not enrollment:
-        return jsonify({
-            "success": True,
-            "message": "Course opened, but progress was not changed because you are not enrolled.",
-            "tracked": False,
-            "enrolled": False,
-            "course_id": course_id,
-        })
-
-    data = get_json()
-    completed = 1 if data.get("completed") else 0
-    current_progress = safe_int(enrollment.get("progress_percentage"), 0)
-    progress_value = 100 if completed else max(current_progress, 25)
-    status = "Completed" if progress_value >= 100 else "In Progress"
-
-    query_db(
-        """
-        UPDATE course_enrollments
-        SET
-            progress_percentage=GREATEST(progress_percentage,%s),
-            status=%s,
-            completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
-        WHERE user_id=%s AND course_id=%s
-        """,
-        (progress_value, status, progress_value, user_id, course_id),
-        commit=True
-    )
-
-    if completed and table_exists("user_completed_courses"):
-        query_db(
-            "INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)",
-            (user_id, course_id),
-            commit=True
-        )
-
-    compute_user_progress(user_id)
-    return jsonify({
-        "success": True,
-        "message": "Course progress tracked",
-        "tracked": True,
-        "enrolled": True,
-        "course_id": course_id,
-        "progress": progress_value,
-    })
+    try:
+        course = fetch_course_by_any_id(course_id)
+        if not course:
+            return jsonify({"error": "Course not found"}), 404
+        real_course_id = safe_int(course.get("id"), course_id)
+        user_id = request.current_user["id"]
+        data = get_json()
+        completed = bool(data.get("completed"))
+        spec_id = row_value(course, "spec_id", "specialization_id")
+        if spec_id:
+            spec_enrollment = query_db("SELECT id FROM specialization_enrollments WHERE user_id=%s AND spec_id=%s LIMIT 1", (user_id, spec_id), fetchone=True)
+            if not spec_enrollment:
+                return jsonify({"success": True, "message": "Course opened, but progress was not changed because you are not enrolled in the specialization.", "tracked": False, "enrolled": False, "course_id": real_course_id, "needs_specialization_enrollment": True, "specialization_id": spec_id})
+        enrollment = query_db("SELECT id, progress, progress_percentage, status FROM course_enrollments WHERE user_id=%s AND course_id=%s LIMIT 1", (user_id, real_course_id), fetchone=True)
+        if not enrollment:
+            ensure_course_enrollment(user_id, real_course_id, 25)
+            progress_value = 25
+        else:
+            current_progress = safe_int(row_value(enrollment, "progress_percentage", "progress"), 0)
+            progress_value = max(current_progress, 100 if completed else 25)
+            set_course_progress(user_id, real_course_id, progress_value, completed)
+        if table_exists("course_activity"):
+            try:
+                query_db("INSERT INTO course_activity (user_id, course_id, action) VALUES (%s,%s,%s)", (user_id, real_course_id, "completed" if completed else "opened"), commit=True)
+            except Exception as exc:
+                print("COURSE ACTIVITY SAVE ERROR:", exc)
+        if completed and table_exists("user_completed_courses"):
+            query_db("INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)", (user_id, real_course_id), commit=True)
+        compute_user_progress(user_id)
+        return jsonify({"success": True, "message": "Course progress tracked", "tracked": True, "enrolled": True, "course_id": real_course_id, "id": real_course_id, "progress": progress_value})
+    except Exception as exc:
+        print("COURSE OPEN ERROR:", exc)
+        return jsonify({"error": "Failed to track course", "details": str(exc)}), 500
 
 
 
@@ -2018,16 +1961,16 @@ def open_course(course_id):
 def get_quizzes():
     course_id = request.args.get("course_id")
     sql = """
-        SELECT q.*, c.title AS course_title
+        SELECT q.*, COALESCE(c.title, c.name) AS course_title
         FROM quizzes q
-        LEFT JOIN courses c ON c.course_id=q.course_id
+        LEFT JOIN courses c ON c.id=q.course_id
         WHERE 1=1
     """
     params = []
     if course_id:
         sql += " AND q.course_id=%s"
         params.append(course_id)
-    sql += " ORDER BY q.quiz_id DESC"
+    sql += " ORDER BY q.id DESC"
     rows = query_db(sql, tuple(params), fetchall=True) or []
     return jsonify({"quizzes": [normalize_quiz(row) for row in rows]})
 
@@ -2036,17 +1979,19 @@ def get_quizzes():
 def get_quiz(quiz_id):
     quiz = query_db(
         """
-        SELECT q.*, c.title AS course_title
+        SELECT q.*, COALESCE(c.title, c.name) AS course_title
         FROM quizzes q
-        LEFT JOIN courses c ON c.course_id=q.course_id
-        WHERE q.quiz_id=%s
+        LEFT JOIN courses c ON c.id=q.course_id
+        WHERE q.id=%s OR q.quiz_id=%s
+        LIMIT 1
         """,
-        (quiz_id,),
+        (quiz_id, quiz_id),
         fetchone=True
     )
     if not quiz:
         return jsonify({"error": "Quiz not found"}), 404
-    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY question_id", (quiz_id,), fetchall=True) or []
+    real_quiz_id = safe_int(quiz.get("id"), quiz_id)
+    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id", (real_quiz_id,), fetchall=True) or []
     return jsonify({"quiz": normalize_quiz(quiz), "questions": [normalize_question(row) for row in questions]})
 
 
@@ -2058,12 +2003,13 @@ def add_quiz():
     course_id = safe_int(data.get("course_id"), None)
     if not title or not course_id:
         return jsonify({"error": "Quiz title and course are required"}), 400
-    course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
+    course = fetch_course_by_any_id(course_id)
     if not course:
         return jsonify({"error": "Course not found"}), 404
+    real_course_id = safe_int(course.get("id"), course_id)
     quiz_id = query_db(
-        "INSERT INTO quizzes (course_id,title,description,total_questions,spec_id) VALUES (%s,%s,%s,0,%s)",
-        (course_id, title, safe_text(data.get("description")), row_value(course, "specialization_id", "spec_id")),
+        "INSERT INTO quizzes (course_id,title,name,description,total_questions,spec_id) VALUES (%s,%s,%s,%s,0,%s)",
+        (real_course_id, title, title, safe_text(data.get("description")), row_value(course, "spec_id", "specialization_id")),
         commit=True
     )
     questions = data.get("questions") or []
@@ -2076,7 +2022,7 @@ def add_quiz():
     for q in questions:
         add_question_to_quiz(quiz_id, q)
         count += 1
-    exec_db("UPDATE quizzes SET total_questions=%s WHERE quiz_id=%s", (count, quiz_id))
+    exec_db("UPDATE quizzes SET total_questions=%s WHERE id=%s", (count, quiz_id))
     return jsonify({"message": "Quiz added", "id": quiz_id, "quiz_id": quiz_id})
 
 
@@ -2103,16 +2049,20 @@ def add_question_to_quiz(quiz_id, data):
 @app.route("/api/quizzes/<int:quiz_id>/questions", methods=["POST"])
 @admin_required
 def add_quiz_question(quiz_id):
-    question_id = add_question_to_quiz(quiz_id, get_json())
-    row = query_db("SELECT COUNT(*) AS total FROM quiz_questions WHERE quiz_id=%s", (quiz_id,), fetchone=True) or {"total": 0}
-    exec_db("UPDATE quizzes SET total_questions=%s WHERE quiz_id=%s", (safe_int(row.get("total"), 0), quiz_id))
+    quiz = fetch_quiz_by_any_id(quiz_id)
+    if not quiz:
+        return jsonify({"error": "Quiz not found"}), 404
+    real_quiz_id = safe_int(quiz.get("id"), quiz_id)
+    question_id = add_question_to_quiz(real_quiz_id, get_json())
+    row = query_db("SELECT COUNT(*) AS total FROM quiz_questions WHERE quiz_id=%s", (real_quiz_id,), fetchone=True) or {"total": 0}
+    exec_db("UPDATE quizzes SET total_questions=%s WHERE id=%s", (safe_int(row.get("total"), 0), real_quiz_id))
     return jsonify({"message": "Question added", "id": question_id})
 
 
 @app.route("/api/quizzes/<int:quiz_id>", methods=["DELETE"])
 @admin_required
 def delete_quiz(quiz_id):
-    exec_db("DELETE FROM quizzes WHERE quiz_id=%s", (quiz_id,))
+    exec_db("DELETE FROM quizzes WHERE id=%s OR quiz_id=%s", (quiz_id, quiz_id))
     return jsonify({"message": "Quiz deleted"})
 
 
@@ -2121,37 +2071,36 @@ def delete_quiz(quiz_id):
 def submit_quiz(quiz_id):
     data = get_json()
     answers = data.get("answers") or {}
-    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY question_id", (quiz_id,), fetchall=True) or []
-    quiz = query_db("SELECT * FROM quizzes WHERE quiz_id=%s", (quiz_id,), fetchone=True)
+    quiz = fetch_quiz_by_any_id(quiz_id)
     if not quiz:
         return jsonify({"error": "Quiz not found"}), 404
-
+    real_quiz_id = safe_int(quiz.get("id"), quiz_id)
+    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id", (real_quiz_id,), fetchall=True) or []
     score = 0
     details = []
     for q in questions:
-        qid = str(row_value(q, "question_id", "id"))
-        given = safe_text(answers.get(qid) or answers.get(row_value(q, "question_id", "id"))).upper()
+        qid_value = row_value(q, "id", "question_id")
+        qid = str(qid_value)
+        given = safe_text(answers.get(qid) or answers.get(str(row_value(q, "question_id", "id")))).upper()
         correct = safe_text(row_value(q, "correct_answer", "answer")).upper()
         normalized = {"1": "A", "2": "B", "3": "C", "4": "D"}.get(given, given)
         ok = normalized == correct
         if ok:
             score += 1
         details.append({"question_id": qid, "given": normalized, "correct": correct, "correct_boolean": bool(ok)})
-
     total = len(questions)
     percentage = round((score / total) * 100) if total else 0
-    passed = 1 if percentage >= 60 else 0
+    passed = 1 if percentage >= safe_int(quiz.get("passing_score"), 60) else 0
     user_id = request.current_user["id"]
-
+    course_id = quiz.get("course_id")
     attempt_id = query_db(
         """
-        INSERT INTO quiz_attempts (user_id,quiz_id,score,passed)
-        VALUES (%s,%s,%s,%s)
+        INSERT INTO quiz_attempts (user_id, quiz_id, course_id, score, passed, total, percentage, answers_json)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
         """,
-        (user_id, quiz_id, percentage, passed),
+        (user_id, real_quiz_id, course_id, percentage, passed, total, percentage, json.dumps(answers)),
         commit=True
     )
-
     if passed and table_exists("user_completed_quizzes"):
         query_db(
             """
@@ -2159,48 +2108,18 @@ def submit_quiz(quiz_id):
             VALUES (%s,%s,%s)
             ON DUPLICATE KEY UPDATE score=GREATEST(score,VALUES(score)), completed_at=CURRENT_TIMESTAMP
             """,
-            (user_id, quiz_id, percentage),
+            (user_id, real_quiz_id, percentage),
             commit=True
         )
-
-    course_id = quiz.get("course_id")
     course_progress_tracked = False
     if course_id:
-        enrollment = query_db(
-            """
-            SELECT enrollment_id, progress_percentage
-            FROM course_enrollments
-            WHERE user_id=%s AND course_id=%s
-            LIMIT 1
-            """,
-            (user_id, course_id),
-            fetchone=True
-        )
-
-        # Important: quiz submission must NOT auto-enroll a course.
+        enrollment = query_db("SELECT id, progress, progress_percentage FROM course_enrollments WHERE user_id=%s AND course_id=%s LIMIT 1", (user_id, course_id), fetchone=True)
         if enrollment:
-            progress_value = 100 if passed else max(safe_int(enrollment.get("progress_percentage"), 0), 50)
-            query_db(
-                """
-                UPDATE course_enrollments
-                SET
-                    progress_percentage=GREATEST(progress_percentage,%s),
-                    status=CASE WHEN %s >= 100 THEN 'Completed' ELSE 'In Progress' END,
-                    completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
-                WHERE user_id=%s AND course_id=%s
-                """,
-                (progress_value, progress_value, progress_value, user_id, course_id),
-                commit=True
-            )
+            progress_value = 100 if passed else max(safe_int(row_value(enrollment, "progress_percentage", "progress"), 0), 50)
+            set_course_progress(user_id, course_id, progress_value, bool(passed))
             course_progress_tracked = True
-
             if passed and table_exists("user_completed_courses"):
-                query_db(
-                    "INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)",
-                    (user_id, course_id),
-                    commit=True
-                )
-
+                query_db("INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)", (user_id, course_id), commit=True)
     compute_user_progress(user_id)
     return jsonify({
         "message": "Quiz submitted",
@@ -2215,7 +2134,6 @@ def submit_quiz(quiz_id):
 
 
 
-
 @app.route("/api/jobs", methods=["GET"])
 def get_jobs():
     try:
@@ -2226,7 +2144,7 @@ def get_jobs():
             SELECT j.*, s.name AS specialization_name
             FROM jobs j
             LEFT JOIN specializations s 
-                ON s.specialization_id = j.specialization_id
+                ON s.id = j.specialization_id
             WHERE 1=1
         """
 
@@ -2235,18 +2153,19 @@ def get_jobs():
         if search:
             sql += """
                 AND (
-                    j.title LIKE %s 
-                    OR j.description LIKE %s 
+                    j.title LIKE %s
+                    OR j.description LIKE %s
                     OR j.required_skills LIKE %s
+                    OR j.skills LIKE %s
                 )
             """
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
 
         if spec_id:
             sql += " AND j.specialization_id = %s"
             params.append(spec_id)
 
-        sql += " ORDER BY j.job_id DESC"
+        sql += " ORDER BY j.id DESC"
 
         rows = query_db(sql, tuple(params), fetchall=True) or []
 
@@ -2270,10 +2189,10 @@ def get_job(job_id):
             SELECT j.*, s.name AS specialization_name
             FROM jobs j
             LEFT JOIN specializations s 
-                ON s.specialization_id = j.specialization_id
-            WHERE j.job_id = %s
+                ON s.id = j.specialization_id
+            WHERE j.id = %s OR j.job_id = %s
             """,
-            (job_id,),
+            (job_id, job_id),
             fetchone=True
         )
 
@@ -2303,10 +2222,10 @@ def add_job():
         return jsonify({"error": "Specialization is required"}), 400
     job_id = query_db(
         """
-        INSERT INTO jobs (specialization_id,title,description,required_skills,average_salary,job_link)
-        VALUES (%s,%s,%s,%s,%s,%s)
+        INSERT INTO jobs (specialization_id,title,description,required_skills,skills,average_salary,salary,job_link,link)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
-        (spec_id, title, safe_text(data.get("description")), safe_text(data.get("required_skills") or data.get("skills")), safe_text(data.get("average_salary") or data.get("salary")), safe_text(data.get("job_link") or data.get("link"))),
+        (spec_id, title, safe_text(data.get("description")), safe_text(data.get("required_skills") or data.get("skills")), safe_text(data.get("required_skills") or data.get("skills")), safe_text(data.get("average_salary") or data.get("salary")), safe_text(data.get("average_salary") or data.get("salary")), safe_text(data.get("job_link") or data.get("link")), safe_text(data.get("job_link") or data.get("link"))),
         commit=True
     )
     return jsonify({"message": "Job added", "id": job_id, "job_id": job_id})
@@ -2326,16 +2245,20 @@ def admin_update_job(job_id):
     query_db(
         """
         UPDATE jobs
-        SET title=%s, description=%s, required_skills=%s, specialization_id=%s, average_salary=%s, job_link=%s
-        WHERE job_id=%s
+        SET title=%s, description=%s, required_skills=%s, skills=%s, specialization_id=%s, average_salary=%s, salary=%s, job_link=%s, link=%s
+        WHERE id=%s OR job_id=%s
         """,
         (
             title,
             safe_text(data.get("description")),
             safe_text(data.get("required_skills") or data.get("skills")),
+            safe_text(data.get("required_skills") or data.get("skills")),
             spec_id,
             safe_text(data.get("average_salary") or data.get("salary")),
+            safe_text(data.get("average_salary") or data.get("salary")),
             safe_text(data.get("job_link") or data.get("link")),
+            safe_text(data.get("job_link") or data.get("link")),
+            job_id,
             job_id,
         ),
         commit=True
@@ -2346,7 +2269,7 @@ def admin_update_job(job_id):
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
 @admin_required
 def delete_job(job_id):
-    exec_db("DELETE FROM jobs WHERE job_id=%s", (job_id,))
+    exec_db("DELETE FROM jobs WHERE id=%s OR job_id=%s", (job_id, job_id))
     return jsonify({"message": "Job deleted"})
 
 
@@ -2358,7 +2281,7 @@ def get_certificates():
             """
             SELECT c.id, c.spec_id AS specialization_id, c.name, c.description, c.link, c.price, c.type, c.created_at, s.name AS specialization_name
             FROM certificates c
-            LEFT JOIN specializations s ON s.specialization_id=c.spec_id
+            LEFT JOIN specializations s ON s.id=c.spec_id
             ORDER BY c.id DESC
             """,
             fetchall=True
@@ -2368,7 +2291,7 @@ def get_certificates():
             """
             SELECT c.certification_id AS id, c.specialization_id, c.name, c.description, c.official_link AS link, c.price, c.type, c.created_at, s.name AS specialization_name
             FROM certifications c
-            LEFT JOIN specializations s ON s.specialization_id=c.specialization_id
+            LEFT JOIN specializations s ON s.id=c.specialization_id
             ORDER BY c.certification_id DESC
             """,
             fetchall=True
