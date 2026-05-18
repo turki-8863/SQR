@@ -2,9 +2,9 @@ import os
 import re
 import json
 import datetime
+import time
 import urllib.request
 import urllib.error
-import time
 from io import BytesIO
 from functools import wraps
 
@@ -17,9 +17,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 try:
-    from openai import OpenAI
+    from google import genai
+    from google.genai import types
 except Exception:
-    OpenAI = None
+    genai = None
+    types = None
 
 try:
     from PyPDF2 import PdfReader
@@ -73,10 +75,12 @@ DB_CONFIG = {
 }
 
 pool = None
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if OpenAI and os.getenv("OPENAI_API_KEY") else None
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GEIMINI_API_KEY") or "").strip()
 GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or os.getenv("GEIMINI_MODEL") or "gemini-2.0-flash").strip()
+AI_PROVIDER = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
+AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", os.getenv("GEMINI_TIMEOUT", "45")))
+AI_MAX_RETRIES = max(1, int(os.getenv("AI_MAX_RETRIES", "3")))
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if genai and GEMINI_API_KEY else None
 
 TECH_SKILLS = [
     "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql",
@@ -604,90 +608,88 @@ def extract_json_object(text_value):
         return None
 
 
-def gemini_json(prompt, fallback):
-    if not GEMINI_API_KEY:
+def gemini_json(prompt, fallback=None):
+    """Call Google Gemini with the google-genai SDK and return a parsed JSON object.
+    If Gemini is unavailable, the caller receives None and the app uses a dynamic local fallback.
+    """
+    if not gemini_client:
         return None
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-        body = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [
-                        {
-                            "text": (
-                                "Return valid JSON only. Do not use markdown. "
-                                "Do not invent user facts, companies, years, GPA, certificates, or experience.\n\n"
-                                + safe_text(prompt)
-                            )
-                        }
-                    ],
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.35,
-                "topP": 0.9,
-                "maxOutputTokens": 4096,
-                "responseMimeType": "application/json",
-            },
-        }
-        retries = max(1, safe_int(os.getenv("GEMINI_RETRIES", "2"), 2))
-        for attempt in range(retries):
+
+    prompt_text = (
+        "Return valid JSON only. Do not use markdown. "
+        "Do not invent user facts, companies, years, GPA, certificates, degrees, projects, jobs, or experience. "
+        "Use only the user's provided information.\n\n"
+        + safe_text(prompt)
+    )
+    last_error = None
+
+    for attempt in range(AI_MAX_RETRIES):
+        try:
+            config_kwargs = {
+                "temperature": 0.28,
+                "top_p": 0.9,
+                "max_output_tokens": 4096,
+            }
+            if types:
+                config = types.GenerateContentConfig(**config_kwargs, response_mime_type="application/json")
+            else:
+                config = config_kwargs
+
             try:
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(body).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
+                response = gemini_client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt_text,
+                    config=config,
                 )
-                with urllib.request.urlopen(req, timeout=int(os.getenv("GEMINI_TIMEOUT", "35"))) as response:
-                    payload = json.loads(response.read().decode("utf-8", errors="ignore"))
-                candidates = payload.get("candidates") or []
-                if not candidates:
-                    return None
-                parts = ((candidates[0].get("content") or {}).get("parts") or [])
-                text_value = "\n".join([safe_text(part.get("text")) for part in parts if isinstance(part, dict)])
-                parsed = extract_json_object(text_value)
-                if isinstance(parsed, dict):
-                    parsed["ai_provider"] = "gemini"
-                    return parsed
-                return None
-            except urllib.error.HTTPError as exc:
-                if exc.code in (429, 500, 502, 503, 504) and attempt + 1 < retries:
-                    time.sleep(1.2 * (attempt + 1))
-                    continue
-                print(f"GEMINI TEMPORARY ERROR: HTTP {exc.code}; fallback used")
-                return None
-    except Exception as exc:
-        print("GEMINI JSON ERROR:", exc)
-        return None
+            except Exception as first_exc:
+                # Some model/API combinations may reject response_mime_type. Retry without it.
+                if "response_mime_type" not in str(first_exc).lower() and "responseMimeType" not in str(first_exc):
+                    raise
+                config = types.GenerateContentConfig(**config_kwargs) if types else config_kwargs
+                response = gemini_client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt_text,
+                    config=config,
+                )
+
+            text_value = safe_text(getattr(response, "text", ""))
+            if not text_value:
+                try:
+                    candidates = getattr(response, "candidates", []) or []
+                    parts = getattr(getattr(candidates[0], "content", None), "parts", []) if candidates else []
+                    text_value = "\n".join([safe_text(getattr(part, "text", "")) for part in parts])
+                except Exception:
+                    text_value = ""
+
+            parsed = extract_json_object(text_value)
+            if isinstance(parsed, dict):
+                parsed["ai_provider"] = "gemini"
+                parsed["ai_powered"] = True
+                return parsed
+            last_error = f"Gemini JSON parse failed: {text_value[:300]}"
+        except Exception as exc:
+            last_error = str(exc)
+            temporary = any(code in last_error for code in ["429", "500", "502", "503", "504", "UNAVAILABLE", "RESOURCE_EXHAUSTED"])
+            if temporary and attempt < AI_MAX_RETRIES - 1:
+                time.sleep(min(2 + attempt, 5))
+                continue
+            break
+
+    if last_error:
+        print("GEMINI JSON ERROR:", last_error)
+    return None
 
 
 def ai_json(prompt, fallback):
-    gemini_result = gemini_json(prompt, fallback)
-    if isinstance(gemini_result, dict):
-        return gemini_result
+    fallback = dict(fallback or {})
+    if AI_PROVIDER not in {"none", "off", "local"}:
+        result = gemini_json(prompt, fallback)
+        if isinstance(result, dict):
+            return result
 
-    if not client:
-        return fallback
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Return valid JSON only. Do not invent user experience."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.3,
-        )
-        text_value = response.choices[0].message.content or "{}"
-        parsed = extract_json_object(text_value)
-        if isinstance(parsed, dict):
-            parsed["ai_provider"] = "openai"
-            return parsed
-        return fallback
-    except Exception as exc:
-        print("OPENAI JSON ERROR:", exc)
-        return fallback
+    fallback["ai_provider"] = "local_dynamic_fallback"
+    fallback["ai_powered"] = False
+    return fallback
 
 
 def init_db():
@@ -1043,7 +1045,22 @@ def init_db():
 
 
 def render_page(template_name):
-    return render_template(template_name)
+    """Render templates safely even if links use Courses.html while the file is courses.html."""
+    templates_dir = os.path.join(app.root_path, "templates")
+    requested = safe_text(template_name)
+    direct_path = os.path.join(templates_dir, requested)
+    if os.path.exists(direct_path):
+        return render_template(requested)
+
+    lower_requested = requested.lower()
+    try:
+        for filename in os.listdir(templates_dir):
+            if filename.lower() == lower_requested:
+                return render_template(filename)
+    except Exception:
+        pass
+
+    return render_template(requested)
 
 
 @app.route("/")
@@ -1063,7 +1080,7 @@ def page_specializations():
 
 @app.route("/courses")
 def page_courses():
-    return render_page("Courses.html")
+    return render_page("courses.html")
 
 
 @app.route("/quizzes")
@@ -1112,8 +1129,8 @@ def legacy_html_pages(page):
         "gp": "gp.html",
         "Specialization": "Specialization.html",
         "Sepecialization": "Specialization.html",
-        "Courses": "Courses.html",
-        "courses": "Courses.html",
+        "Courses": "courses.html",
+        "courses": "courses.html",
         "Quiz": "Quiz.html",
         "ATS": "ATS.html",
         "ats": "ATS.html",
@@ -1141,6 +1158,19 @@ def health():
         "database": DB_CONFIG.get("database")
     })
 
+
+@app.route("/api/ai/status")
+@login_required
+def ai_status():
+    return jsonify({
+        "ai_provider_mode": AI_PROVIDER,
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "gemini_sdk_installed": bool(genai),
+        "gemini_client_ready": bool(gemini_client),
+        "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else "",
+        "max_retries": AI_MAX_RETRIES,
+        "timeout_seconds": AI_TIMEOUT,
+    })
 
 
 @app.route("/api/signup", methods=["POST"])
@@ -2475,6 +2505,8 @@ def sqr_recommendation_profile_text(data, user=None):
         safe_text(data.get("preferred_work")),
         safe_text(data.get("work_style")),
         safe_text(data.get("goal")),
+        safe_text(data.get("answers")),
+        safe_text(data.get("extra_answers")),
     ]
     if user:
         parts.extend([safe_text(user.get("interests")), safe_text(user.get("skills")), safe_text(user.get("goal"))])
@@ -2579,10 +2611,18 @@ def recommendations():
         "Use the ATS checker/generator to align your resume with the top job match.",
     ]
 
-    # AI is allowed to improve only the wording of summary/roadmap, not the actual scores or IDs.
+    # AI improves only the wording of summary/roadmap. The actual IDs and scores stay deterministic.
     ai_payload = ai_json(
-        "Return valid JSON only with summary and roadmap. Do not change scores. "
-        f"Top specializations: {json.dumps(recommended_specs[:3])}. Top jobs: {json.dumps(recommended_jobs[:5])}. Quiz answers: {json.dumps(quiz_answers[:20])}.",
+        """
+Return valid JSON only with these keys: summary, roadmap.
+Write a short helpful recommendation explanation for an SQR student.
+Do not change, invent, or recalculate any scores.
+Make the summary specific to the matched specializations and jobs.
+"""
+        + f"\nProfile text: {profile_text[:2500]}"
+        + f"\nTop specializations: {json.dumps(recommended_specs[:3], ensure_ascii=False)}"
+        + f"\nTop jobs: {json.dumps(recommended_jobs[:5], ensure_ascii=False)}"
+        + f"\nQuiz answers: {json.dumps(quiz_answers[:20], ensure_ascii=False)}",
         {"summary": summary, "roadmap": roadmap}
     )
     summary = safe_text(ai_payload.get("summary")) or summary
@@ -2598,6 +2638,8 @@ def recommendations():
         "recommended_specializations": recommended_specs[:5],
         "recommended_jobs": recommended_jobs[:8],
         "roadmap": roadmap,
+        "ai_powered": bool(ai_payload.get("ai_powered")),
+        "ai_provider": safe_text(ai_payload.get("ai_provider") or "local_dynamic_fallback"),
     }
 
     try:
@@ -2832,44 +2874,89 @@ def build_dynamic_resume_payload(data, resume_text):
 
 
 def generate_ai_resume_payload(data, resume_text):
+    data = data or {}
     fallback = build_dynamic_resume_payload(data, resume_text)
+
+    target_role = safe_text(data.get("target_role") or data.get("role") or data.get("target_job") or fallback.get("headline"))
+    original_summary = safe_text(data.get("summary") or data.get("original_summary"))
     prompt = f"""
-You are an expert resume writer inside the SQR website. Improve the user's resume like a helpful AI assistant.
+You are an expert resume writer inside the SQR website. Rewrite and improve the user's resume details like a real AI assistant.
 
 Return valid JSON only with these exact keys:
 headline, summary, enhanced_summary, technical_skills, soft_skills, projects, experience, education, certifications, full_resume, improvements, missing_information.
 
 Rules:
+- Use only the information provided in the form and uploaded/pasted resume text.
+- Do not invent companies, dates, GPA, certificates, degrees, projects, jobs, or years.
 - Do not use fixed generic text.
 - Do not say "ATS-friendly career readiness".
-- Do not invent companies, years, degrees, GPA, certificates, or experience.
-- Use only the information provided by the user and the uploaded resume text.
-- Make the writing natural, specific, concise, and professional.
-- The enhanced_summary must be 3 to 5 sentences and must be improved from the user's actual input.
-- The full_resume must be a clean ATS-readable resume text with clear section headings.
+- enhanced_summary must be 3 to 5 specific sentences based on the user's actual summary, skills, target job, projects, education, and resume text.
+- Improve wording, action verbs, clarity, and ATS keyword alignment for the target role.
+- If information is missing, list it in missing_information instead of inventing it.
+- full_resume must be clean ATS-readable plain text with these headings when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
+- If a section has no user data, do not invent bullet points for it.
 
-User form data:
+Target role: {target_role}
+User's original summary: {original_summary}
+User form data JSON:
 {json.dumps(data, ensure_ascii=False)}
 
 Uploaded or pasted resume text:
-{safe_text(resume_text)[:7000]}
+{safe_text(resume_text)[:9000]}
 """
+
     payload = ai_json(prompt, fallback)
     if not isinstance(payload, dict):
         payload = fallback
 
+    # Keep every expected key stable for the frontend.
     for key, value in fallback.items():
         if key not in payload or payload.get(key) in [None, "", []]:
             payload[key] = value
 
+    # Normalize common list fields even if the model returns comma-separated strings.
+    for key in ("technical_skills", "soft_skills", "improvements", "missing_information"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            payload[key] = sqr_compact_list(value, 20)
+        elif isinstance(value, list):
+            payload[key] = [safe_text(x) for x in value if safe_text(x)][:20]
+        else:
+            payload[key] = fallback.get(key, [])
+
     payload["summary"] = safe_text(payload.get("summary") or payload.get("enhanced_summary") or fallback["summary"])
     payload["enhanced_summary"] = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback["summary"])
-    payload["ai_powered"] = safe_text(payload.get("ai_provider")).lower() in {"gemini", "openai"}
+    payload["headline"] = safe_text(payload.get("headline") or fallback.get("headline") or target_role)
+
+    full_resume = safe_text(payload.get("full_resume"))
+    if not full_resume or len(full_resume.split()) < 35:
+        sections = [
+            safe_text(data.get("name") or "Candidate").upper(),
+            payload["headline"],
+            "",
+            "PROFESSIONAL SUMMARY",
+            payload["enhanced_summary"],
+            "",
+            "TECHNICAL SKILLS",
+            ", ".join(payload.get("technical_skills") or fallback.get("technical_skills") or []),
+            "",
+            "SOFT SKILLS",
+            ", ".join(payload.get("soft_skills") or fallback.get("soft_skills") or []),
+        ]
+        for label, key in (("PROJECTS", "projects"), ("EXPERIENCE", "experience"), ("EDUCATION", "education"), ("CERTIFICATIONS", "certifications")):
+            value = safe_text(payload.get(key) or fallback.get(key))
+            if value:
+                sections.extend(["", label, value])
+        payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
+
+    provider = safe_text(payload.get("ai_provider"))
+    payload["ai_powered"] = provider.lower() == "gemini" or bool(payload.get("ai_powered"))
     if not payload["ai_powered"]:
         payload["ai_provider"] = "local_dynamic_fallback"
 
     bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
     if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
+        fallback["ai_provider"] = "local_dynamic_fallback"
         fallback["ai_powered"] = False
         return fallback
 
@@ -5324,7 +5411,7 @@ def sqr_patch_runtime_report():
         "python_file": "SQR.py",
         "db_host_set": bool(DB_CONFIG.get("host")),
         "db_name_set": bool(DB_CONFIG.get("database")),
-        "openai_enabled": bool(client),
+        "gemini_enabled": bool(gemini_client),
         "upload_folder": app.config.get("UPLOAD_FOLDER"),
         "public_stats": sqr_patch_public_stats(),
         "page_targets": SQR_PAGE_BLUEPRINTS
