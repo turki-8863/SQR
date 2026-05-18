@@ -21,6 +21,13 @@ except Exception:
     OpenAI = None
 
 try:
+    from google import genai as google_genai
+    from google.genai import types as google_genai_types
+except Exception:
+    google_genai = None
+    google_genai_types = None
+
+try:
     from PyPDF2 import PdfReader
 except Exception:
     PdfReader = None
@@ -76,6 +83,13 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if OpenAI and os.getenv("OP
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GEIMINI_API_KEY") or "").strip()
 GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or os.getenv("GEIMINI_MODEL") or "gemini-2.0-flash").strip()
+gemini_client = None
+if GEMINI_API_KEY and google_genai:
+    try:
+        gemini_client = google_genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as exc:
+        print("GOOGLE GENAI CLIENT ERROR:", exc)
+        gemini_client = None
 
 TECH_SKILLS = [
     "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql",
@@ -606,21 +620,58 @@ def extract_json_object(text_value):
 def gemini_json(prompt, fallback):
     if not GEMINI_API_KEY:
         return None
+
+    prompt_text = (
+        "Return valid JSON only. Do not use markdown. "
+        "Do not invent user facts, companies, years, GPA, certificates, or experience.\n\n"
+        + safe_text(prompt)
+    )
+
+    if gemini_client:
+        try:
+            if google_genai_types:
+                config = google_genai_types.GenerateContentConfig(
+                    temperature=0.35,
+                    top_p=0.9,
+                    max_output_tokens=4096,
+                    response_mime_type="application/json",
+                )
+            else:
+                config = {
+                    "temperature": 0.35,
+                    "top_p": 0.9,
+                    "max_output_tokens": 4096,
+                    "response_mime_type": "application/json",
+                }
+
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt_text,
+                config=config,
+            )
+            text_value = safe_text(getattr(response, "text", ""))
+            if not text_value and getattr(response, "candidates", None):
+                parts_text = []
+                for candidate in response.candidates or []:
+                    content = getattr(candidate, "content", None)
+                    for part in getattr(content, "parts", []) or []:
+                        parts_text.append(safe_text(getattr(part, "text", "")))
+                text_value = "\n".join([part for part in parts_text if part])
+            parsed = extract_json_object(text_value)
+            if isinstance(parsed, dict):
+                parsed["ai_provider"] = "gemini"
+                parsed["ai_sdk"] = "google-genai"
+                return parsed
+        except Exception as exc:
+            print("GOOGLE GENAI JSON ERROR:", exc)
+
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
         body = {
             "contents": [
                 {
                     "role": "user",
-                    "parts": [
-                        {
-                            "text": (
-                                "Return valid JSON only. Do not use markdown. "
-                                "Do not invent user facts, companies, years, GPA, certificates, or experience.\n\n"
-                                + safe_text(prompt)
-                            )
-                        }
-                    ],
+                    "parts": [{"text": prompt_text}],
                 }
             ],
             "generationConfig": {
@@ -646,12 +697,12 @@ def gemini_json(prompt, fallback):
         parsed = extract_json_object(text_value)
         if isinstance(parsed, dict):
             parsed["ai_provider"] = "gemini"
+            parsed["ai_sdk"] = "rest_fallback"
             return parsed
         return None
     except Exception as exc:
-        print("GEMINI JSON ERROR:", exc)
+        print("GEMINI REST JSON ERROR:", exc)
         return None
-
 
 def ai_json(prompt, fallback):
     gemini_result = gemini_json(prompt, fallback)
@@ -1128,7 +1179,14 @@ def health():
     return jsonify({
         "message": "SQR Backend is running",
         "features": ["auth", "admin", "specializations", "courses", "quizzes", "jobs", "profile", "progress", "ATS", "recommendation"],
-        "database": DB_CONFIG.get("database")
+        "database": DB_CONFIG.get("database"),
+        "ai": {
+            "gemini_api_key_set": bool(GEMINI_API_KEY),
+            "gemini_model": GEMINI_MODEL,
+            "google_genai_installed": bool(google_genai),
+            "gemini_client_ready": bool(gemini_client),
+            "openai_enabled": bool(client),
+        }
     })
 
 
@@ -5315,6 +5373,10 @@ def sqr_patch_runtime_report():
         "db_host_set": bool(DB_CONFIG.get("host")),
         "db_name_set": bool(DB_CONFIG.get("database")),
         "openai_enabled": bool(client),
+        "gemini_api_key_set": bool(GEMINI_API_KEY),
+        "gemini_model": GEMINI_MODEL,
+        "google_genai_installed": bool(google_genai),
+        "gemini_client_ready": bool(gemini_client),
         "upload_folder": app.config.get("UPLOAD_FOLDER"),
         "public_stats": sqr_patch_public_stats(),
         "page_targets": SQR_PAGE_BLUEPRINTS
