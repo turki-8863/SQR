@@ -411,7 +411,7 @@
       <div class="sqr-auth-links">
         ${
           logged
-            ? `<button type="button" class="btn btn-small" id="sqrLogoutBtn">Sign Out</button>`
+            ? `<button type="button" class="btn btn-small btn-danger logout-btn" id="sqrLogoutBtn">Sign Out</button>`
             : `<a class="btn btn-small" href="signin.html">Sign In</a><a class="btn btn-small btn-primary" href="signup.html">Sign Up</a>`
         }
       </div>

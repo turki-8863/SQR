@@ -4969,3 +4969,77 @@ hr,
     padding: 8px;
   }
 }
+
+
+/* SQR UI quick fix: keep specialization/course grids compact and make logout red */
+body[data-page="specializations"]:not(.details-mode) #specializationsBox,
+body[data-page="specializations"]:not(.details-mode) #specializationGrid,
+body[data-page="courses"]:not(.details-mode) #coursesBox,
+body[data-page="courses"]:not(.details-mode) #coursesGrid {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+}
+
+body[data-page="specializations"]:not(.details-mode) .specializations-list-section .card,
+body[data-page="specializations"]:not(.details-mode) .specializations-list-section .feature-card,
+body[data-page="specializations"]:not(.details-mode) .specializations-list-section .colorful-card,
+body[data-page="specializations"]:not(.details-mode) .specializations-list-section .sqr-card,
+body[data-page="courses"]:not(.details-mode) .courses-list-section .card,
+body[data-page="courses"]:not(.details-mode) .courses-list-section .feature-card,
+body[data-page="courses"]:not(.details-mode) .courses-list-section .sqr-card {
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+body[data-page="specializations"]:not(.details-mode) .sqr-card,
+body[data-page="courses"]:not(.details-mode) .sqr-card {
+  padding: 18px !important;
+  border-radius: 24px !important;
+}
+
+body[data-page="specializations"]:not(.details-mode) .sqr-card-img,
+body[data-page="courses"]:not(.details-mode) .sqr-card-img {
+  width: 100% !important;
+  height: 120px !important;
+  border-radius: 18px !important;
+  object-fit: cover !important;
+  margin-bottom: 16px !important;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(124, 58, 237, 0.22)) !important;
+}
+
+body[data-page="specializations"]:not(.details-mode) .sqr-card-img-empty,
+body[data-page="courses"]:not(.details-mode) .sqr-card-img-empty {
+  display: grid !important;
+  place-items: center !important;
+  color: #e0f2fe !important;
+  font-size: 1rem !important;
+  font-weight: 950 !important;
+}
+
+body[data-page="specializations"]:not(.details-mode) .sqr-card-body,
+body[data-page="courses"]:not(.details-mode) .sqr-card-body {
+  padding: 0 !important;
+}
+
+body[data-page="specializations"]:not(.details-mode) .sqr-card-body h3,
+body[data-page="courses"]:not(.details-mode) .sqr-card-body h3 {
+  margin: 0 0 14px !important;
+}
+
+#sqrLogoutBtn,
+.sqr-auth-links #sqrLogoutBtn,
+button#sqrLogoutBtn.logout-btn {
+  background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(248, 113, 113, 0.55) !important;
+  box-shadow: 0 14px 30px rgba(185, 28, 28, 0.28) !important;
+}
+
+#sqrLogoutBtn:hover,
+.sqr-auth-links #sqrLogoutBtn:hover {
+  background: linear-gradient(135deg, #f87171, #dc2626) !important;
+  color: #ffffff !important;
+}
