@@ -18,8 +18,7 @@
     <section class="page-hero compact-hero gradient-cyan">
       <div>
         <span class="eyebrow">ATS Resume Tools</span>
-        <h1>Check uploaded resumes and generate ATS-friendly versions.</h1>
-        <p>The checker accepts PDF, DOCX, or TXT upload. The generator creates a clean resume based on user input and target job.</p>
+        <h1>Check your resume.</h1>
       </div>
       <div class="hero-actions"><a href="profile.html" class="btn btn-light">Profile</a><a href="jobs.html" class="btn btn-glass">Jobs</a></div>
     </section>
@@ -28,7 +27,6 @@
       <article class="card color-card ats-panel">
         <span class="panel-kicker">Checker</span>
         <h2>Upload resume for ATS check</h2>
-        <p>Fields marked with a red star are required. The result is rendered as a circle score and keyword report.</p>
         <form id="atsCheckForm" class="stack-form" enctype="multipart/form-data">
           <label class="required" for="target_job_check">Target job or job description</label>
           <textarea id="target_job_check" name="target_job" required placeholder="Paste target job title or job description"></textarea>
@@ -41,7 +39,6 @@
       <article class="card color-card ats-panel">
         <span class="panel-kicker">Generator</span>
         <h2>Generate ATS resume</h2>
-        <p>Use real details only. SQR formats and improves wording for ATS readability.</p>
         <form id="atsGenerateForm" class="stack-form">
           <label class="required" for="name">Full name</label>
           <input id="name" name="name" required placeholder="Your full name">
@@ -86,8 +83,6 @@
       <template data-template="empty-state">
         <article class="card empty-state">
           <div class="empty-state-icon">◇</div>
-          <h3 data-field="title">No data yet</h3>
-          <p data-field="description">Admin content will appear here after it is added to the database.</p>
         </article>
       </template>
 
