@@ -1,5 +1,6 @@
 Flask
 flask-cors
+gunicorn
 mysql-connector-python
 PyJWT
 Werkzeug
@@ -7,6 +8,6 @@ cryptography
 reportlab
 python-docx
 PyPDF2
-openai
-gunicorn
 python-dotenv
+requests
+google-genai
