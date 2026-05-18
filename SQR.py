@@ -539,7 +539,10 @@ def gemini_json(prompt, fallback):
         parts = ((candidates[0].get("content") or {}).get("parts") or [])
         text_value = "\n".join([safe_text(part.get("text")) for part in parts if isinstance(part, dict)])
         parsed = extract_json_object(text_value)
-        return parsed if isinstance(parsed, dict) else None
+        if isinstance(parsed, dict):
+            parsed["ai_provider"] = "gemini"
+            return parsed
+        return None
     except Exception as exc:
         print("GEMINI JSON ERROR:", exc)
         return None
@@ -563,7 +566,10 @@ def ai_json(prompt, fallback):
         )
         text_value = response.choices[0].message.content or "{}"
         parsed = extract_json_object(text_value)
-        return parsed if isinstance(parsed, dict) else fallback
+        if isinstance(parsed, dict):
+            parsed["ai_provider"] = "openai"
+            return parsed
+        return fallback
     except Exception as exc:
         print("OPENAI JSON ERROR:", exc)
         return fallback
@@ -2925,7 +2931,9 @@ Uploaded or pasted resume text:
 
     payload["summary"] = safe_text(payload.get("summary") or payload.get("enhanced_summary") or fallback["summary"])
     payload["enhanced_summary"] = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback["summary"])
-    payload["ai_powered"] = bool(GEMINI_API_KEY or client)
+    payload["ai_powered"] = safe_text(payload.get("ai_provider")).lower() in {"gemini", "openai"}
+    if not payload["ai_powered"]:
+        payload["ai_provider"] = "local_dynamic_fallback"
 
     bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
     if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
