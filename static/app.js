@@ -203,7 +203,239 @@
     return `<div class="card empty-card"><h3>No data yet</h3><p>${esc(text)}</p></div>`;
   }
 
+
+  function installNavbarStyles() {
+    if (document.getElementById("sqrNavbarFixStyles")) return;
+    const style = document.createElement("style");
+    style.id = "sqrNavbarFixStyles";
+    style.textContent = `
+      #sqrNavbar,
+      #sqrNavbar * {
+        box-sizing: border-box;
+      }
+
+      #sqrNavbar.sqr-navbar {
+        width: min(96%, 1320px);
+        margin: 18px auto 26px;
+        min-height: 78px;
+        padding: 14px 22px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        position: sticky;
+        top: 14px;
+        z-index: 1000;
+        border: 1px solid rgba(125, 211, 252, .22);
+        border-radius: 28px;
+        background: linear-gradient(135deg, rgba(7, 18, 39, .96), rgba(24, 17, 54, .94));
+        box-shadow: 0 20px 55px rgba(0, 0, 0, .28);
+        backdrop-filter: blur(16px);
+      }
+
+      #sqrNavbar .nav-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 250px;
+        flex: 0 0 auto;
+        color: #f8fafc;
+        text-decoration: none;
+        cursor: pointer;
+        line-height: 1.05;
+      }
+
+      #sqrNavbar .brand-mark {
+        width: 52px;
+        height: 52px;
+        display: grid;
+        place-items: center;
+        border-radius: 18px;
+        font-weight: 900;
+        letter-spacing: .5px;
+        color: #e0f2fe;
+        background: linear-gradient(135deg, rgba(14, 165, 233, .22), rgba(168, 85, 247, .18));
+        border: 1px solid rgba(255, 255, 255, .12);
+        flex: 0 0 auto;
+      }
+
+      #sqrNavbar .nav-brand strong {
+        display: block;
+        font-size: 1.02rem;
+        font-weight: 900;
+        white-space: nowrap;
+      }
+
+      #sqrNavbar .nav-brand span {
+        display: block;
+        margin-top: 5px;
+        color: #cbd5e1;
+        font-size: .86rem;
+        white-space: nowrap;
+      }
+
+      #sqrNavbar .nav-links {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+
+      #sqrNavbar .nav-links a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 14px;
+        border-radius: 14px;
+        color: #dbeafe;
+        text-decoration: none;
+        font-weight: 800;
+        font-size: .95rem;
+        white-space: nowrap;
+        transition: background .2s ease, transform .2s ease, color .2s ease;
+      }
+
+      #sqrNavbar .nav-links a:hover,
+      #sqrNavbar .nav-links a.active {
+        color: #ffffff;
+        background: rgba(255, 255, 255, .10);
+        transform: translateY(-1px);
+      }
+
+      #sqrNavbar .nav-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex: 0 0 auto;
+        margin-left: auto;
+      }
+
+      #sqrNavbar .nav-btn,
+      #sqrNavbar .nav-actions a,
+      #sqrNavbar .nav-actions button {
+        width: auto !important;
+        min-width: auto !important;
+        height: 42px !important;
+        min-height: 42px !important;
+        padding: 0 16px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 14px !important;
+        border: 1px solid rgba(255, 255, 255, .14) !important;
+        text-decoration: none !important;
+        font-weight: 900 !important;
+        font-size: .94rem !important;
+        line-height: 1 !important;
+        cursor: pointer !important;
+        flex: 0 0 auto !important;
+      }
+
+      #sqrNavbar .nav-btn.ghost {
+        color: #f8fafc !important;
+        background: rgba(255, 255, 255, .06) !important;
+      }
+
+      #sqrNavbar .nav-btn.primary {
+        color: #06121f !important;
+        background: linear-gradient(135deg, #67e8f9, #a78bfa) !important;
+        border-color: transparent !important;
+      }
+
+      #sqrNavbar .nav-toggle {
+        display: none !important;
+        width: 42px !important;
+        height: 42px !important;
+        min-width: 42px !important;
+        max-width: 42px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border-radius: 14px !important;
+        border: 1px solid rgba(255, 255, 255, .14) !important;
+        background: rgba(255, 255, 255, .08) !important;
+        color: #f8fafc !important;
+        font-size: 1.35rem !important;
+        line-height: 1 !important;
+        cursor: pointer !important;
+        flex: 0 0 42px !important;
+      }
+
+      @media (max-width: 980px) {
+        #sqrNavbar.sqr-navbar {
+          flex-wrap: wrap;
+          padding: 14px;
+          border-radius: 24px;
+        }
+
+        #sqrNavbar .nav-brand {
+          min-width: 0;
+          flex: 1 1 auto;
+        }
+
+        #sqrNavbar .nav-toggle {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+
+        #sqrNavbar .nav-links {
+          order: 3;
+          flex: 1 0 100%;
+          display: none;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 8px;
+          padding-top: 10px;
+        }
+
+        #sqrNavbar .nav-links.open {
+          display: flex;
+        }
+
+        #sqrNavbar .nav-links a {
+          justify-content: flex-start;
+          width: 100%;
+        }
+
+        #sqrNavbar .nav-actions {
+          order: 4;
+          width: 100%;
+          justify-content: flex-start;
+          margin-left: 0;
+          padding-top: 4px;
+        }
+      }
+
+      @media (max-width: 560px) {
+        #sqrNavbar.sqr-navbar {
+          width: calc(100% - 20px);
+          margin-top: 10px;
+        }
+
+        #sqrNavbar .brand-mark {
+          width: 44px;
+          height: 44px;
+          border-radius: 15px;
+        }
+
+        #sqrNavbar .nav-brand strong {
+          font-size: .96rem;
+        }
+
+        #sqrNavbar .nav-brand span {
+          font-size: .78rem;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+
   function navbar() {
+    installNavbarStyles();
     if ($("#sqrNavbar")) return;
     const logged = isLoggedIn();
     const admin = isAdmin();
