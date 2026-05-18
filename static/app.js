@@ -343,6 +343,7 @@
     }
 
     if (!response.ok) {
+      if (response.status === 401) clearSession();
       const err = new Error(data.error || data.message || `Request failed (${response.status})`);
       err.status = response.status;
       err.data = data;
@@ -785,7 +786,7 @@
           await loadCourseDetails(courseId);
         } catch (err) {
           if (err.status === 409 && err.data?.specialization_id) {
-            message("Enroll in the specialization first. I will not auto-enroll you.", "error");
+            message("Enroll in the specialization first, then open or enroll in the course.", "error");
           } else {
             message(err.message, "error");
           }
