@@ -2,1525 +2,934 @@
   "use strict";
 
   const API_BASE = (window.SQR_API_BASE || "").replace(/\/$/, "");
-  const TOKEN_KEYS = ["sqr_token", "token", "authToken"];
-  const USER_KEYS = ["sqr_user", "user", "currentUser"];
-  const pageName = (location.pathname.split("/").pop() || "gp.html").toLowerCase();
+  const TOKEN_KEY = "sqr_token";
+  const USER_KEY = "sqr_user";
 
-  const $ = (selector, root = document) => root.querySelector(selector);
-  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-
-  function esc(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  function asArray(value, key) {
-    if (Array.isArray(value)) return value;
-    if (value && key && Array.isArray(value[key])) return value[key];
-    if (value && typeof value === "object") {
-      for (const candidate of ["items", "rows", "data", "results", "specializations", "courses", "jobs", "quizzes", "questions", "users", "certificates"]) {
-        if (Array.isArray(value[candidate])) return value[candidate];
-      }
-    }
-    return [];
-  }
-
-  function first(...values) {
-    for (const value of values) {
-      if (value !== undefined && value !== null && value !== "") return value;
-    }
-    return "";
-  }
-
-  function getId(item, ...keys) {
-    if (!item) return "";
-    const candidates = keys.length ? keys : ["id", "specialization_id", "course_id", "quiz_id", "job_id", "certification_id", "admin_id", "user_id"];
-    return first(...candidates.map((key) => item[key]));
-  }
-
-  function slug(value) {
-    return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  }
-
-  function pct(value) {
-    const n = Number(value || 0);
-    if (Number.isNaN(n)) return 0;
-    return Math.max(0, Math.min(100, Math.round(n)));
-  }
+  const page = () => (location.pathname.split("/").pop() || "gp.html").toLowerCase();
+  const qs = (selector, root = document) => root.querySelector(selector);
+  const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const byId = (...ids) => ids.map((id) => document.getElementById(id)).find(Boolean) || null;
+  const getParam = (name) => new URLSearchParams(location.search).get(name);
+  const getIdParam = () => getParam("id") || getParam("specialization_id") || getParam("spec_id") || getParam("course_id") || getParam("job_id");
+  const escapeHTML = (value) => String(value ?? "").replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
+  const number = (value) => Number(value || 0);
+  const clamp = (value) => Math.max(0, Math.min(100, Math.round(number(value))));
 
   function token() {
-    for (const key of TOKEN_KEYS) {
-      const value = localStorage.getItem(key);
-      if (value) return value;
-    }
-    return "";
+    return localStorage.getItem(TOKEN_KEY) || "";
   }
 
-  function user() {
-    for (const key of USER_KEYS) {
-      const value = localStorage.getItem(key);
-      if (!value) continue;
-      try {
-        return JSON.parse(value);
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  function saveAuth(payload) {
-    const t = payload?.token || payload?.access_token || "";
-    const u = payload?.user || payload?.data?.user || payload;
-    if (t) TOKEN_KEYS.forEach((key) => localStorage.setItem(key, t));
-    if (u && typeof u === "object") USER_KEYS.forEach((key) => localStorage.setItem(key, JSON.stringify(u)));
-  }
-
-  function clearAuth() {
-    TOKEN_KEYS.forEach((key) => localStorage.removeItem(key));
-    USER_KEYS.forEach((key) => localStorage.removeItem(key));
-  }
-
-  function isAdmin() {
-    const u = user();
-    return String(u?.role || "").toLowerCase() === "admin";
-  }
-
-  function currentMode() {
-    const u = user();
-    return String(u?.current_mode || u?.role || "student").toLowerCase();
-  }
-
-  function isLoggedIn() {
-    return Boolean(token());
-  }
-
-  function pageIsAuth() {
-    return pageName.includes("signin") || pageName.includes("signup");
-  }
-
-  function pageIsAdminAllowed() {
-    return pageName.includes("admin") || pageName.includes("profile") || pageIsAuth();
-  }
-
-  function redirect(path) {
-    if (!path) return;
-    window.location.href = path;
-  }
-
-  function imageUrl(value) {
-    const v = String(value || "").trim();
-    if (!v) return "";
-    if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/")) return v;
-    return `/uploads/${v}`;
-  }
-
-  function showMessage(text, type = "info", target = null) {
-    const box = target || $("#message") || $(".message") || $("#msg");
-    if (!box) {
-      if (type === "error") console.error(text);
-      return;
-    }
-    box.innerHTML = `<div class="sqr-alert sqr-alert-${esc(type)}">${esc(text)}</div>`;
-    if (type !== "error") {
-      setTimeout(() => {
-        if (box.textContent.includes(String(text))) box.innerHTML = "";
-      }, 4200);
-    }
-  }
-
-  async function api(path, options = {}) {
-    const headers = new Headers(options.headers || {});
-    const body = options.body;
-    const isForm = body instanceof FormData;
-    if (!isForm && body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-    const t = token();
-    if (t && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${t}`);
-
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers,
-      body: isForm ? body : body && typeof body !== "string" ? JSON.stringify(body) : body,
-    });
-
-    const contentType = response.headers.get("content-type") || "";
-    const data = contentType.includes("application/json") ? await response.json().catch(() => ({})) : await response.text();
-
-    if (!response.ok) {
-      const msg = typeof data === "string" ? data : data.error || data.message || `Request failed (${response.status})`;
-      if (response.status === 401) {
-        clearAuth();
-        if (!pageIsAuth()) setTimeout(() => redirect("signin.html"), 800);
-      }
-      throw new Error(msg);
-    }
-    return data;
-  }
-
-  function formDataToObject(form) {
-    const data = {};
-    new FormData(form).forEach((value, key) => {
-      if (value instanceof File) return;
-      data[key] = value;
-    });
-    return data;
-  }
-
-  function bindOnce(el, event, handler, key = event) {
-    if (!el || el.dataset[`bound${key}`]) return;
-    el.dataset[`bound${key}`] = "1";
-    el.addEventListener(event, handler);
-  }
-
-  function cardImage(src, alt = "") {
-    const url = imageUrl(src);
-    if (!url) return `<div class="card-media card-media-empty"><span>${esc((alt || "SQR").slice(0, 2).toUpperCase())}</span></div>`;
-    return `<img class="card-media" src="${esc(url)}" alt="${esc(alt)}" loading="lazy">`;
-  }
-
-  function levelBadge(level) {
-    const clean = String(level || "beginner").toLowerCase();
-    return `<span class="pill level-${esc(clean)}">${esc(clean.charAt(0).toUpperCase() + clean.slice(1))}</span>`;
-  }
-
-  function ring(score, label = "Score") {
-    const value = pct(score);
-    return `
-      <div class="stat-ring" style="--value:${value}">
-        <div class="stat-ring-inner">
-          <strong>${value}%</strong>
-          <span>${esc(label)}</span>
-        </div>
-      </div>
-    `;
-  }
-
-  function emptyCard(text) {
-    return `<div class="card empty-card"><h3>No data yet</h3><p>${esc(text)}</p></div>`;
-  }
-
-
-  function installNavbarStyles() {
-    if (document.getElementById("sqrNavbarFixStyles")) return;
-    const style = document.createElement("style");
-    style.id = "sqrNavbarFixStyles";
-    style.textContent = `
-      #sqrNavbar,
-      #sqrNavbar * {
-        box-sizing: border-box;
-      }
-
-      #sqrNavbar.sqr-navbar {
-        width: min(96%, 1320px);
-        margin: 18px auto 26px;
-        min-height: 78px;
-        padding: 14px 22px;
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        position: sticky;
-        top: 14px;
-        z-index: 1000;
-        border: 1px solid rgba(125, 211, 252, .22);
-        border-radius: 28px;
-        background: linear-gradient(135deg, rgba(7, 18, 39, .96), rgba(24, 17, 54, .94));
-        box-shadow: 0 20px 55px rgba(0, 0, 0, .28);
-        backdrop-filter: blur(16px);
-      }
-
-      #sqrNavbar .nav-brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-width: 250px;
-        flex: 0 0 auto;
-        color: #f8fafc;
-        text-decoration: none;
-        cursor: pointer;
-        line-height: 1.05;
-      }
-
-      #sqrNavbar .brand-mark {
-        width: 52px;
-        height: 52px;
-        display: grid;
-        place-items: center;
-        border-radius: 18px;
-        font-weight: 900;
-        letter-spacing: .5px;
-        color: #e0f2fe;
-        background: linear-gradient(135deg, rgba(14, 165, 233, .22), rgba(168, 85, 247, .18));
-        border: 1px solid rgba(255, 255, 255, .12);
-        flex: 0 0 auto;
-      }
-
-      #sqrNavbar .nav-brand strong {
-        display: block;
-        font-size: 1.02rem;
-        font-weight: 900;
-        white-space: nowrap;
-      }
-
-      #sqrNavbar .nav-brand span {
-        display: block;
-        margin-top: 5px;
-        color: #cbd5e1;
-        font-size: .86rem;
-        white-space: nowrap;
-      }
-
-      #sqrNavbar .nav-links {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        flex: 1 1 auto;
-        min-width: 0;
-      }
-
-      #sqrNavbar .nav-links a {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 42px;
-        padding: 0 14px;
-        border-radius: 14px;
-        color: #dbeafe;
-        text-decoration: none;
-        font-weight: 800;
-        font-size: .95rem;
-        white-space: nowrap;
-        transition: background .2s ease, transform .2s ease, color .2s ease;
-      }
-
-      #sqrNavbar .nav-links a:hover,
-      #sqrNavbar .nav-links a.active {
-        color: #ffffff;
-        background: rgba(255, 255, 255, .10);
-        transform: translateY(-1px);
-      }
-
-      #sqrNavbar .nav-actions {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 10px;
-        flex: 0 0 auto;
-        margin-left: auto;
-      }
-
-      #sqrNavbar .nav-btn,
-      #sqrNavbar .nav-actions a,
-      #sqrNavbar .nav-actions button {
-        width: auto !important;
-        min-width: auto !important;
-        height: 42px !important;
-        min-height: 42px !important;
-        padding: 0 16px !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        border-radius: 14px !important;
-        border: 1px solid rgba(255, 255, 255, .14) !important;
-        text-decoration: none !important;
-        font-weight: 900 !important;
-        font-size: .94rem !important;
-        line-height: 1 !important;
-        cursor: pointer !important;
-        flex: 0 0 auto !important;
-      }
-
-      #sqrNavbar .nav-btn.ghost {
-        color: #f8fafc !important;
-        background: rgba(255, 255, 255, .06) !important;
-      }
-
-      #sqrNavbar .nav-btn.primary {
-        color: #06121f !important;
-        background: linear-gradient(135deg, #67e8f9, #a78bfa) !important;
-        border-color: transparent !important;
-      }
-
-      #sqrNavbar .nav-toggle {
-        display: none !important;
-        width: 42px !important;
-        height: 42px !important;
-        min-width: 42px !important;
-        max-width: 42px !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        border-radius: 14px !important;
-        border: 1px solid rgba(255, 255, 255, .14) !important;
-        background: rgba(255, 255, 255, .08) !important;
-        color: #f8fafc !important;
-        font-size: 1.35rem !important;
-        line-height: 1 !important;
-        cursor: pointer !important;
-        flex: 0 0 42px !important;
-      }
-
-      @media (max-width: 980px) {
-        #sqrNavbar.sqr-navbar {
-          flex-wrap: wrap;
-          padding: 14px;
-          border-radius: 24px;
-        }
-
-        #sqrNavbar .nav-brand {
-          min-width: 0;
-          flex: 1 1 auto;
-        }
-
-        #sqrNavbar .nav-toggle {
-          display: inline-flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-        }
-
-        #sqrNavbar .nav-links {
-          order: 3;
-          flex: 1 0 100%;
-          display: none;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 8px;
-          padding-top: 10px;
-        }
-
-        #sqrNavbar .nav-links.open {
-          display: flex;
-        }
-
-        #sqrNavbar .nav-links a {
-          justify-content: flex-start;
-          width: 100%;
-        }
-
-        #sqrNavbar .nav-actions {
-          order: 4;
-          width: 100%;
-          justify-content: flex-start;
-          margin-left: 0;
-          padding-top: 4px;
-        }
-      }
-
-      @media (max-width: 560px) {
-        #sqrNavbar.sqr-navbar {
-          width: calc(100% - 20px);
-          margin-top: 10px;
-        }
-
-        #sqrNavbar .brand-mark {
-          width: 44px;
-          height: 44px;
-          border-radius: 15px;
-        }
-
-        #sqrNavbar .nav-brand strong {
-          font-size: .96rem;
-        }
-
-        #sqrNavbar .nav-brand span {
-          font-size: .78rem;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-
-  function navbar() {
-    installNavbarStyles();
-    if ($("#sqrNavbar")) return;
-    const logged = isLoggedIn();
-    const admin = isAdmin();
-    const adminMode = admin && currentMode() !== "student";
-    const studentLinks = [
-      ["gp.html", "Home"],
-      ["Specialization.html", "Specializations"],
-      ["Courses.html", "Courses"],
-      ["Quiz.html", "Quizzes"],
-      ["ATS.html", "ATS"],
-      ["jobs.html", "Jobs"],
-      ["recommendation.html", "Recommendation"],
-      ["profile.html", "Profile"],
-    ];
-    const adminLinks = [
-      ["admin.html", "Admin"],
-      ["profile.html", "Profile"],
-    ];
-    const links = logged ? (adminMode ? adminLinks : studentLinks) : [["gp.html", "Home"], ["Specialization.html", "Specializations"], ["Courses.html", "Courses"], ["ATS.html", "ATS"]];
-    const auth = logged
-      ? `<button class="nav-btn ghost" id="logoutBtn" type="button">Sign out</button>`
-      : `<a class="nav-btn ghost" href="signin.html">Sign In</a><a class="nav-btn primary" href="signup.html">Sign Up</a>`;
-
-    const nav = document.createElement("header");
-    nav.id = "sqrNavbar";
-    nav.className = "sqr-navbar";
-    nav.innerHTML = `
-      <div class="nav-brand" onclick="location.href='gp.html'">
-        <div class="brand-mark">SQR</div>
-        <div><strong>Skill Quest Road</strong><span>CS career guidance</span></div>
-      </div>
-      <button class="nav-toggle" id="navToggle" type="button" aria-label="Toggle navigation">☰</button>
-      <nav class="nav-links" id="navLinks">
-        ${links.map(([href, label]) => `<a href="${href}" class="${pageName === href.toLowerCase() ? "active" : ""}">${label}</a>`).join("")}
-      </nav>
-      <div class="nav-actions">${auth}</div>
-    `;
-    document.body.prepend(nav);
-    bindOnce($("#logoutBtn"), "click", () => {
-      clearAuth();
-      redirect("signin.html");
-    }, "logout");
-    bindOnce($("#navToggle"), "click", () => $("#navLinks")?.classList.toggle("open"), "navtoggle");
-  }
-
-  function requireLogin() {
-    if (!isLoggedIn()) redirect("signin.html");
-  }
-
-  async function requireAdmin() {
-    if (!isLoggedIn()) return redirect("signin.html");
-    const u = user();
-    if (u?.role === "admin") return true;
+  function currentUser() {
     try {
-      const me = await api("/api/me");
-      saveAuth({ user: me, token: token() });
-      if (me.role !== "admin") redirect("profile.html");
-      return me.role === "admin";
-    } catch (e) {
-      showMessage(e.message, "error");
-      return false;
-    }
-  }
-
-  function blockAdminFromStudentPages() {
-    if (isAdmin() && currentMode() !== "student" && !pageIsAdminAllowed()) {
-      showMessage("Admins can access Admin and Profile only unless switched to student mode.", "error");
-      setTimeout(() => redirect("admin.html"), 700);
-      return false;
-    }
-    return true;
-  }
-
-  function setupSignup() {
-    const form = $("#signupForm") || $("form[data-auth='signup']") || $("form.signup-form");
-    bindOnce(form, "submit", async (e) => {
-      e.preventDefault();
-      const payload = formDataToObject(form);
-      try {
-        const data = await api("/api/signup", { method: "POST", body: payload });
-        saveAuth(data);
-        showMessage("Account created successfully", "success");
-        redirect("profile.html");
-      } catch (err) {
-        showMessage(err.message, "error");
-      }
-    }, "signup");
-  }
-
-  function setupSignin() {
-    const form = $("#signinForm") || $("form[data-auth='signin']") || $("form.login-form");
-    bindOnce(form, "submit", async (e) => {
-      e.preventDefault();
-      const payload = formDataToObject(form);
-      try {
-        const data = await api("/api/signin", { method: "POST", body: payload });
-        saveAuth(data);
-        showMessage("Signed in successfully", "success");
-        const u = data.user || user();
-        redirect(u?.role === "admin" ? "admin.html" : "profile.html");
-      } catch (err) {
-        showMessage(err.message, "error");
-      }
-    }, "signin");
-  }
-
-  async function refreshMe() {
-    if (!isLoggedIn()) return null;
-    try {
-      const me = await api("/api/me");
-      saveAuth({ token: token(), user: me });
-      return me;
+      return JSON.parse(localStorage.getItem(USER_KEY) || "null");
     } catch (_) {
       return null;
     }
   }
 
-  async function loadHome() {
-    const boxes = [$("#homeSpecializations"), $("#homeCourses"), $("#homeJobs")];
-    if (!boxes.some(Boolean)) return;
-    try {
-      const data = await api("/api/home/dashboard");
-      if ($("#homeSpecializations")) renderSpecializationCards($("#homeSpecializations"), data.latest_specializations || data.specializations || [], true);
-      if ($("#homeCourses")) renderCourseCards($("#homeCourses"), data.latest_courses || data.courses || [], true);
-      if ($("#homeJobs")) renderJobCards($("#homeJobs"), data.latest_jobs || data.jobs || [], true);
-      renderStats(data.stats || data.counts || {});
-    } catch (err) {
-      showMessage(err.message, "error");
+  function saveSession(data) {
+    if (data?.token) localStorage.setItem(TOKEN_KEY, data.token);
+    if (data?.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+  }
+
+  function clearSession() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
+
+  function redirectTo(path) {
+    if (location.pathname.toLowerCase().endsWith(path.toLowerCase())) return;
+    location.href = path;
+  }
+
+  function message(text, type = "info", target) {
+    const box = target || byId("message", "msg", "alert", "formMessage", "statusMessage") || qs(".message") || qs(".alert");
+    const cls = type === "error" ? "error" : type === "success" ? "success" : "info";
+    if (box) {
+      box.innerHTML = `<div class="sqr-message ${cls}">${escapeHTML(text)}</div>`;
+    } else if (text) {
+      console[type === "error" ? "error" : "log"](text);
     }
   }
 
-  function renderStats(stats) {
-    const box = $("#statsBox") || $("#homeStats") || $(".stats-grid");
-    if (!box || !stats) return;
-    const items = [
-      ["Users", stats.users],
-      ["Specializations", stats.specializations],
-      ["Courses", stats.courses],
-      ["Quizzes", stats.quizzes],
-      ["Jobs", stats.jobs],
-    ];
-    box.innerHTML = items.map(([label, value]) => `<div class="stat-card"><strong>${esc(value ?? 0)}</strong><span>${esc(label)}</span></div>`).join("");
-  }
+  async function api(path, options = {}) {
+    const url = `${API_BASE}${path}`;
+    const headers = new Headers(options.headers || {});
+    const authToken = token();
+    if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
 
-  function renderSpecializationCards(box, rows, compact = false) {
-    if (!box) return;
-    const data = asArray(rows, "specializations");
-    if (!data.length) {
-      box.innerHTML = emptyCard("No specializations were found. Add them from the admin page.");
-      return;
+    let body = options.body;
+    if (body && !(body instanceof FormData) && typeof body === "object") {
+      headers.set("Content-Type", "application/json");
+      body = JSON.stringify(body);
     }
-    box.innerHTML = data.map((spec) => {
-      const id = getId(spec, "specialization_id", "id");
-      return `
-        <article class="card interactive-card specialization-card" data-id="${esc(id)}">
-          ${cardImage(first(spec.image_url, spec.image), spec.name)}
-          <div class="card-body">
-            <div class="card-top"><span class="pill">Specialization</span><span>#${esc(id)}</span></div>
-            <h3>${esc(spec.name)}</h3>
-            <p>${esc(first(spec.description, "Explore courses, quizzes, certifications, and jobs for this path.")).slice(0, compact ? 130 : 240)}</p>
-            <div class="card-actions">
-              <button type="button" class="btn primary view-specialization" data-id="${esc(id)}">View Details</button>
-              ${isLoggedIn() && !isAdmin() ? `<button type="button" class="btn ghost enroll-specialization" data-id="${esc(id)}">Enroll</button>` : ""}
-            </div>
-          </div>
-        </article>
-      `;
-    }).join("");
-    $$(".view-specialization", box).forEach((btn) => bindOnce(btn, "click", () => redirect(`Specialization.html?id=${encodeURIComponent(btn.dataset.id)}`), "viewspec"));
-    $$(".specialization-card", box).forEach((card) => bindOnce(card, "click", (e) => {
-      if (e.target.closest("button,a")) return;
-      redirect(`Specialization.html?id=${encodeURIComponent(card.dataset.id)}`);
-    }, "cardopen"));
-    $$(".enroll-specialization", box).forEach((btn) => bindOnce(btn, "click", async (e) => {
-      e.stopPropagation();
-      await enrollSpecialization(btn.dataset.id, btn);
-    }, "enrollspec"));
-  }
 
-  async function loadSpecializations() {
-    const box = $("#specializationsBox") || $("#specializationBox") || $("#specializationsList") || $("#specializationList");
-    const id = new URLSearchParams(location.search).get("id") || new URLSearchParams(location.search).get("specialization_id") || new URLSearchParams(location.search).get("spec_id");
-    if (id) await loadSpecializationDetails(id);
-    if (!box) return;
-    try {
-      const data = await api("/api/specializations");
-      renderSpecializationCards(box, data.specializations || data);
-    } catch (err) {
-      box.innerHTML = emptyCard(err.message);
+    const response = await fetch(url, { ...options, headers, body });
+    const contentType = response.headers.get("content-type") || "";
+    let data;
+    if (contentType.includes("application/json")) {
+      data = await response.json().catch(() => ({}));
+    } else {
+      data = await response.text().catch(() => "");
     }
-  }
 
-  async function loadSpecializationDetails(id = null) {
-    const specId = id || new URLSearchParams(location.search).get("id") || new URLSearchParams(location.search).get("specialization_id") || new URLSearchParams(location.search).get("spec_id");
-    const box = $("#specializationDetails") || $("#specializationDetail") || $("#detailsBox");
-    if (!specId || !box) return;
-    try {
-      const data = await api(`/api/specializations/${encodeURIComponent(specId)}`);
-      const spec = data.specialization || data;
-      const courses = data.courses || [];
-      const jobs = data.jobs || [];
-      const status = isLoggedIn() && !isAdmin() ? await api(`/api/specializations/${encodeURIComponent(specId)}/enrollment-status`).catch(() => null) : null;
-      const enrolled = Boolean(status?.enrolled);
-      box.innerHTML = `
-        <section class="hero-detail card">
-          ${cardImage(first(spec.image_url, spec.image), spec.name)}
-          <div>
-            <span class="pill">Specialization</span>
-            <h1>${esc(spec.name)}</h1>
-            <p>${esc(spec.description || "No description yet.")}</p>
-            ${spec.skills ? `<p><strong>Skills:</strong> ${esc(spec.skills)}</p>` : ""}
-            ${spec.roadmap ? `<p><strong>Roadmap:</strong> ${esc(spec.roadmap)}</p>` : ""}
-            <div class="card-actions">
-              ${isLoggedIn() && !isAdmin() ? `<button class="btn ${enrolled ? "danger" : "primary"}" id="specEnrollBtn" type="button">${enrolled ? "Unenroll" : "Enroll"}</button>` : ""}
-              <a class="btn ghost" href="Courses.html?specialization_id=${esc(specId)}">View Courses</a>
-              <a class="btn ghost" href="jobs.html?specialization_id=${esc(specId)}">View Jobs</a>
-            </div>
-            ${status ? `<div class="mini-progress"><span>Progress</span><div><i style="width:${pct(status.progress)}%"></i></div><b>${pct(status.progress)}%</b></div>` : ""}
-          </div>
-        </section>
-        <h2>Courses in this path</h2>
-        <div id="specCourses" class="grid"></div>
-        <h2>Jobs connected to this path</h2>
-        <div id="specJobs" class="grid"></div>
-      `;
-      renderCourseCards($("#specCourses"), courses, true);
-      renderJobCards($("#specJobs"), jobs, true);
-      bindOnce($("#specEnrollBtn"), "click", async () => {
-        if (enrolled) await unenrollSpecialization(specId);
-        else await enrollSpecialization(specId);
-        await loadSpecializationDetails(specId);
-      }, "specdetailenroll");
-    } catch (err) {
-      box.innerHTML = emptyCard(err.message);
-    }
-  }
-
-  async function enrollSpecialization(id, btn = null) {
-    if (!isLoggedIn()) return redirect("signin.html");
-    try {
-      if (btn) btn.disabled = true;
-      await api(`/api/specializations/${encodeURIComponent(id)}/enroll`, { method: "POST", body: {} });
-      showMessage("Enrolled successfully", "success");
-      if (btn) {
-        btn.textContent = "Enrolled";
-        btn.classList.remove("ghost");
-        btn.classList.add("primary");
+    if (!response.ok) {
+      const errorText = typeof data === "string" ? data : data.error || data.message || `Request failed (${response.status})`;
+      if (response.status === 401) {
+        clearSession();
       }
-    } catch (err) {
-      showMessage(err.message, "error");
-    } finally {
-      if (btn) btn.disabled = false;
+      throw new Error(errorText);
+    }
+    return data;
+  }
+
+  function formDataOrJson(form) {
+    if (!form) return {};
+    const hasFile = qsa("input[type='file']", form).some((input) => input.files && input.files.length);
+    if (hasFile) return new FormData(form);
+    const data = Object.fromEntries(new FormData(form).entries());
+    qsa("input[type='checkbox']", form).forEach((input) => {
+      if (input.name) data[input.name] = input.checked ? input.value || "true" : "";
+    });
+    return data;
+  }
+
+  function setLoading(el, loading, text = "Loading...") {
+    if (!el) return;
+    if (loading) {
+      el.dataset.oldText = el.textContent;
+      el.disabled = true;
+      el.textContent = text;
+    } else {
+      el.disabled = false;
+      if (el.dataset.oldText) el.textContent = el.dataset.oldText;
     }
   }
 
-  async function unenrollSpecialization(id) {
-    try {
-      await api(`/api/specializations/${encodeURIComponent(id)}/unenroll`, { method: "POST", body: {} });
-      showMessage("Unenrolled successfully", "success");
-    } catch (err) {
-      showMessage(err.message, "error");
-    }
+  function imgTag(url, alt = "") {
+    if (!url) return `<div class="sqr-card-image placeholder">SQR</div>`;
+    return `<img class="sqr-card-image" src="${escapeHTML(url)}" alt="${escapeHTML(alt)}" loading="lazy">`;
   }
 
-  function renderCourseCards(box, rows, compact = false) {
-    if (!box) return;
-    const data = asArray(rows, "courses");
-    if (!data.length) {
-      box.innerHTML = emptyCard("No courses were found.");
-      return;
-    }
-    box.innerHTML = data.map((course) => {
-      const id = getId(course, "course_id", "id");
-      return `
-        <article class="card interactive-card course-card" data-id="${esc(id)}">
-          ${cardImage(first(course.image_url, course.image, course.thumbnail), course.title)}
-          <div class="card-body">
-            <div class="card-top">${levelBadge(course.level)}<span>${esc(first(course.specialization_name, "Course"))}</span></div>
-            <h3>${esc(course.title)}</h3>
-            <p>${esc(course.description || "Open the course to track progress and take linked quizzes.").slice(0, compact ? 130 : 240)}</p>
-            <div class="card-actions">
-              <button type="button" class="btn primary view-course" data-id="${esc(id)}">Open Course</button>
-              ${course.video_url || course.video ? `<span class="pill">Video</span>` : ""}
-            </div>
-          </div>
-        </article>
-      `;
-    }).join("");
-    $$(".view-course", box).forEach((btn) => bindOnce(btn, "click", () => redirect(`Courses.html?id=${encodeURIComponent(btn.dataset.id)}`), "viewcourse"));
-    $$(".course-card", box).forEach((card) => bindOnce(card, "click", (e) => {
-      if (e.target.closest("button,a")) return;
-      redirect(`Courses.html?id=${encodeURIComponent(card.dataset.id)}`);
-    }, "coursecard"));
+  function progressBar(percent, label = "Progress") {
+    const value = clamp(percent);
+    return `
+      <div class="sqr-progress-wrap" aria-label="${escapeHTML(label)} ${value}%">
+        <div class="sqr-progress-top"><span>${escapeHTML(label)}</span><strong>${value}%</strong></div>
+        <div class="sqr-progress"><span style="width:${value}%"></span></div>
+      </div>`;
   }
 
-  async function loadCourses() {
-    const box = $("#coursesBox") || $("#coursesList") || $("#courseList");
-    const params = new URLSearchParams(location.search);
-    const id = params.get("id") || params.get("course_id");
-    if (id) await loadCourseDetails(id);
-    if (!box) return;
-    try {
-      const spec = params.get("specialization_id") || params.get("spec_id");
-      const url = spec ? `/api/courses?specialization_id=${encodeURIComponent(spec)}` : "/api/courses";
-      const data = await api(url);
-      renderCourseCards(box, data.courses || data);
-    } catch (err) {
-      box.innerHTML = emptyCard(err.message);
-    }
+  function circle(percent, label = "Score") {
+    const value = clamp(percent);
+    return `<div class="sqr-circle" style="--p:${value}"><span>${value}%</span><small>${escapeHTML(label)}</small></div>`;
   }
 
-  async function trackCourseOpened(courseId, completed = false) {
-    if (!isLoggedIn() || isAdmin()) return;
-    try {
-      await api(`/api/courses/${encodeURIComponent(courseId)}/open`, { method: "POST", body: { completed } });
-    } catch (_) {}
+  function objectList(items) {
+    if (!items || !items.length) return "";
+    return `<ul class="sqr-clean-list">${items.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ul>`;
   }
 
-  async function loadCourseDetails(id = null) {
-    const courseId = id || new URLSearchParams(location.search).get("id") || new URLSearchParams(location.search).get("course_id");
-    const box = $("#courseDetails") || $("#courseDetail") || $("#detailsBox");
-    if (!courseId || !box) return;
-    try {
-      const data = await api(`/api/courses/${encodeURIComponent(courseId)}`);
-      const course = data.course || data;
-      const quizzes = data.quizzes || [];
-      await trackCourseOpened(courseId, false);
-      const link = first(course.video_url, course.video, course.course_link, course.link);
-      box.innerHTML = `
-        <section class="hero-detail card">
-          ${cardImage(first(course.image_url, course.image), course.title)}
-          <div>
-            <span class="pill">${esc(first(course.specialization_name, "Course"))}</span>
-            <h1>${esc(course.title)}</h1>
-            <div class="card-top">${levelBadge(course.level)}</div>
-            <p>${esc(course.description || "No description yet.")}</p>
-            <div class="card-actions">
-              ${link ? `<a class="btn primary course-open-link" href="${esc(imageUrl(link))}" target="_blank" rel="noopener">Open Video / Link</a>` : ""}
-              ${course.specialization_id ? `<a class="btn ghost" href="Specialization.html?id=${esc(course.specialization_id)}">Back to Specialization</a>` : ""}
-            </div>
-          </div>
-        </section>
-        <h2>Course quizzes</h2>
-        <div id="courseQuizzes" class="grid"></div>
-      `;
-      bindOnce($(".course-open-link", box), "click", () => trackCourseOpened(courseId, false), "linktrack");
-      const quizBox = $("#courseQuizzes");
-      if (!quizzes.length) quizBox.innerHTML = emptyCard("No quizzes for this course yet.");
-      else quizBox.innerHTML = quizzes.map((quiz) => {
-        const qid = getId(quiz, "quiz_id", "id");
-        return `<article class="card"><span class="pill">Quiz</span><h3>${esc(quiz.title)}</h3><p>${esc(quiz.description || "Test your understanding.")}</p><a class="btn primary" href="Quiz.html?id=${esc(qid)}">Take Quiz</a></article>`;
-      }).join("");
-    } catch (err) {
-      box.innerHTML = emptyCard(err.message);
-    }
+  function navbar() {
+    if (qs(".sqr-navbar")) return;
+    const user = currentUser();
+    const isAdmin = user?.role === "admin";
+    const logged = Boolean(token());
+    const links = isAdmin
+      ? [
+          ["Admin", "admin.html"],
+          ["Profile", "profile.html"],
+        ]
+      : [
+          ["Home", "gp.html"],
+          ["Specializations", "Specialization.html"],
+          ["Courses", "courses.html"],
+          ["Jobs", "jobs.html"],
+          ["Recommendation", "recommendation.html"],
+          ["ATS", "ats.html"],
+          ["Profile", "profile.html"],
+        ];
+    const auth = logged
+      ? `<button class="sqr-nav-btn" data-action="logout">Logout</button>`
+      : `<a class="sqr-nav-btn" href="signin.html">Sign In</a><a class="sqr-nav-btn primary" href="signup.html">Sign Up</a>`;
+    const html = `
+      <nav class="sqr-navbar">
+        <a class="sqr-brand" href="gp.html"><b>SQR</b><span>Skill Quest Road</span></a>
+        <div class="sqr-nav-links">${links.map(([name, href]) => `<a href="${href}">${name}</a>`).join("")}</div>
+        <div class="sqr-nav-auth">${auth}</div>
+      </nav>`;
+    document.body.insertAdjacentHTML("afterbegin", html);
   }
 
-  function renderJobCards(box, rows, compact = false) {
-    if (!box) return;
-    const data = asArray(rows, "jobs");
-    if (!data.length) {
-      box.innerHTML = emptyCard("No jobs were found.");
-      return;
-    }
-    box.innerHTML = data.map((job) => {
-      const id = getId(job, "job_id", "id");
-      return `
-        <article class="card interactive-card job-card" data-id="${esc(id)}">
-          <div class="card-body">
-            <div class="card-top"><span class="pill">${esc(first(job.specialization, job.specialization_name, "Job"))}</span><span>${esc(job.salary || job.average_salary || "")}</span></div>
-            <h3>${esc(job.title)}</h3>
-            <p>${esc(job.description || "No description yet.").slice(0, compact ? 120 : 220)}</p>
-            ${job.required_skills || job.skills ? `<p class="muted"><strong>Skills:</strong> ${esc(first(job.required_skills, job.skills)).slice(0, 140)}</p>` : ""}
-            <div class="card-actions"><button type="button" class="btn primary view-job" data-id="${esc(id)}">View Details</button></div>
-          </div>
-        </article>
-      `;
-    }).join("");
-    $$(".view-job", box).forEach((btn) => bindOnce(btn, "click", () => redirect(`jobs.html?id=${encodeURIComponent(btn.dataset.id)}`), "viewjob"));
-    $$(".job-card", box).forEach((card) => bindOnce(card, "click", (e) => {
-      if (e.target.closest("button,a")) return;
-      redirect(`jobs.html?id=${encodeURIComponent(card.dataset.id)}`);
-    }, "jobcard"));
+  function requireLogin() {
+    const publicPages = new Set(["signin.html", "signup.html", "gp.html", "", "index.html"]);
+    if (!token() && !publicPages.has(page())) redirectTo("signin.html");
   }
 
-  async function loadJobs() {
-    const box = $("#jobsBox") || $("#jobsList") || $("#jobList");
-    const params = new URLSearchParams(location.search);
-    const id = params.get("id") || params.get("job_id");
-    if (id) await loadJobDetails(id);
-    if (!box) return;
-    try {
-      const spec = params.get("specialization_id") || params.get("spec_id");
-      const url = spec ? `/api/jobs?specialization_id=${encodeURIComponent(spec)}` : "/api/jobs";
-      const data = await api(url);
-      renderJobCards(box, data.jobs || data);
-    } catch (err) {
-      box.innerHTML = emptyCard(err.message);
-    }
+  function requireAdmin() {
+    const user = currentUser();
+    if (!token()) return redirectTo("signin.html");
+    if (!user || user.role !== "admin") return redirectTo("profile.html");
   }
 
-  async function loadJobDetails(id = null) {
-    const jobId = id || new URLSearchParams(location.search).get("id") || new URLSearchParams(location.search).get("job_id");
-    const box = $("#jobDetails") || $("#jobDetail") || $("#detailsBox");
-    if (!jobId || !box) return;
-    try {
-      const data = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
-      const job = data.job || data;
-      box.innerHTML = `
-        <section class="card hero-detail text-only">
-          <div>
-            <span class="pill">${esc(first(job.specialization, job.specialization_name, "Job"))}</span>
-            <h1>${esc(job.title)}</h1>
-            <p>${esc(job.description || "No description yet.")}</p>
-            ${job.required_skills || job.skills ? `<p><strong>Required skills:</strong> ${esc(first(job.required_skills, job.skills))}</p>` : ""}
-            ${job.average_salary || job.salary ? `<p><strong>Average salary:</strong> ${esc(first(job.average_salary, job.salary))}</p>` : ""}
-            <div class="card-actions">
-              ${job.job_link || job.link ? `<a class="btn primary" target="_blank" rel="noopener" href="${esc(first(job.job_link, job.link))}">Open Job Link</a>` : ""}
-              <a class="btn ghost" href="recommendation.html">Get Recommendation</a>
-            </div>
-          </div>
-        </section>
-      `;
-    } catch (err) {
-      box.innerHTML = emptyCard(err.message);
-    }
+  function blockAdminFromStudentPages() {
+    const user = currentUser();
+    const adminAllowed = new Set(["admin.html", "profile.html", "signin.html", "signup.html"]);
+    if (user?.role === "admin" && !adminAllowed.has(page())) redirectTo("admin.html");
   }
 
-  async function loadQuizzes() {
-    const box = $("#quizzesBox") || $("#quizList") || $("#quizzesList");
-    const id = new URLSearchParams(location.search).get("id") || new URLSearchParams(location.search).get("quiz_id");
-    if (id) await loadQuizDetails(id);
-    if (!box) return;
-    try {
-      const course = new URLSearchParams(location.search).get("course_id");
-      const url = course ? `/api/quizzes?course_id=${encodeURIComponent(course)}` : "/api/quizzes";
-      const data = await api(url);
-      const rows = data.quizzes || [];
-      if (!rows.length) box.innerHTML = emptyCard("No quizzes were found.");
-      else box.innerHTML = rows.map((quiz) => {
-        const id = getId(quiz, "quiz_id", "id");
-        return `<article class="card interactive-card"><span class="pill">${esc(quiz.course_title || "Quiz")}</span><h3>${esc(quiz.title)}</h3><p>${esc(quiz.description || "Answer the quiz to improve your progress.")}</p><a class="btn primary" href="Quiz.html?id=${esc(id)}">Take Quiz</a></article>`;
-      }).join("");
-    } catch (err) {
-      box.innerHTML = emptyCard(err.message);
-    }
-  }
-
-  async function loadQuizDetails(id = null) {
-    const quizId = id || new URLSearchParams(location.search).get("id") || new URLSearchParams(location.search).get("quiz_id");
-    const box = $("#quizDetails") || $("#quizDetail") || $("#detailsBox");
-    if (!quizId || !box) return;
-    try {
-      const data = await api(`/api/quizzes/${encodeURIComponent(quizId)}`);
-      const quiz = data.quiz || data;
-      const questions = data.questions || [];
-      if (!questions.length) {
-        box.innerHTML = emptyCard("This quiz has no questions yet.");
-        return;
-      }
-      box.innerHTML = `
-        <form id="takeQuizForm" class="card quiz-form">
-          <span class="pill">${esc(quiz.course_title || "Quiz")}</span>
-          <h1>${esc(quiz.title)}</h1>
-          <p>${esc(quiz.description || "Choose the best answer for each question.")}</p>
-          ${questions.map((q, index) => {
-            const qid = getId(q, "question_id", "id");
-            const opts = q.options || [q.option_a, q.option_b, q.option_c, q.option_d].filter(Boolean);
-            return `
-              <fieldset class="question-card">
-                <legend>${index + 1}. ${esc(q.question || q.question_text)}</legend>
-                ${opts.map((opt, i) => {
-                  const letter = ["A", "B", "C", "D"][i];
-                  return `<label><input type="radio" name="q_${esc(qid)}" value="${letter}" required> <span>${letter}. ${esc(opt)}</span></label>`;
-                }).join("")}
-              </fieldset>
-            `;
-          }).join("")}
-          <button class="btn primary" type="submit">Submit Quiz</button>
-        </form>
-      `;
-      bindOnce($("#takeQuizForm"), "submit", async (e) => {
-        e.preventDefault();
-        if (!isLoggedIn()) return redirect("signin.html");
-        const answers = {};
-        new FormData(e.currentTarget).forEach((value, key) => {
-          answers[key.replace(/^q_/, "")] = value;
-        });
+  function setupAuth() {
+    const signupForm = byId("signupForm", "signUpForm", "registerForm") || qs("form[data-auth='signup']");
+    if (signupForm) {
+      signupForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const btn = qs("button[type='submit']", signupForm);
+        setLoading(btn, true, "Creating...");
         try {
-          const result = await api(`/api/quizzes/${encodeURIComponent(quizId)}/submit`, { method: "POST", body: { answers } });
-          renderQuizResult(result);
+          const data = await api("/api/auth/signup", { method: "POST", body: formDataOrJson(signupForm) });
+          saveSession(data);
+          message(data.message || "Account created.", "success");
+          redirectTo(data.user?.role === "admin" ? "admin.html" : "profile.html");
         } catch (err) {
-          showMessage(err.message, "error");
+          message(err.message, "error");
+        } finally {
+          setLoading(btn, false);
         }
-      }, "quizsubmit");
-    } catch (err) {
-      box.innerHTML = emptyCard(err.message);
+      });
+    }
+
+    const signinForm = byId("signinForm", "signInForm", "loginForm") || qs("form[data-auth='signin']");
+    if (signinForm) {
+      signinForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const btn = qs("button[type='submit']", signinForm);
+        setLoading(btn, true, "Signing in...");
+        try {
+          const data = await api("/api/auth/signin", { method: "POST", body: formDataOrJson(signinForm) });
+          saveSession(data);
+          message(data.message || "Signed in.", "success");
+          redirectTo(data.user?.role === "admin" ? "admin.html" : "profile.html");
+        } catch (err) {
+          message(err.message, "error");
+        } finally {
+          setLoading(btn, false);
+        }
+      });
     }
   }
 
-  function renderQuizResult(result) {
-    const box = $("#quizResult") || document.createElement("div");
-    if (!box.id) {
-      box.id = "quizResult";
-      ($("#quizDetails") || document.body).after(box);
+  async function refreshUser() {
+    if (!token()) return null;
+    try {
+      const data = await api("/api/profile");
+      if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      return data.user || null;
+    } catch (_) {
+      return null;
     }
-    const score = pct(first(result.score_percentage, result.percentage, result.score));
-    box.innerHTML = `
-      <section class="card result-card">
-        ${ring(score, "Quiz")}
-        <div>
-          <h2>${score >= 60 ? "Passed" : "Keep practicing"}</h2>
-          <p>You scored ${esc(first(result.score, score))} out of ${esc(first(result.total, 100))}.</p>
-          <p>Your profile progress is updated automatically after quiz submission.</p>
-        </div>
-      </section>
-    `;
   }
 
   async function loadProfile() {
-    const box = $("#profileBox") || $("#profileSummary");
-    const progressBox = $("#profileProgressBars") || $("#progressBox");
-    const quizBox = $("#profileQuizHistory");
-    const atsBox = $("#profileAtsHistory");
-    if (!box && !progressBox && !quizBox && !atsBox) return;
-    if (!isLoggedIn()) return redirect("signin.html");
+    const box = byId("profileBox", "profileContent", "profileInfo", "dashboardContent");
+    const progressBox = byId("progressList", "profileProgress", "progressContainer", "userProgress");
+    if (!box && !progressBox && !page().includes("profile")) return;
+    if (!token()) return;
     try {
       const data = await api("/api/profile");
-      const u = data.user || data;
-      saveAuth({ token: token(), user: u });
+      if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      const user = data.user || {};
       if (box) {
         box.innerHTML = `
-          <section class="card profile-card">
-            <div class="avatar">${esc(String(u.name || "U").slice(0, 2).toUpperCase())}</div>
-            <div>
-              <h1>${esc(u.name || "User")}</h1>
-              <p>${esc(u.email || "")}</p>
-              <span class="pill">${esc(u.role || "student")}</span>
-            </div>
-          </section>
-        `;
+          <div class="sqr-dashboard-card">
+            <h2>${escapeHTML(user.name || "Student")}</h2>
+            <p>${escapeHTML(user.email || "")}</p>
+            <div class="sqr-chip-row"><span class="sqr-chip">${escapeHTML(user.role || "student")}</span></div>
+          </div>`;
       }
-      setupProfileForm(u);
-      await loadProfileProgress(progressBox);
-      if (quizBox) renderHistory(quizBox, data.quiz_history || [], "quiz");
-      if (atsBox) renderHistory(atsBox, data.ats_history || [], "ats");
+      renderProfileProgress(data.progress || {}, progressBox);
     } catch (err) {
-      showMessage(err.message, "error");
+      message(err.message, "error");
     }
   }
 
-  function setupProfileForm(u = null) {
-    const form = $("#profileForm");
-    if (!form) return;
-    if (u) {
-      ["name", "skills", "interests", "goal"].forEach((key) => {
-        const field = form.elements[key] || $(`#${key}`, form);
-        if (field && !field.value) field.value = u[key] || "";
-      });
-    }
-    bindOnce(form, "submit", async (e) => {
-      e.preventDefault();
-      try {
-        const data = await api("/api/profile", { method: "PUT", body: formDataToObject(form) });
-        saveAuth({ token: token(), user: data.user });
-        showMessage("Profile updated", "success");
-        await loadProfile();
-      } catch (err) {
-        showMessage(err.message, "error");
-      }
-    }, "profileupdate");
-  }
-
-  async function loadProfileProgress(box = null) {
-    const target = box || $("#profileProgressBars") || $("#progressBox");
-    if (!target || !isLoggedIn()) return;
-    try {
-      const data = await api("/api/profile/progress");
-      const rows = data.progress || [];
-      if (!rows.length) {
-        target.innerHTML = emptyCard("Open courses and complete quizzes to build progress.");
-        return;
-      }
-      target.innerHTML = rows.map((row) => {
-        const value = pct(first(row.progress, row.percentage));
-        return `
-          <article class="card progress-card">
-            <div class="progress-head"><h3>${esc(row.name || row.specialization_name)}</h3><strong>${value}%</strong></div>
-            <div class="progress-track"><span style="width:${value}%"></span></div>
-            <p>${esc(row.opened_courses || 0)} opened courses • ${esc(row.completed_quizzes || 0)} completed quizzes • Average quiz ${esc(row.average_quiz_score || 0)}%</p>
-          </article>
-        `;
-      }).join("");
-    } catch (err) {
-      target.innerHTML = emptyCard(err.message);
-    }
-  }
-
-  function renderHistory(box, rows, type) {
-    if (!rows.length) {
-      box.innerHTML = emptyCard(type === "quiz" ? "No quiz attempts yet." : "No ATS results yet.");
+  function renderProfileProgress(progress, target) {
+    const box = target || byId("progressList", "profileProgress", "progressContainer", "userProgress");
+    if (!box) return;
+    const specs = progress.specializations || [];
+    const courses = progress.courses || [];
+    if (!specs.length && !courses.length) {
+      box.innerHTML = `<div class="sqr-empty">No progress yet. Enroll in a specialization first, then open courses and complete modules.</div>`;
       return;
     }
-    box.innerHTML = rows.map((row) => `
-      <article class="history-row">
-        <div><strong>${esc(row.quiz_title || row.target_job || "Result")}</strong><span>${esc(row.course_title || row.created_at || "")}</span></div>
-        <b>${esc(first(row.score_percentage, row.ats_score, row.score, 0))}%</b>
-      </article>
-    `).join("");
+    const specCards = specs.map((spec) => `
+      <article class="sqr-card compact">
+        <h3>${escapeHTML(spec.name)}</h3>
+        ${progressBar(spec.percentage || spec.progress?.percentage || 0, "Specialization progress")}
+        <a class="sqr-link" href="specialization-details.html?id=${spec.id}">View specialization</a>
+      </article>`).join("");
+    const courseCards = courses.map((course) => `
+      <article class="sqr-card compact">
+        <h3>${escapeHTML(course.title)}</h3>
+        ${progressBar(course.progress?.percentage || 0, "Course progress")}
+        <a class="sqr-link" href="course-details.html?id=${course.id}">Open course</a>
+      </article>`).join("");
+    box.innerHTML = `<div class="sqr-grid">${specCards}${courseCards}</div>`;
   }
 
-  async function setupRecommendation() {
-    const form = $("#recommendationForm") || $("form[data-form='recommendation']");
-    const questionBox = $("#recommendationQuestionBank") || $("#recommendationQuestions");
-    if (!form && !questionBox) return;
-    if (!isLoggedIn()) return;
+  async function loadSpecializations() {
+    const box = byId("specializationsList", "specializationList", "specializationsContainer", "specializationContainer", "specializationGrid");
+    if (!box && !["specialization.html", "specialization.html", "specializations.html"].some((x) => page().includes(x.replace(".html", "")))) return;
+    if (!box) return;
+    box.innerHTML = `<div class="sqr-loading">Loading specializations...</div>`;
     try {
-      const data = await api("/api/recommendation/questions");
-      const questions = data.questions || [];
-      if (questionBox && questions.length) {
-        questionBox.innerHTML = questions.map((q) => `
-          <fieldset class="question-card recommendation-question">
-            <legend>${esc(q.question)}</legend>
-            <div class="rating-row">
-              ${[1, 2, 3, 4, 5].map((n) => `<label><input type="radio" name="rec_${esc(q.id)}" value="${n}" ${n === 3 ? "checked" : ""}> <span>${n}</span></label>`).join("")}
-            </div>
-          </fieldset>
-        `).join("");
-      }
-    } catch (_) {}
-    if (!form) return;
-    bindOnce(form, "submit", async (e) => {
-      e.preventDefault();
-      if (!isLoggedIn()) return redirect("signin.html");
-      const raw = new FormData(form);
-      const payload = {};
-      const answers = {};
-      raw.forEach((value, key) => {
-        if (key.startsWith("rec_")) answers[key.replace(/^rec_/, "")] = value;
-        else payload[key] = value;
-      });
-      $$("#recommendationQuestionBank input:checked, #recommendationQuestions input:checked").forEach((input) => {
-        if (input.name.startsWith("rec_")) answers[input.name.replace(/^rec_/, "")] = input.value;
-      });
-      payload.answers = answers;
-      try {
-        const result = await api("/api/recommendations", { method: "POST", body: payload });
-        renderRecommendation(result);
-      } catch (err) {
-        showMessage(err.message, "error");
-      }
-    }, "recommendation");
+      const data = await api("/api/specializations");
+      renderSpecializations(data.specializations || data.items || [], box);
+    } catch (err) {
+      box.innerHTML = `<div class="sqr-empty error">${escapeHTML(err.message)}</div>`;
+    }
   }
 
-  function renderRecommendation(result) {
-    const box = $("#recommendationResult") || $("#recommendationOutput") || document.createElement("div");
-    if (!box.id) {
-      box.id = "recommendationResult";
-      ($("#recommendationForm") || document.body).after(box);
+  function renderSpecializations(items, box) {
+    if (!items.length) {
+      box.innerHTML = `<div class="sqr-empty">No specializations found.</div>`;
+      return;
     }
-    const specs = result.recommended_specializations || [];
-    const jobs = result.recommended_jobs || [];
-    box.innerHTML = `
-      <section class="card result-card recommendation-summary">
-        <div>
-          <span class="pill">${esc(result.recommendation_basis || "quiz")}</span>
-          <h2>Your AI recommendation</h2>
-          <p>${esc(result.summary || "Specializations and jobs were ranked separately based on your answers.")}</p>
+    box.innerHTML = `<div class="sqr-grid">${items.map((spec) => specializationCard(spec)).join("")}</div>`;
+  }
+
+  function specializationCard(spec) {
+    const enrolled = Boolean(spec.enrolled);
+    const action = enrolled ? "unenroll-specialization" : "enroll-specialization";
+    const buttonText = enrolled ? "Unenroll" : "Enroll";
+    return `
+      <article class="sqr-card specialization-card" data-spec-id="${spec.id}">
+        ${imgTag(spec.image_url, spec.name)}
+        <div class="sqr-card-body">
+          <div class="sqr-card-head">
+            <h3>${escapeHTML(spec.name)}</h3>
+            ${enrolled ? `<span class="sqr-chip success">Enrolled</span>` : `<span class="sqr-chip">Not enrolled</span>`}
+          </div>
+          <p>${escapeHTML(spec.description || "")}</p>
+          ${spec.skills ? `<div class="sqr-small"><b>Skills:</b> ${escapeHTML(spec.skills)}</div>` : ""}
+          <div class="sqr-actions">
+            <a class="sqr-btn ghost" href="specialization-details.html?id=${spec.id}">View details</a>
+            ${token() && currentUser()?.role !== "admin" ? `<button class="sqr-btn ${enrolled ? "danger" : "primary"}" data-action="${action}" data-id="${spec.id}">${buttonText}</button>` : ""}
+          </div>
         </div>
-      </section>
-      <h2>Recommended Specializations</h2>
-      <div class="grid recommendation-grid">
-        ${specs.length ? specs.map((spec) => `
-          <article class="card recommendation-card">
-            ${ring(first(spec.match_percentage, spec.score), "Match")}
-            <div>
-              <h3>${esc(spec.name)}</h3>
-              <p>${esc(spec.reason || spec.description || "Matched from your quiz and profile.")}</p>
-              ${spec.matched_skills?.length ? `<p class="muted">Matched: ${esc(spec.matched_skills.join(", "))}</p>` : ""}
-              <a class="btn primary" href="Specialization.html?id=${esc(spec.specialization_id || spec.id)}">View Specialization</a>
+      </article>`;
+  }
+
+  async function toggleSpecialization(id, shouldEnroll, btn) {
+    if (!token()) return redirectTo("signin.html");
+    setLoading(btn, true, shouldEnroll ? "Enrolling..." : "Unenrolling...");
+    try {
+      const path = `/api/specializations/${id}/${shouldEnroll ? "enroll" : "unenroll"}`;
+      const data = await api(path, { method: "POST" });
+      message(data.message || "Updated.", "success");
+      await loadSpecializations();
+      await loadSpecializationDetails();
+      await loadProfile();
+    } catch (err) {
+      message(err.message, "error");
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+
+  async function loadSpecializationDetails() {
+    const box = byId("specializationDetails", "specializationDetail", "detailsBox", "specializationContent");
+    if (!box && !page().includes("specialization-details")) return;
+    if (!box) return;
+    const id = getIdParam();
+    if (!id) {
+      box.innerHTML = `<div class="sqr-empty">Missing specialization id.</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="sqr-loading">Loading specialization...</div>`;
+    try {
+      const data = await api(`/api/specializations/${id}`);
+      const spec = data.specialization || {};
+      const progress = data.progress || {};
+      const enrolled = Boolean(spec.enrolled || progress.enrolled);
+      box.innerHTML = `
+        <section class="sqr-hero-card">
+          ${imgTag(spec.image_url, spec.name)}
+          <div>
+            <h1>${escapeHTML(spec.name)}</h1>
+            <p>${escapeHTML(spec.description || "")}</p>
+            ${progressBar(progress.percentage || 0, "Specialization progress")}
+            <div class="sqr-actions">
+              ${token() && currentUser()?.role !== "admin" ? `<button class="sqr-btn ${enrolled ? "danger" : "primary"}" data-action="${enrolled ? "unenroll-specialization" : "enroll-specialization"}" data-id="${spec.id}">${enrolled ? "Unenroll" : "Enroll"}</button>` : ""}
             </div>
-          </article>
-        `).join("") : emptyCard("No specialization matches yet. Add specializations or answer more questions.")}
-      </div>
-      <h2>Recommended Jobs</h2>
-      <div class="grid recommendation-grid">
-        ${jobs.length ? jobs.map((job) => `
-          <article class="card recommendation-card">
-            ${ring(first(job.match_percentage, job.score), "Job")}
-            <div>
-              <h3>${esc(job.title)}</h3>
-              <p>${esc(job.reason || job.description || "Matched from job skills.")}</p>
-              ${job.matched_skills?.length ? `<p class="muted">Matched: ${esc(job.matched_skills.join(", "))}</p>` : ""}
-              <a class="btn primary" href="jobs.html?id=${esc(job.job_id || job.id)}">View Job</a>
+          </div>
+        </section>
+        <h2>Courses</h2><div class="sqr-grid">${(data.courses || []).map(courseCard).join("") || `<div class="sqr-empty">No courses yet.</div>`}</div>
+        <h2>Jobs</h2><div class="sqr-grid">${(data.jobs || []).map(jobCard).join("") || `<div class="sqr-empty">No jobs yet.</div>`}</div>
+        <h2>Certifications</h2><div class="sqr-grid">${(data.certifications || []).map(certCard).join("") || `<div class="sqr-empty">No certifications yet.</div>`}</div>`;
+    } catch (err) {
+      box.innerHTML = `<div class="sqr-empty error">${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  async function loadCourses() {
+    const box = byId("coursesList", "courseList", "coursesContainer", "courseContainer", "coursesGrid");
+    if (!box && !page().includes("courses")) return;
+    if (!box) return;
+    box.innerHTML = `<div class="sqr-loading">Loading courses...</div>`;
+    const specId = getParam("specialization_id") || getParam("spec_id");
+    try {
+      const data = await api(`/api/courses${specId ? `?specialization_id=${encodeURIComponent(specId)}` : ""}`);
+      const items = data.courses || data.items || [];
+      box.innerHTML = items.length ? `<div class="sqr-grid">${items.map(courseCard).join("")}</div>` : `<div class="sqr-empty">No courses found.</div>`;
+    } catch (err) {
+      box.innerHTML = `<div class="sqr-empty error">${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  function courseCard(course) {
+    const completed = course.completed || course.progress?.completed;
+    const enrolled = Boolean(course.enrolled);
+    return `
+      <article class="sqr-card course-card" data-course-id="${course.id}">
+        ${imgTag(course.image_url, course.title)}
+        <div class="sqr-card-body">
+          <div class="sqr-card-head">
+            <h3>${escapeHTML(course.title)}</h3>
+            ${completed ? `<span class="sqr-check" title="Completed">✓</span>` : `<span class="sqr-chip ${course.level_badge?.class || ""}">${escapeHTML(course.level_badge?.label || course.level || "Beginner")}</span>`}
+          </div>
+          <p>${escapeHTML(course.description || "")}</p>
+          ${course.specialization_name ? `<div class="sqr-small">${escapeHTML(course.specialization_name)}</div>` : ""}
+          ${course.progress ? progressBar(course.progress.percentage || 0, "Course progress") : ""}
+          <div class="sqr-actions">
+            <a class="sqr-btn primary" href="course-details.html?id=${course.id}">Open course</a>
+            ${token() && currentUser()?.role !== "admin" ? `<button class="sqr-btn ${enrolled ? "danger" : "ghost"}" data-action="${enrolled ? "unenroll-course" : "enroll-course"}" data-id="${course.id}">${enrolled ? "Unenroll course" : "Enroll course"}</button>` : ""}
+          </div>
+        </div>
+      </article>`;
+  }
+
+  async function toggleCourse(id, shouldEnroll, btn) {
+    if (!token()) return redirectTo("signin.html");
+    setLoading(btn, true, shouldEnroll ? "Enrolling..." : "Unenrolling...");
+    try {
+      const path = `/api/courses/${id}/${shouldEnroll ? "enroll" : "unenroll"}`;
+      const data = await api(path, { method: "POST" });
+      message(data.message || "Updated.", "success");
+      await loadCourses();
+      await loadCourseDetails();
+      await loadProfile();
+    } catch (err) {
+      message(err.message, "error");
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+
+  async function loadCourseDetails() {
+    const box = byId("courseDetails", "courseDetail", "courseContent", "courseDetailsBox");
+    if (!box && !page().includes("course-details")) return;
+    if (!box) return;
+    const id = getIdParam();
+    if (!id) {
+      box.innerHTML = `<div class="sqr-empty">Missing course id.</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="sqr-loading">Loading course...</div>`;
+    try {
+      const data = await api(`/api/courses/${id}`);
+      const course = data.course || {};
+      const progress = data.progress || {};
+      if (token() && currentUser()?.role !== "admin") {
+        api(`/api/courses/${id}/open`, { method: "POST" }).catch(() => null);
+      }
+      const enrolled = Boolean(course.enrolled);
+      const media = course.video_url
+        ? `<video class="sqr-video" src="${escapeHTML(course.video_url)}" controls data-course-media="${course.id}"></video>`
+        : "";
+      const link = course.link
+        ? `<a class="sqr-btn primary" target="_blank" rel="noopener" data-action="course-link" data-id="${course.id}" href="${escapeHTML(course.link)}">Open course material</a>`
+        : "";
+      box.innerHTML = `
+        <section class="sqr-hero-card">
+          ${imgTag(course.image_url, course.title)}
+          <div>
+            <h1>${escapeHTML(course.title)}</h1>
+            <p>${escapeHTML(course.description || "")}</p>
+            <div class="sqr-chip-row">
+              <span class="sqr-chip">${escapeHTML(course.level_badge?.label || course.level || "Beginner")}</span>
+              ${course.specialization_name ? `<span class="sqr-chip">${escapeHTML(course.specialization_name)}</span>` : ""}
             </div>
-          </article>
-        `).join("") : emptyCard("No job matches yet. Add jobs from admin or add more skills.")}
-      </div>
-      ${result.roadmap?.length ? `<h2>Roadmap</h2><div class="card"><ol>${result.roadmap.map((item) => `<li>${esc(item)}</li>`).join("")}</ol></div>` : ""}
-    `;
+            ${progressBar(progress.percentage || 0, "Course progress")}
+            <div class="sqr-actions">
+              ${token() && currentUser()?.role !== "admin" ? `<button class="sqr-btn ${enrolled ? "danger" : "ghost"}" data-action="${enrolled ? "unenroll-course" : "enroll-course"}" data-id="${course.id}">${enrolled ? "Unenroll course" : "Enroll course"}</button>` : ""}
+              ${link}
+            </div>
+          </div>
+        </section>
+        ${media}
+        <section class="sqr-section"><h2>Course modules and quizzes</h2><div id="courseQuizzes">${renderQuizzes(data.quizzes || [])}</div></section>`;
+      bindQuizForms(box);
+      bindMediaTracking(box);
+    } catch (err) {
+      box.innerHTML = `<div class="sqr-empty error">${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  function renderQuizzes(quizzes) {
+    if (!quizzes.length) return `<div class="sqr-empty">No quiz modules for this course yet.</div>`;
+    return quizzes.map((quiz, index) => `
+      <article class="sqr-card quiz-card">
+        <h3>${escapeHTML(quiz.module_title || quiz.title || `Module ${index + 1}`)}</h3>
+        <p>${escapeHTML(quiz.description || "")}</p>
+        <form class="quiz-submit-form" data-quiz-id="${quiz.id}">
+          ${(quiz.questions || []).map((question, qIndex) => `
+            <fieldset class="sqr-question">
+              <legend>${qIndex + 1}. ${escapeHTML(question.question)}</legend>
+              ${(question.options || []).filter(Boolean).map((option, optionIndex) => {
+                const value = ["a", "b", "c", "d"][optionIndex];
+                return `<label><input type="radio" name="q${question.id}" value="${value}" required> ${escapeHTML(option)}</label>`;
+              }).join("")}
+            </fieldset>`).join("")}
+          ${quiz.questions?.length ? `<button class="sqr-btn primary" type="submit">Submit quiz</button>` : `<div class="sqr-empty">No questions yet.</div>`}
+          <div class="quiz-result"></div>
+        </form>
+      </article>`).join("");
+  }
+
+  function bindQuizForms(root = document) {
+    qsa(".quiz-submit-form", root).forEach((form) => {
+      if (form.dataset.bound) return;
+      form.dataset.bound = "1";
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!token()) return redirectTo("signin.html");
+        const quizId = form.dataset.quizId;
+        const answers = {};
+        qsa("input[type='radio']:checked", form).forEach((input) => {
+          answers[input.name.replace(/^q/, "")] = input.value;
+        });
+        const resultBox = qs(".quiz-result", form);
+        try {
+          const data = await api(`/api/quizzes/${quizId}/submit`, { method: "POST", body: { answers } });
+          resultBox.innerHTML = `<div class="sqr-result">${circle(data.percentage || 0, "Quiz score")}<p>${escapeHTML(data.score)} / ${escapeHTML(data.total)}</p></div>`;
+          await loadProfile();
+        } catch (err) {
+          resultBox.innerHTML = `<div class="sqr-message error">${escapeHTML(err.message)}</div>`;
+        }
+      });
+    });
+  }
+
+  function bindMediaTracking(root = document) {
+    qsa("video[data-course-media]", root).forEach((video) => {
+      if (video.dataset.bound) return;
+      video.dataset.bound = "1";
+      video.addEventListener("play", () => {
+        const id = video.dataset.courseMedia;
+        if (token()) api(`/api/courses/${id}/activity`, { method: "POST", body: { action: "video" } }).catch(() => null);
+      }, { once: true });
+    });
+  }
+
+  async function trackCourseMaterial(id) {
+    if (!token()) return;
+    try {
+      await api(`/api/courses/${id}/activity`, { method: "POST", body: { action: "link" } });
+      await loadProfile();
+    } catch (_) {
+      // no visible error because link opens in a new tab
+    }
+  }
+
+  function jobCard(job) {
+    return `
+      <article class="sqr-card job-card">
+        <h3>${escapeHTML(job.title)}</h3>
+        <p>${escapeHTML(job.description || "")}</p>
+        ${job.required_skills ? `<div class="sqr-small"><b>Skills:</b> ${escapeHTML(job.required_skills)}</div>` : ""}
+        ${job.average_salary ? `<div class="sqr-chip-row"><span class="sqr-chip">${escapeHTML(job.average_salary)}</span></div>` : ""}
+        <div class="sqr-actions">
+          <a class="sqr-btn ghost" href="JobDetails.html?id=${job.id}">Details</a>
+          ${job.job_link ? `<a class="sqr-btn primary" href="${escapeHTML(job.job_link)}" target="_blank" rel="noopener">Apply</a>` : ""}
+        </div>
+      </article>`;
+  }
+
+  function certCard(cert) {
+    return `
+      <article class="sqr-card cert-card">
+        <h3>${escapeHTML(cert.title)}</h3>
+        ${cert.issuer ? `<div class="sqr-small">${escapeHTML(cert.issuer)}</div>` : ""}
+        <p>${escapeHTML(cert.description || "")}</p>
+        ${cert.link ? `<a class="sqr-btn ghost" target="_blank" rel="noopener" href="${escapeHTML(cert.link)}">Open certificate</a>` : ""}
+      </article>`;
+  }
+
+  async function loadJobs() {
+    const box = byId("jobsList", "jobList", "jobsContainer", "jobContainer", "jobsGrid");
+    if (!box && !page().includes("jobs") && !page().includes("jobdetails")) return;
+    if (page().includes("jobdetails")) return loadJobDetails();
+    if (!box) return;
+    box.innerHTML = `<div class="sqr-loading">Loading jobs...</div>`;
+    try {
+      const data = await api("/api/jobs");
+      const items = data.jobs || data.items || [];
+      box.innerHTML = items.length ? `<div class="sqr-grid">${items.map(jobCard).join("")}</div>` : `<div class="sqr-empty">No jobs found.</div>`;
+    } catch (err) {
+      box.innerHTML = `<div class="sqr-empty error">${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  async function loadJobDetails() {
+    const box = byId("jobDetails", "jobDetail", "jobContent");
+    if (!box) return;
+    const id = getIdParam();
+    if (!id) return;
+    try {
+      const data = await api(`/api/jobs/${id}`);
+      const job = data.job || {};
+      box.innerHTML = `
+        <section class="sqr-hero-card simple">
+          <div>
+            <h1>${escapeHTML(job.title)}</h1>
+            <p>${escapeHTML(job.description || "")}</p>
+            ${job.required_skills ? `<h3>Required skills</h3><p>${escapeHTML(job.required_skills)}</p>` : ""}
+            ${job.average_salary ? `<p><b>Average salary:</b> ${escapeHTML(job.average_salary)}</p>` : ""}
+            ${job.job_link ? `<a class="sqr-btn primary" href="${escapeHTML(job.job_link)}" target="_blank" rel="noopener">Open job link</a>` : ""}
+          </div>
+        </section>`;
+    } catch (err) {
+      box.innerHTML = `<div class="sqr-empty error">${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  function setupRecommendation() {
+    const form = byId("recommendationForm", "recommendForm", "careerQuizForm") || qs("form[data-feature='recommendation']");
+    const box = byId("recommendationResult", "recommendationResults", "recommendResult", "resultBox");
+    if (!form) return;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!token()) return redirectTo("signin.html");
+      const btn = qs("button[type='submit']", form);
+      setLoading(btn, true, "Analyzing...");
+      try {
+        const data = await api("/api/recommendations/quiz", { method: "POST", body: formDataOrJson(form) });
+        renderRecommendation(data, box || form.nextElementSibling);
+      } catch (err) {
+        message(err.message, "error", box);
+      } finally {
+        setLoading(btn, false);
+      }
+    });
+  }
+
+  function renderRecommendation(data, box) {
+    if (!box) return;
+    const spec = data.recommended_specialization;
+    const jobs = data.recommended_jobs || [];
+    box.innerHTML = `
+      <div class="sqr-result-panel">
+        <h2>Recommended specialization</h2>
+        ${spec ? specializationCard(spec) : `<div class="sqr-empty">No recommendation yet.</div>`}
+        <p>${escapeHTML(data.reason || "")}</p>
+        <h2>Recommended jobs</h2>
+        <div class="sqr-grid">${jobs.map((item) => jobCard(item.job || item)).join("") || `<div class="sqr-empty">No job matches yet.</div>`}</div>
+      </div>`;
   }
 
   function setupATS() {
-    const checkForm = $("#atsCheckForm") || $("form[data-form='ats-check']");
-    const genForm = $("#atsGenerateForm") || $("form[data-form='ats-generate']");
-    if (checkForm) {
-      bindOnce(checkForm, "submit", async (e) => {
-        e.preventDefault();
-        if (!isLoggedIn()) return redirect("signin.html");
-        const fd = new FormData(checkForm);
-        const resumeField = checkForm.querySelector("input[type='file']");
-        if (resumeField?.files?.[0] && !fd.get("resume_file")) fd.set("resume_file", resumeField.files[0]);
+    const checker = byId("atsCheckForm", "atsCheckerForm", "resumeCheckForm") || qs("form[data-ats='check']");
+    const generator = byId("atsGenerateForm", "atsGeneratorForm", "resumeGenerateForm") || qs("form[data-ats='generate']");
+    if (checker) {
+      checker.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!token()) return redirectTo("signin.html");
+        const btn = qs("button[type='submit']", checker);
+        setLoading(btn, true, "Checking...");
         try {
-          const result = await api("/api/ats/check", { method: "POST", body: fd });
-          renderATSCheck(result);
+          const data = await api("/api/ats/check", { method: "POST", body: formDataOrJson(checker) });
+          renderATSCheck(data);
         } catch (err) {
-          showMessage(err.message, "error");
+          message(err.message, "error", byId("atsCheckResult", "atsResult", "checkerResult"));
+        } finally {
+          setLoading(btn, false);
         }
-      }, "atscheck");
+      });
     }
-    if (genForm) {
-      bindOnce(genForm, "submit", async (e) => {
-        e.preventDefault();
-        if (!isLoggedIn()) return redirect("signin.html");
-        const fd = new FormData(genForm);
-        const resumeField = genForm.querySelector("input[type='file']");
-        if (resumeField?.files?.[0] && !fd.get("resume")) fd.set("resume", resumeField.files[0]);
+    if (generator) {
+      generator.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!token()) return redirectTo("signin.html");
+        const btn = qs("button[type='submit']", generator);
+        setLoading(btn, true, "Generating...");
         try {
-          const result = await api("/api/ats/generate", { method: "POST", body: fd });
-          renderATSGenerated(result);
+          const data = await api("/api/ats/generate", { method: "POST", body: formDataOrJson(generator) });
+          renderATSGenerate(data);
         } catch (err) {
-          showMessage(err.message, "error");
+          message(err.message, "error", byId("atsGenerateResult", "generatorResult", "atsResult"));
+        } finally {
+          setLoading(btn, false);
         }
-      }, "atsgenerate");
+      });
     }
   }
 
-  function renderATSCheck(result) {
-    const box = $("#atsResult") || $("#atsCheckResult") || document.createElement("div");
-    if (!box.id) {
-      box.id = "atsResult";
-      ($("#atsCheckForm") || document.body).after(box);
-    }
-    const score = pct(first(result.ats_score, result.score));
+  function renderATSCheck(data) {
+    const box = byId("atsCheckResult", "checkerResult", "atsResult", "atsScoreBox");
+    if (!box) return;
     box.innerHTML = `
-      <section class="card result-card">
-        ${ring(score, "ATS")}
-        <div>
-          <h2>ATS Analysis</h2>
-          <p>${esc(result.summary || "Resume analysis completed.")}</p>
-          <div class="two-cols">
-            <div><h3>Matched keywords</h3><p>${esc((result.matched_keywords || []).join(", ") || "None detected")}</p></div>
-            <div><h3>Missing keywords</h3><p>${esc((result.missing_keywords || []).join(", ") || "No major missing keywords")}</p></div>
-          </div>
-          ${result.improvements?.length ? `<h3>Improvements</h3><ul>${result.improvements.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-        </div>
-      </section>
-    `;
+      <div class="sqr-result-panel">
+        ${circle(data.score || 0, "ATS score")}
+        <h3>Technical skills</h3>${objectList(data.technical_skills || []) || `<p>No technical skills detected.</p>`}
+        <h3>Soft skills</h3>${objectList(data.soft_skills || []) || `<p>No soft skills detected.</p>`}
+        <h3>Missing keywords</h3>${objectList(data.missing_keywords || []) || `<p>No major missing keywords detected.</p>`}
+        <h3>Recommendations</h3>${objectList(data.recommendations || [])}
+      </div>`;
   }
 
-  function renderATSGenerated(result) {
-    const summaryBox = $("#summarySection") || $("#enhancedSummary") || $("#summary") || $(".summary-section");
-    const resumeBox = $("#generatedResume") || $("#atsGenerateResult") || $("#generatedResumeBox");
-    const summary = result.enhanced_summary || result.summary || "";
-    const fullResume = result.full_resume || summary;
-    if (summaryBox) {
-      summaryBox.innerHTML = `
-        <section class="card ai-summary-card">
-          <span class="pill">${result.ai_powered ? "AI generated" : "Dynamic fallback"}</span>
-          <h2>Enhanced Summary</h2>
-          <p>${esc(summary)}</p>
-        </section>
-      `;
-    }
-    if (resumeBox) {
-      resumeBox.innerHTML = `
-        <section class="card generated-resume-card">
-          <div class="card-top"><h2>Generated Resume</h2><button type="button" class="btn ghost" id="copyResumeBtn">Copy</button></div>
-          <pre>${esc(fullResume)}</pre>
-          ${result.improvements?.length ? `<h3>Next improvements</h3><ul>${result.improvements.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-        </section>
-      `;
-      bindOnce($("#copyResumeBtn"), "click", async () => {
-        await navigator.clipboard?.writeText(fullResume);
-        showMessage("Resume copied", "success");
-      }, "copyresume");
-    } else if (!summaryBox) {
-      showMessage(summary || "Resume generated", "success");
+  function renderATSGenerate(data) {
+    const box = byId("atsGenerateResult", "generatorResult", "atsResult", "generatedResume", "resumeOutput");
+    if (!box) return;
+    const summaryTarget = byId("summarySection", "enhancedSummary", "generatedSummary");
+    const summaryHtml = `<div class="sqr-summary"><h3>Enhanced summary</h3><p>${escapeHTML(data.summary || "")}</p></div>`;
+    if (summaryTarget) summaryTarget.innerHTML = summaryHtml;
+    box.innerHTML = `
+      <div class="sqr-result-panel">
+        ${summaryHtml}
+        <h3>ATS-friendly resume</h3>
+        <textarea id="resumeTextOutput" class="sqr-output" rows="18">${escapeHTML(data.resume_text || "")}</textarea>
+        <div class="sqr-actions">
+          <button class="sqr-btn ghost" data-action="copy-resume">Copy</button>
+          <button class="sqr-btn primary" data-action="export-pdf">Export PDF</button>
+          <button class="sqr-btn ghost" data-action="export-docx">Export DOCX</button>
+        </div>
+      </div>`;
+  }
+
+  async function exportResume(format) {
+    const text = byId("resumeTextOutput")?.value || byId("generatedResume")?.textContent || "";
+    if (!text.trim()) return message("No generated resume to export.", "error");
+    try {
+      const response = await fetch(`${API_BASE}/api/ats/export/${format}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ resume_text: text }),
+      });
+      if (!response.ok) throw new Error("Export failed.");
+      const blob = await response.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = format === "pdf" ? "SQR_ATS_Resume.pdf" : "SQR_ATS_Resume.docx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    } catch (err) {
+      message(err.message, "error");
     }
   }
 
   async function loadAdmin() {
-    if (!pageName.includes("admin")) return;
-    const ok = await requireAdmin();
-    if (!ok) return;
-    await Promise.allSettled([loadAdminStats(), loadAdminLists(), fillAdminDropdowns()]);
-    setupAdminForms();
+    if (!page().includes("admin")) return;
+    requireAdmin();
+    await fillAdminSelects();
+    await loadAdminStats();
+    bindAdminForms();
   }
 
   async function loadAdminStats() {
-    const box = $("#adminStatsBox") || $("#adminStats") || $("#statsBox");
+    const box = byId("adminStats", "statsBox", "dashboardStats");
     if (!box) return;
     try {
-      const stats = await api("/api/admin/stats");
-      box.innerHTML = Object.entries(stats).map(([key, value]) => `<div class="stat-card"><strong>${esc(value)}</strong><span>${esc(key.replace(/_/g, " "))}</span></div>`).join("");
+      const data = await api("/api/admin/stats");
+      const stats = data.stats || {};
+      box.innerHTML = `<div class="sqr-stat-grid">${Object.entries(stats).map(([key, value]) => `
+        <div class="sqr-stat"><strong>${escapeHTML(value)}</strong><span>${escapeHTML(key.replaceAll("_", " "))}</span></div>`).join("")}</div>`;
     } catch (err) {
-      box.innerHTML = emptyCard(err.message);
+      box.innerHTML = `<div class="sqr-empty error">${escapeHTML(err.message)}</div>`;
     }
   }
 
-  async function fillAdminDropdowns() {
+  async function fillAdminSelects() {
     try {
-      const [specs, courses] = await Promise.all([api("/api/specializations"), api("/api/courses")]);
-      const specRows = specs.specializations || [];
-      const courseRows = courses.courses || [];
-      $$('select[name="specialization_id"], select[name="spec_id"], #specialization_id, #spec_id').forEach((select) => {
-        const current = select.value;
-        select.innerHTML = `<option value="">Choose specialization</option>` + specRows.map((s) => `<option value="${esc(s.specialization_id || s.id)}">${esc(s.name)}</option>`).join("");
-        if (current) select.value = current;
+      const [specsData, coursesData] = await Promise.all([api("/api/specializations"), api("/api/courses")]);
+      const specs = specsData.specializations || [];
+      const courses = coursesData.courses || [];
+      qsa("select[name='specialization_id'], select[name='spec_id'], #specializationSelect, #courseSpecialization").forEach((select) => {
+        if (!select) return;
+        const old = select.value;
+        select.innerHTML = `<option value="">Select specialization</option>` + specs.map((s) => `<option value="${s.id}">${escapeHTML(s.name)}</option>`).join("");
+        if (old) select.value = old;
       });
-      $$('select[name="course_id"], #course_id').forEach((select) => {
-        const current = select.value;
-        select.innerHTML = `<option value="">Choose course</option>` + courseRows.map((c) => `<option value="${esc(c.course_id || c.id)}">${esc(c.title)}</option>`).join("");
-        if (current) select.value = current;
+      qsa("select[name='course_id'], #courseSelect, #quizCourse").forEach((select) => {
+        if (!select) return;
+        const old = select.value;
+        select.innerHTML = `<option value="">Select course</option>` + courses.map((c) => `<option value="${c.id}">${escapeHTML(c.title)}</option>`).join("");
+        if (old) select.value = old;
       });
-    } catch (_) {}
+    } catch (_) {
+      // admin selects are optional
+    }
   }
 
-  async function loadAdminLists() {
-    const targets = [
-      ["#adminSpecializationsList", "/api/specializations", "specializations", renderAdminSpecialization],
-      ["#adminCoursesList", "/api/courses", "courses", renderAdminCourse],
-      ["#adminJobsList", "/api/jobs", "jobs", renderAdminJob],
-      ["#adminQuizzesList", "/api/quizzes", "quizzes", renderAdminQuiz],
-      ["#adminCertificatesList", "/api/certificates", "certificates", renderAdminCertificate],
-      ["#adminUsersList", "/api/admin/users", "users", renderAdminUser],
+  function bindAdminForms() {
+    const forms = [
+      [byId("adminSpecializationForm", "specializationForm", "addSpecializationForm"), "/api/admin/specializations", "Specialization saved."],
+      [byId("adminCourseForm", "courseForm", "addCourseForm"), "/api/admin/courses", "Course saved."],
+      [byId("adminJobForm", "jobForm", "addJobForm"), "/api/admin/jobs", "Job saved."],
+      [byId("adminCertificationForm", "certificationForm", "addCertificationForm"), "/api/admin/certifications", "Certification saved."],
+      [byId("adminQuizForm", "quizForm", "addQuizForm"), "/api/admin/quizzes", "Quiz module saved."],
     ];
-    for (const [selector, url, key, renderer] of targets) {
-      const box = $(selector);
-      if (!box) continue;
-      try {
-        const data = await api(url);
-        const rows = data[key] || [];
-        box.innerHTML = rows.length ? rows.map(renderer).join("") : emptyCard(`No ${key} yet.`);
-      } catch (err) {
-        box.innerHTML = emptyCard(err.message);
-      }
-    }
-    bindAdminActions();
-  }
-
-  function adminRow(type, id, title, meta, extra = "") {
-    return `
-      <article class="admin-row" data-type="${esc(type)}" data-id="${esc(id)}">
-        <div><strong>${esc(title)}</strong><span>${esc(meta || "")}</span>${extra}</div>
-        <div class="admin-actions">
-          ${["specialization", "course", "job"].includes(type) ? `<button class="btn ghost admin-edit" type="button">Edit</button>` : ""}
-          <button class="btn danger admin-delete" type="button">Delete</button>
-        </div>
-      </article>
-    `;
-  }
-
-  function renderAdminSpecialization(s) { return adminRow("specialization", s.specialization_id || s.id, s.name, s.description); }
-  function renderAdminCourse(c) { return adminRow("course", c.course_id || c.id, c.title, `${first(c.specialization_name, "")} • ${first(c.level, "")}`); }
-  function renderAdminJob(j) { return adminRow("job", j.job_id || j.id, j.title, first(j.specialization, j.specialization_name)); }
-  function renderAdminQuiz(q) { return adminRow("quiz", q.quiz_id || q.id, q.title, first(q.course_title, "")); }
-  function renderAdminCertificate(c) { return adminRow("certificate", c.id || c.certification_id, c.name, first(c.specialization_name, c.type)); }
-  function renderAdminUser(u) {
-    const id = u.id || u.user_id;
-    return `
-      <article class="admin-row" data-type="user" data-id="${esc(id)}">
-        <div><strong>${esc(u.name)}</strong><span>${esc(u.email)} • ${esc(u.role)} ${u.banned ? "• banned" : ""}</span></div>
-        <div class="admin-actions">
-          <button class="btn ghost admin-role" data-role="${u.role === "admin" ? "student" : "admin"}" type="button">Make ${u.role === "admin" ? "Student" : "Admin"}</button>
-          <button class="btn danger admin-ban" data-banned="${u.banned ? "1" : "0"}" type="button">${u.banned ? "Unban" : "Ban"}</button>
-        </div>
-      </article>
-    `;
-  }
-
-  function bindAdminActions() {
-    $$(".admin-delete").forEach((btn) => bindOnce(btn, "click", async () => {
-      const row = btn.closest(".admin-row");
-      const type = row?.dataset.type;
-      const id = row?.dataset.id;
-      if (!id || !type) return;
-      if (!confirm("Delete this item?")) return;
-      const paths = { specialization: `/api/specializations/${id}`, course: `/api/courses/${id}`, job: `/api/jobs/${id}`, quiz: `/api/quizzes/${id}`, certificate: `/api/certificates/${id}` };
-      try {
-        await api(paths[type], { method: "DELETE" });
-        showMessage("Deleted", "success");
-        await loadAdminLists();
-      } catch (err) { showMessage(err.message, "error"); }
-    }, "delete"));
-
-    $$(".admin-ban").forEach((btn) => bindOnce(btn, "click", async () => {
-      const row = btn.closest(".admin-row");
-      const id = row?.dataset.id;
-      const banned = btn.dataset.banned === "1";
-      try {
-        await api(`/api/admin/users/${id}/${banned ? "unban" : "ban"}`, { method: "POST", body: {} });
-        showMessage(banned ? "User unbanned" : "User banned", "success");
-        await loadAdminLists();
-      } catch (err) { showMessage(err.message, "error"); }
-    }, "ban"));
-
-    $$(".admin-role").forEach((btn) => bindOnce(btn, "click", async () => {
-      const row = btn.closest(".admin-row");
-      const id = row?.dataset.id;
-      const role = btn.dataset.role;
-      try {
-        await api(`/api/admin/users/${id}/role`, { method: "POST", body: { role } });
-        showMessage("Role updated", "success");
-        await loadAdminLists();
-      } catch (err) { showMessage(err.message, "error"); }
-    }, "role"));
-
-    $$(".admin-edit").forEach((btn) => bindOnce(btn, "click", async () => {
-      const row = btn.closest(".admin-row");
-      const type = row?.dataset.type;
-      const id = row?.dataset.id;
-      openAdminEdit(type, id);
-    }, "edit"));
-  }
-
-  async function openAdminEdit(type, id) {
-    try {
-      const path = type === "specialization" ? `/api/specializations/${id}` : type === "course" ? `/api/courses/${id}` : `/api/jobs/${id}`;
-      const data = await api(path);
-      const item = data[type] || data.specialization || data.course || data.job || data;
-      const formId = type === "specialization" ? "specializationForm" : type === "course" ? "courseForm" : "jobForm";
-      const form = $(`#${formId}`) || $(`form[data-admin='${type}']`);
-      if (!form) return showMessage(`No ${type} form found for editing`, "error");
-      form.dataset.editId = id;
-      Object.entries(item).forEach(([key, value]) => {
-        const field = form.elements[key] || form.elements[key.replace(/_url$/, "")];
-        if (field && field.type !== "file") field.value = value ?? "";
+    forms.forEach(([form, endpoint, success]) => {
+      if (!form || form.dataset.bound) return;
+      form.dataset.bound = "1";
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const btn = qs("button[type='submit']", form);
+        setLoading(btn, true, "Saving...");
+        try {
+          const data = formDataOrJson(form);
+          await api(endpoint, { method: "POST", body: data });
+          message(success, "success");
+          form.reset();
+          await fillAdminSelects();
+          await loadAdminStats();
+        } catch (err) {
+          message(err.message, "error");
+        } finally {
+          setLoading(btn, false);
+        }
       });
-      const title = form.querySelector("h2,h1");
-      if (title) title.textContent = `Edit ${type}`;
-      const submit = form.querySelector("button[type='submit']");
-      if (submit) submit.textContent = `Update ${type}`;
-      form.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (err) {
-      showMessage(err.message, "error");
-    }
-  }
+    });
 
-  function setupAdminForms() {
-    bindAdminForm("specializationForm", "/api/specializations", "specialization", true);
-    bindAdminForm("courseForm", "/api/courses", "course", true);
-    bindAdminForm("jobForm", "/api/jobs", "job", false);
-    bindAdminForm("certificateForm", "/api/certificates", "certificate", false);
-    setupQuizAdminForm();
-  }
-
-  function bindAdminForm(id, createPath, type, multipart) {
-    const form = $(`#${id}`) || $(`form[data-admin='${type}']`);
-    if (!form) return;
-    bindOnce(form, "submit", async (e) => {
-      e.preventDefault();
-      const editId = form.dataset.editId;
-      const path = editId ? `/api/admin/${type}s/${editId}` : createPath;
-      const method = editId ? "PUT" : "POST";
-      const body = multipart ? new FormData(form) : formDataToObject(form);
-      try {
-        await api(path, { method, body });
-        showMessage(editId ? `${type} updated` : `${type} added`, "success");
-        form.reset();
-        delete form.dataset.editId;
-        await Promise.allSettled([loadAdminStats(), loadAdminLists(), fillAdminDropdowns()]);
-      } catch (err) {
-        showMessage(err.message, "error");
-      }
-    }, `${type}form`);
-  }
-
-  function setupQuizAdminForm() {
-    const form = $("#quizForm") || $("form[data-admin='quiz']");
-    if (!form) return;
-    const addQuestionBtn = $("#addQuestionBtn") || $("[data-add-question]");
-    const questionsBox = $("#quizQuestionsBuilder") || $("#questionsBuilder");
-    if (addQuestionBtn && questionsBox) {
-      bindOnce(addQuestionBtn, "click", () => {
-        const index = questionsBox.children.length + 1;
-        const div = document.createElement("div");
-        div.className = "question-builder card";
-        div.innerHTML = `
-          <h3>Question ${index}</h3>
-          <input name="question_${index}" placeholder="Question" required>
-          <div class="form-grid">
-            <input name="option_a_${index}" placeholder="Option A" required>
-            <input name="option_b_${index}" placeholder="Option B" required>
-            <input name="option_c_${index}" placeholder="Option C" required>
-            <input name="option_d_${index}" placeholder="Option D" required>
-          </div>
-          <select name="correct_answer_${index}" required><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option></select>
-        `;
-        questionsBox.appendChild(div);
-      }, "addquestion");
-    }
-    bindOnce(form, "submit", async (e) => {
-      e.preventDefault();
-      const fd = new FormData(form);
-      const payload = formDataToObject(form);
-      const questions = [];
-      const indexes = new Set();
-      for (const key of fd.keys()) {
-        const m = key.match(/_(\d+)$/);
-        if (m) indexes.add(m[1]);
-      }
-      indexes.forEach((i) => {
-        const q = fd.get(`question_${i}`);
-        if (!q) return;
-        questions.push({
-          question: q,
-          option_a: fd.get(`option_a_${i}`),
-          option_b: fd.get(`option_b_${i}`),
-          option_c: fd.get(`option_c_${i}`),
-          option_d: fd.get(`option_d_${i}`),
-          correct_answer: fd.get(`correct_answer_${i}`) || "A",
-        });
+    const questionForm = byId("adminQuestionForm", "questionForm", "addQuestionForm");
+    if (questionForm && !questionForm.dataset.bound) {
+      questionForm.dataset.bound = "1";
+      questionForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const data = formDataOrJson(questionForm);
+        const quizId = data.quiz_id || getParam("quiz_id");
+        if (!quizId) return message("Choose a quiz first.", "error");
+        try {
+          await api(`/api/admin/quizzes/${quizId}/questions`, { method: "POST", body: data });
+          message("Question added.", "success");
+          questionForm.reset();
+        } catch (err) {
+          message(err.message, "error");
+        }
       });
-      payload.questions = questions;
-      try {
-        await api("/api/quizzes", { method: "POST", body: payload });
-        showMessage("Quiz added", "success");
-        form.reset();
-        if (questionsBox) questionsBox.innerHTML = "";
-        await loadAdminLists();
-      } catch (err) {
-        showMessage(err.message, "error");
+    }
+  }
+
+  async function copyResume() {
+    const text = byId("resumeTextOutput")?.value || "";
+    if (!text) return;
+    await navigator.clipboard.writeText(text).catch(() => null);
+    message("Resume copied.", "success");
+  }
+
+  function globalClicks() {
+    document.addEventListener("click", async (event) => {
+      const el = event.target.closest("[data-action]");
+      if (!el) return;
+      const action = el.dataset.action;
+      const id = el.dataset.id;
+      if (action === "logout") {
+        clearSession();
+        redirectTo("signin.html");
       }
-    }, "quizadmin");
+      if (action === "enroll-specialization") {
+        event.preventDefault();
+        await toggleSpecialization(id, true, el);
+      }
+      if (action === "unenroll-specialization") {
+        event.preventDefault();
+        await toggleSpecialization(id, false, el);
+      }
+      if (action === "enroll-course") {
+        event.preventDefault();
+        await toggleCourse(id, true, el);
+      }
+      if (action === "unenroll-course") {
+        event.preventDefault();
+        await toggleCourse(id, false, el);
+      }
+      if (action === "course-link") {
+        await trackCourseMaterial(id);
+      }
+      if (action === "copy-resume") {
+        event.preventDefault();
+        await copyResume();
+      }
+      if (action === "export-pdf") {
+        event.preventDefault();
+        await exportResume("pdf");
+      }
+      if (action === "export-docx") {
+        event.preventDefault();
+        await exportResume("docx");
+      }
+    });
   }
 
   function expose() {
-    Object.assign(window, {
+    window.SQR = {
+      api,
       navbar,
       requireLogin,
       requireAdmin,
       blockAdminFromStudentPages,
-      setupSignup,
-      setupSignin,
       loadProfile,
       loadSpecializations,
       loadSpecializationDetails,
       loadCourses,
       loadCourseDetails,
       loadJobs,
-      loadJobDetails,
-      loadQuizzes,
-      loadQuizDetails,
       setupRecommendation,
       setupATS,
       loadAdmin,
-      enrollSpecialization,
-      unenrollSpecialization,
-      trackCourseOpened,
-      SQRApi: api,
-    });
+      toggleSpecialization,
+      toggleCourse,
+    };
+    window.navbar = navbar;
+    window.requireLogin = requireLogin;
+    window.requireAdmin = requireAdmin;
+    window.blockAdminFromStudentPages = blockAdminFromStudentPages;
+    window.loadProfile = loadProfile;
+    window.loadSpecializations = loadSpecializations;
+    window.loadSpecializationDetails = loadSpecializationDetails;
+    window.loadCourses = loadCourses;
+    window.loadCourseDetails = loadCourseDetails;
+    window.loadJobs = loadJobs;
+    window.setupRecommendation = setupRecommendation;
+    window.setupATS = setupATS;
+    window.loadAdmin = loadAdmin;
   }
 
-  async function init() {
+  async function boot() {
     expose();
     navbar();
-    setupSignup();
-    setupSignin();
+    setupAuth();
+    globalClicks();
+    if (token()) await refreshUser();
     blockAdminFromStudentPages();
-    setupATS();
+    if (!["signin.html", "signup.html", "gp.html", "index.html", ""].includes(page())) requireLogin();
     await Promise.allSettled([
-      refreshMe(),
-      loadHome(),
       loadProfile(),
       loadSpecializations(),
+      loadSpecializationDetails(),
       loadCourses(),
+      loadCourseDetails(),
       loadJobs(),
-      loadQuizzes(),
-      setupRecommendation(),
-      loadAdmin(),
     ]);
+    setupRecommendation();
+    setupATS();
+    await loadAdmin();
   }
 
-  expose();
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
-  else init();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
 })();
