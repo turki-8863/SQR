@@ -499,6 +499,13 @@
     return img ? `<img class="sqr-card-img" src="${escapeHTML(img)}" alt="">` : `<div class="sqr-card-img sqr-card-img-empty">SQR</div>`;
   }
 
+  function difficultyClass(value) {
+    const text = String(value || "beginner").toLowerCase();
+    if (text.includes("advanced") || text.includes("hard")) return "difficulty-advanced";
+    if (text.includes("intermediate") || text.includes("medium")) return "difficulty-intermediate";
+    return "difficulty-beginner";
+  }
+
   function specCard(spec) {
     const id = idOf(spec, "specialization_id");
     return `
@@ -523,7 +530,7 @@
         ${cardImage(course)}
         <div class="sqr-card-body">
           <div class="sqr-card-top">
-            <span class="badge">${escapeHTML(level)}</span>
+            <span class="badge difficulty-badge ${difficultyClass(level)}">${escapeHTML(level)}</span>
             ${course.specialization_name ? `<span class="badge badge-soft">${escapeHTML(course.specialization_name)}</span>` : ""}
           </div>
           <h3>${escapeHTML(course.title || "Course")}</h3>
@@ -581,7 +588,7 @@
       const data = await apiFetch(`/api/specializations${search ? `?search=${encodeURIComponent(search)}` : ""}`);
       const specs = asArray(data, "specializations");
       box.innerHTML = specs.length
-        ? `<div class="sqr-grid">${specs.map(specCard).join("")}</div>`
+        ? specs.map(specCard).join("")
         : `<div class="card sqr-card">No specializations found.</div>`;
       enableClickCards(box);
     } catch (err) {
@@ -696,7 +703,7 @@
         courses = courses.filter((course) => String(course.level || course.difficulty || "").toLowerCase() === difficulty);
       }
       box.innerHTML = courses.length
-        ? `<div class="sqr-grid">${courses.map(courseCard).join("")}</div>`
+        ? courses.map(courseCard).join("")
         : `<div class="card sqr-card">No courses found.</div>`;
       enableClickCards(box);
     } catch (err) {
@@ -749,7 +756,7 @@
           ${cardImage(course)}
           <div class="sqr-card-body">
             <div class="sqr-card-top">
-              <span class="badge">${escapeHTML(course.level || "Beginner")}</span>
+              <span class="badge difficulty-badge ${difficultyClass(course.level || course.difficulty || "Beginner")}">${escapeHTML(course.level || course.difficulty || "Beginner")}</span>
               ${course.specialization_name ? `<span class="badge badge-soft">${escapeHTML(course.specialization_name)}</span>` : ""}
             </div>
             <h1>${escapeHTML(course.title || "Course")}</h1>
