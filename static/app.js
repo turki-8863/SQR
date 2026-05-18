@@ -151,8 +151,6 @@
       if (type === "error") console.error(text);
       return;
     }
-    box.classList.remove("hidden");
-    box.hidden = false;
     box.innerHTML = `<div class="sqr-alert sqr-alert-${escapeHTML(type)}">${escapeHTML(text)}</div>`;
     setTimeout(() => {
       const alert = box.querySelector(".sqr-alert");
@@ -161,11 +159,7 @@
   }
 
   function setLoading(container, text = "Loading...") {
-    if (container) {
-      container.classList.remove("hidden");
-      container.hidden = false;
-      container.innerHTML = `<div class="card sqr-card"><p>${escapeHTML(text)}</p></div>`;
-    }
+    if (container) container.innerHTML = `<div class="card sqr-card"><p>${escapeHTML(text)}</p></div>`;
   }
 
 
@@ -189,7 +183,7 @@
     const hasCourseDetailId = getParam("id", "course_id");
 
     if (pageName.includes("specialization") && !hasSpecDetailId) {
-      if (!first("#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "#specializationsBox", "#specializationGrid", "[data-specializations]")) {
+      if (!first("#specializationsBox", "#specializationGrid", "#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "[data-specializations]")) {
         const section = document.createElement("section");
         section.className = "sqr-section";
         section.innerHTML = `
@@ -216,7 +210,7 @@
     }
 
     if (pageName.includes("course") && !hasCourseDetailId) {
-      if (!first("#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "#coursesBox", "[data-courses]")) {
+      if (!first("#coursesBox", "#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "[data-courses]")) {
         const section = document.createElement("section");
         section.className = "sqr-section";
         section.innerHTML = `
@@ -571,7 +565,7 @@
       return;
     }
 
-    const box = first("#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "#specializationsBox", "#specializationGrid", "[data-specializations]");
+    const box = first("#specializationsBox", "#specializationGrid", "#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "[data-specializations]");
     if (!box) return;
     setLoading(box);
     try {
@@ -677,7 +671,7 @@
       return;
     }
 
-    const box = first("#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "#coursesBox", "[data-courses]");
+    const box = first("#coursesBox", "#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "[data-courses]");
     if (!box) return;
     setLoading(box);
 
@@ -931,8 +925,10 @@
   }
 
   async function loadProfile() {
-    const box = first("#profileBox", "#profileContainer", "#profileDetails", "[data-profile]");
-    const progressBox = first("#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
+    const box = first("#profileSummary", "#profileBox", "#profileContainer", "#profileDetails", "[data-profile]");
+    const progressBox = first("#profileProgressBars", "#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
+    const quizBox = first("#profileQuizHistory", "[data-profile-quiz-history]");
+    const atsBox = first("#profileAtsHistory", "[data-profile-ats-history]");
     if (!box && !progressBox) return;
     if (!getToken()) return;
 
@@ -943,29 +939,67 @@
       const profile = await apiFetch("/api/profile");
       const user = profile.user || profile;
       setUser(user);
+      const setField = (selector, value) => {
+        const el = $(selector);
+        if (el && !el.value) el.value = value || "";
+      };
+      setField("#profileName", user.name);
+      setField("#profileSkills", user.skills);
+      setField("#profileInterests", user.interests);
+      setField("#profileGoal", user.goal);
 
       if (box) {
         const quizHistory = asArray(profile, "quiz_history");
         const atsHistory = asArray(profile, "ats_history");
+        const averageQuiz = quizHistory.length
+          ? Math.round(quizHistory.reduce((sum, q) => sum + pct(q.score_percentage || q.score), 0) / quizHistory.length)
+          : 0;
+        const latestAts = atsHistory.length ? pct(atsHistory[0].ats_score || atsHistory[0].score) : 0;
         box.innerHTML = `
-          <section class="card sqr-card">
-            <h1>${escapeHTML(user.name || "Profile")}</h1>
+          <article class="card sqr-card metric-card">
+            <span>Student</span>
+            <strong>${escapeHTML(user.name || "Profile")}</strong>
             <p>${escapeHTML(user.email || "")}</p>
-            <p><strong>Role:</strong> ${escapeHTML(user.role || "student")}</p>
-            ${user.skills ? `<p><strong>Skills:</strong> ${escapeHTML(user.skills)}</p>` : ""}
-            ${user.interests ? `<p><strong>Interests:</strong> ${escapeHTML(user.interests)}</p>` : ""}
-          </section>
-          ${
-            quizHistory.length
-              ? `<section class="card sqr-card"><h2>Quiz History</h2>${quizHistory.slice(0, 8).map((q) => `<p>${escapeHTML(q.quiz_title || "Quiz")} — <strong>${pct(q.score_percentage || q.score)}%</strong></p>`).join("")}</section>`
-              : ""
-          }
-          ${
-            atsHistory.length
-              ? `<section class="card sqr-card"><h2>ATS History</h2>${atsHistory.slice(0, 5).map((a) => `<p>${escapeHTML(a.target_job || "Resume")} — <strong>${pct(a.ats_score || a.score)}%</strong></p>`).join("")}</section>`
-              : ""
-          }
+          </article>
+          <article class="card sqr-card metric-card">
+            <span>Quiz average</span>
+            <strong>${averageQuiz}%</strong>
+            <p>${quizHistory.length} saved quiz attempt${quizHistory.length === 1 ? "" : "s"}</p>
+          </article>
+          <article class="card sqr-card metric-card">
+            <span>Latest ATS</span>
+            <strong>${latestAts}%</strong>
+            <p>${atsHistory.length} ATS result${atsHistory.length === 1 ? "" : "s"}</p>
+          </article>
         `;
+      }
+
+      if (quizBox) {
+        quizBox.innerHTML = quizHistory.length
+          ? quizHistory.slice(0, 9).map((q) => `
+              <article class="card sqr-card">
+                <h3>${escapeHTML(q.quiz_title || "Quiz")}</h3>
+                <p>${escapeHTML(q.course_title || "")}</p>
+                <div class="sqr-score-ring small" style="--score:${pct(q.score_percentage || q.score)}">
+                  <strong>${pct(q.score_percentage || q.score)}%</strong>
+                </div>
+              </article>
+            `).join("")
+          : `<div class="card sqr-card">No quiz attempts yet.</div>`;
+      }
+
+      if (atsBox) {
+        atsBox.innerHTML = atsHistory.length
+          ? atsHistory.slice(0, 6).map((a) => `
+              <article class="card sqr-card">
+                <h3>${escapeHTML(a.target_job || "Resume")}</h3>
+                <div class="sqr-score-ring small" style="--score:${pct(a.ats_score || a.score)}">
+                  <strong>${pct(a.ats_score || a.score)}%</strong>
+                </div>
+                <p>${escapeHTML(a.summary || "")}</p>
+              </article>
+            `).join("")
+          : `<div class="card sqr-card">No ATS results yet.</div>`;
       }
 
       if (progressBox) await loadProfileProgress(progressBox);
@@ -1008,7 +1042,7 @@
   function setupATS() {
     const generateForm = first("#atsGenerateForm", "#atsGeneratorForm", "form[data-ats='generate']");
     const checkForm = first("#atsCheckForm", "#atsCheckerForm", "form[data-ats='check']");
-    const output = first("#atsOutput", "#atsGeneratedResult", "#generatedResume", "#atsResult", "#resumeResult", "[data-ats-output]");
+    const output = first("#atsOutput", "#atsResult", "#resumeResult", "#generatedResume", "[data-ats-output]");
 
     if (generateForm) {
       generateForm.addEventListener("submit", async (event) => {
@@ -1044,11 +1078,8 @@
   }
 
   function renderATSGenerate(result, output) {
-    const box = output || first("#atsOutput", "#atsGeneratedResult", "#generatedResume", "#atsResult", "#resumeResult", "[data-ats-output]");
+    const box = output || first("#atsOutput", "#atsResult", "#resumeResult", "#generatedResume", "[data-ats-output]");
     if (!box) return;
-    box.classList.remove("hidden");
-    box.hidden = false;
-    box.scrollIntoView({ behavior: "smooth", block: "start" });
     const fullResume = result.full_resume || result.resume || "";
     box.innerHTML = `
       <section class="card sqr-card">
@@ -1086,11 +1117,8 @@
   }
 
   function renderATSCheck(result, output) {
-    const box = output || first("#atsOutput", "#atsGeneratedResult", "#generatedResume", "#atsResult", "[data-ats-output]");
+    const box = output || first("#atsOutput", "#atsResult", "[data-ats-output]");
     if (!box) return;
-    box.classList.remove("hidden");
-    box.hidden = false;
-    box.scrollIntoView({ behavior: "smooth", block: "start" });
     const score = pct(result.ats_score || result.score);
     box.innerHTML = `
       <section class="card sqr-card">
@@ -1138,6 +1166,57 @@
     } catch (err) {
       message(err.message, "error");
     }
+  }
+
+
+  async function loadHomeDashboard() {
+    const specEl = $("#homeSpecCount");
+    const courseEl = $("#homeCourseCount");
+    const jobEl = $("#homeJobCount");
+    if (!specEl && !courseEl && !jobEl) return;
+
+    const setCount = (el, value) => {
+      if (el) el.textContent = String(Number(value || 0));
+    };
+
+    try {
+      const data = await apiFetch("/api/home/dashboard");
+      const stats = data.stats || data || {};
+      setCount(specEl, stats.specializations);
+      setCount(courseEl, stats.courses);
+      setCount(jobEl, stats.jobs);
+    } catch (err) {
+      try {
+        const [specs, courses, jobs] = await Promise.allSettled([
+          apiFetch("/api/specializations"),
+          apiFetch("/api/courses"),
+          apiFetch("/api/jobs"),
+        ]);
+        setCount(specEl, specs.status === "fulfilled" ? asArray(specs.value, "specializations").length : 0);
+        setCount(courseEl, courses.status === "fulfilled" ? asArray(courses.value, "courses").length : 0);
+        setCount(jobEl, jobs.status === "fulfilled" ? asArray(jobs.value, "jobs").length : 0);
+      } catch {
+        message(err.message || "Dashboard stats failed to load.", "error");
+      }
+    }
+  }
+
+  function setupProfileForm() {
+    const form = first("#profileForm", "form[data-profile-form]");
+    if (!form || form.dataset.sqrProfileBound) return;
+    form.dataset.sqrProfileBound = "1";
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const data = Object.fromEntries(new FormData(form).entries());
+        const result = await apiFetch("/api/profile", { method: "PUT", body: data });
+        if (result.user) setUser(result.user);
+        message("Profile updated.", "success");
+        await loadProfile();
+      } catch (err) {
+        message(err.message, "error");
+      }
+    });
   }
 
   function setupRecommendation() {
@@ -1441,12 +1520,14 @@
     }
 
     await Promise.allSettled([
+      loadHomeDashboard(),
       loadSpecializations(),
       loadCourses(),
       loadJobs(),
       loadProfile(),
     ]);
 
+    setupProfileForm();
     setupRecommendation();
     setupATS();
     await loadAdmin();
@@ -1462,6 +1543,8 @@
     setupSignin,
     loadProfile,
     loadProfileProgress,
+    loadHomeDashboard,
+    setupProfileForm,
     loadSpecializations,
     loadSpecializationDetails,
     loadCourses,
@@ -1482,6 +1565,8 @@
   window.setupSignin = setupSignin;
   window.loadProfile = loadProfile;
   window.loadProfileProgress = loadProfileProgress;
+  window.loadHomeDashboard = loadHomeDashboard;
+  window.setupProfileForm = setupProfileForm;
   window.loadSpecializations = loadSpecializations;
   window.loadSpecializationDetails = loadSpecializationDetails;
   window.loadCourses = loadCourses;
