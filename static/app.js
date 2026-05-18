@@ -162,6 +162,159 @@
     if (container) container.innerHTML = `<div class="card sqr-card"><p>${escapeHTML(text)}</p></div>`;
   }
 
+
+  function isAdminPage() {
+    return pageName.includes("admin");
+  }
+
+  function ensureMainShell() {
+    let shell = first(".container", ".page-shell", ".sqr-shell", "main");
+    if (!shell) {
+      shell = document.createElement("main");
+      shell.className = "container sqr-shell";
+      document.body.appendChild(shell);
+    }
+    return shell;
+  }
+
+  function ensurePageMounts() {
+    const shell = ensureMainShell();
+    const hasSpecDetailId = getParam("id", "specialization_id", "spec_id");
+    const hasCourseDetailId = getParam("id", "course_id");
+
+    if (pageName.includes("specialization") && !hasSpecDetailId) {
+      if (!first("#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "[data-specializations]")) {
+        const section = document.createElement("section");
+        section.className = "sqr-section";
+        section.innerHTML = `
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">SQR paths</span>
+              <h2>Available Specializations</h2>
+              <p class="muted">Choose a path to see related courses, jobs, roadmap, and enrollment.</p>
+            </div>
+          </div>
+          <div id="specializationsGrid" class="sqr-grid" data-specializations></div>
+        `;
+        shell.appendChild(section);
+      }
+    }
+
+    if (pageName.includes("specialization") && hasSpecDetailId) {
+      if (!first("#specializationDetails", "#specializationDetail", "#details", "[data-specialization-details]")) {
+        const section = document.createElement("section");
+        section.className = "sqr-section";
+        section.innerHTML = `<div id="specializationDetails" data-specialization-details></div>`;
+        shell.appendChild(section);
+      }
+    }
+
+    if (pageName.includes("course") && !hasCourseDetailId) {
+      if (!first("#coursesList", "#courseList", "#coursesContainer", "#coursesGrid", "[data-courses]")) {
+        const section = document.createElement("section");
+        section.className = "sqr-section";
+        section.innerHTML = `
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Course library</span>
+              <h2>Courses</h2>
+              <p class="muted">Open courses, enroll manually, and take linked quiz modules.</p>
+            </div>
+          </div>
+          <div id="coursesGrid" class="sqr-grid" data-courses></div>
+        `;
+        shell.appendChild(section);
+      }
+    }
+
+    if (pageName.includes("course") && hasCourseDetailId) {
+      if (!first("#courseDetails", "#courseDetail", "#details", "[data-course-details]")) {
+        const section = document.createElement("section");
+        section.className = "sqr-section";
+        section.innerHTML = `<div id="courseDetails" data-course-details></div>`;
+        shell.appendChild(section);
+      }
+    }
+  }
+
+  function publicSpecializationSelects() {
+    if (isAdminPage()) return [];
+    return $all([
+      "#courseSpecializationFilter",
+      "#courseSpecFilter",
+      "#specializationFilter",
+      "#specialization_id",
+      "#spec_id",
+      "select[name='specialization_id']",
+      "select[name='spec_id']",
+      "select[data-specialization-filter]"
+    ].join(",")).filter((select) => select && select.tagName === "SELECT");
+  }
+
+  function publicDifficultySelects() {
+    if (isAdminPage()) return [];
+    return $all([
+      "#difficultyFilter",
+      "#courseDifficultyFilter",
+      "#levelFilter",
+      "select[name='difficulty']",
+      "select[name='level']",
+      "select[data-difficulty-filter]"
+    ].join(",")).filter((select) => select && select.tagName === "SELECT");
+  }
+
+  function selectedDifficulty() {
+    const select = first(
+      "#difficultyFilter",
+      "#courseDifficultyFilter",
+      "#levelFilter",
+      "select[name='difficulty']",
+      "select[name='level']",
+      "select[data-difficulty-filter]"
+    );
+    const value = String(select?.value || "").trim().toLowerCase();
+    return value === "all" || value === "all levels" ? "" : value;
+  }
+
+  async function populatePublicSpecializationFilters() {
+    const selects = publicSpecializationSelects();
+    if (!selects.length) return [];
+    try {
+      const data = await apiFetch("/api/specializations");
+      const specs = asArray(data, "specializations");
+      selects.forEach((select) => {
+        const current = select.value;
+        const firstText = String(select.options?.[0]?.textContent || "All specializations").trim();
+        const blankLabel = /choose|select/i.test(firstText) ? "Choose specialization" : "All specializations";
+        select.innerHTML = `<option value="">${escapeHTML(blankLabel)}</option>` + specs.map((spec) => {
+          const id = idOf(spec, "specialization_id");
+          return `<option value="${escapeHTML(id)}">${escapeHTML(spec.name || `Specialization ${id}`)}</option>`;
+        }).join("");
+        if (current) select.value = current;
+      });
+      return specs;
+    } catch (err) {
+      console.error("Specialization filter failed:", err);
+      selects.forEach((select) => {
+        select.innerHTML = `<option value="">Could not load specializations</option>`;
+      });
+      return [];
+    }
+  }
+
+  function bindFilterReloads() {
+    const selects = [...publicSpecializationSelects(), ...publicDifficultySelects()];
+    selects.forEach((select) => {
+      if (select.dataset.sqrFilterBound) return;
+      select.dataset.sqrFilterBound = "1";
+      select.addEventListener("change", () => {
+        if (pageName.includes("course")) loadCourses();
+        else if (pageName.includes("job")) loadJobs();
+        else if (pageName.includes("specialization")) loadSpecializations();
+      });
+    });
+  }
+
   async function apiFetch(path, options = {}) {
     const headers = new Headers(options.headers || {});
     const token = getToken();
@@ -528,7 +681,11 @@
       if (search) params.set("search", search);
       if (specId) params.set("specialization_id", specId);
       const data = await apiFetch(`/api/courses${params.toString() ? `?${params}` : ""}`);
-      const courses = asArray(data, "courses");
+      let courses = asArray(data, "courses");
+      const difficulty = selectedDifficulty();
+      if (difficulty) {
+        courses = courses.filter((course) => String(course.level || course.difficulty || "").toLowerCase() === difficulty);
+      }
       box.innerHTML = courses.length
         ? `<div class="sqr-grid">${courses.map(courseCard).join("")}</div>`
         : `<div class="card sqr-card">No courses found.</div>`;
@@ -1249,7 +1406,10 @@
 
   async function boot() {
     navbar();
+    ensurePageMounts();
+    await populatePublicSpecializationFilters();
     bindSearchReloads();
+    bindFilterReloads();
 
     if (isLoggedIn()) {
       refreshMe().then(() => {
@@ -1298,6 +1458,7 @@
     setupATS,
     loadAdmin,
     trackCourseOpened,
+    populatePublicSpecializationFilters,
   };
 
   window.navbar = navbar;
@@ -1317,6 +1478,7 @@
   window.setupATS = setupATS;
   window.loadAdmin = loadAdmin;
   window.trackCourseOpened = trackCourseOpened;
+  window.populatePublicSpecializationFilters = populatePublicSpecializationFilters;
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);
