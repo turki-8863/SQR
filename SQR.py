@@ -2,6 +2,8 @@ import os
 import re
 import json
 import datetime
+import urllib.request
+import urllib.error
 from io import BytesIO
 from functools import wraps
 
@@ -72,6 +74,8 @@ DB_CONFIG = {
 pool = None
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if OpenAI and os.getenv("OPENAI_API_KEY") else None
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
 
 TECH_SKILLS = [
     "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql",
@@ -476,7 +480,76 @@ def extract_resume_text(file):
     return ""
 
 
+def extract_json_object(text_value):
+    text_value = safe_text(text_value)
+    if not text_value:
+        return None
+    text_value = re.sub(r"^```(?:json)?\s*|\s*```$", "", text_value.strip(), flags=re.I | re.S)
+    try:
+        return json.loads(text_value)
+    except Exception:
+        pass
+    match = re.search(r"\{.*\}", text_value, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(0))
+    except Exception:
+        return None
+
+
+def gemini_json(prompt, fallback):
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        body = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": (
+                                "Return valid JSON only. Do not use markdown. "
+                                "Do not invent user facts, companies, years, GPA, certificates, or experience.\n\n"
+                                + safe_text(prompt)
+                            )
+                        }
+                    ],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.35,
+                "topP": 0.9,
+                "maxOutputTokens": 4096,
+                "responseMimeType": "application/json",
+            },
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=int(os.getenv("GEMINI_TIMEOUT", "35"))) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="ignore"))
+        candidates = payload.get("candidates") or []
+        if not candidates:
+            return None
+        parts = ((candidates[0].get("content") or {}).get("parts") or [])
+        text_value = "\n".join([safe_text(part.get("text")) for part in parts if isinstance(part, dict)])
+        parsed = extract_json_object(text_value)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception as exc:
+        print("GEMINI JSON ERROR:", exc)
+        return None
+
+
 def ai_json(prompt, fallback):
+    gemini_result = gemini_json(prompt, fallback)
+    if isinstance(gemini_result, dict):
+        return gemini_result
+
     if not client:
         return fallback
     try:
@@ -488,12 +561,12 @@ def ai_json(prompt, fallback):
             ],
             temperature=0.3,
         )
-        text = response.choices[0].message.content or "{}"
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        return json.loads(match.group(0) if match else text)
-    except Exception:
+        text_value = response.choices[0].message.content or "{}"
+        parsed = extract_json_object(text_value)
+        return parsed if isinstance(parsed, dict) else fallback
+    except Exception as exc:
+        print("OPENAI JSON ERROR:", exc)
         return fallback
-
 
 
 def init_db():
@@ -1089,12 +1162,32 @@ def update_profile():
 
 
 def compute_user_progress(user_id):
-    specs = query_db("SELECT * FROM specializations ORDER BY name", fetchall=True) or []
+    if not table_exists("specialization_enrollments"):
+        return []
+
+    specs = query_db(
+        """
+        SELECT
+            s.*,
+            se.enrollment_id,
+            se.progress_percentage AS enrollment_progress,
+            se.status AS enrollment_status,
+            se.enrolled_at
+        FROM specialization_enrollments se
+        JOIN specializations s ON s.specialization_id=se.specialization_id
+        WHERE se.user_id=%s
+        ORDER BY se.enrolled_at DESC, s.name
+        """,
+        (user_id,),
+        fetchall=True
+    ) or []
+
     progress_rows = []
     for spec in specs:
         spec_id = row_value(spec, "specialization_id", "id")
         if not spec_id:
             continue
+
         total_courses_row = query_db(
             "SELECT COUNT(*) AS total FROM courses WHERE specialization_id=%s",
             (spec_id,),
@@ -1102,55 +1195,62 @@ def compute_user_progress(user_id):
         ) or {"total": 0}
         total_courses = safe_int(total_courses_row.get("total"), 0)
 
-        opened_row = {"total": 0}
-        if table_exists("course_enrollments"):
-            opened_row = query_db(
-                """
-                SELECT COUNT(DISTINCT ce.course_id) AS total
-                FROM course_enrollments ce
-                JOIN courses c ON c.course_id=ce.course_id
-                WHERE ce.user_id=%s AND c.specialization_id=%s
-                """,
-                (user_id, spec_id),
-                fetchone=True
-            ) or {"total": 0}
-        elif table_exists("user_completed_courses"):
-            opened_row = query_db(
-                """
-                SELECT COUNT(DISTINCT ucc.course_id) AS total
-                FROM user_completed_courses ucc
-                JOIN courses c ON c.course_id=ucc.course_id
-                WHERE ucc.user_id=%s AND c.specialization_id=%s
-                """,
-                (user_id, spec_id),
-                fetchone=True
-            ) or {"total": 0}
+        enrolled_row = query_db(
+            """
+            SELECT
+                COUNT(DISTINCT ce.course_id) AS enrolled_courses,
+                SUM(CASE WHEN ce.progress_percentage > 0 OR ce.status IN ('In Progress','Completed') THEN 1 ELSE 0 END) AS opened_courses,
+                SUM(CASE WHEN ce.progress_percentage >= 100 OR ce.status='Completed' THEN 1 ELSE 0 END) AS completed_courses
+            FROM course_enrollments ce
+            JOIN courses c ON c.course_id=ce.course_id
+            WHERE ce.user_id=%s AND c.specialization_id=%s
+            """,
+            (user_id, spec_id),
+            fetchone=True
+        ) or {"enrolled_courses": 0, "opened_courses": 0, "completed_courses": 0}
 
-        quiz_row = {"completed_quizzes": 0, "average_score": 0}
-        if table_exists("quiz_attempts"):
-            quiz_row = query_db(
-                """
-                SELECT
-                    COUNT(DISTINCT q.course_id) AS completed_quizzes,
-                    COALESCE(ROUND(AVG(CASE WHEN qa.score <= 1 THEN qa.score * 100 ELSE qa.score END),0),0) AS average_score
-                FROM quiz_attempts qa
-                JOIN quizzes q ON q.quiz_id=qa.quiz_id
-                JOIN courses c ON c.course_id=q.course_id
-                WHERE qa.user_id=%s AND c.specialization_id=%s AND (qa.passed=1 OR qa.score >= 60 OR qa.score >= 0.6)
-                """,
-                (user_id, spec_id),
-                fetchone=True
-            ) or {"completed_quizzes": 0, "average_score": 0}
+        quiz_row = query_db(
+            """
+            SELECT
+                COUNT(DISTINCT qa.quiz_id) AS completed_quizzes,
+                COALESCE(ROUND(AVG(CASE WHEN qa.score <= 1 THEN qa.score * 100 ELSE qa.score END),0),0) AS average_score
+            FROM quiz_attempts qa
+            JOIN quizzes q ON q.quiz_id=qa.quiz_id
+            JOIN courses c ON c.course_id=q.course_id
+            JOIN course_enrollments ce ON ce.course_id=c.course_id AND ce.user_id=qa.user_id
+            WHERE qa.user_id=%s
+              AND c.specialization_id=%s
+              AND (qa.passed=1 OR qa.score >= 60 OR qa.score >= 0.6)
+            """,
+            (user_id, spec_id),
+            fetchone=True
+        ) or {"completed_quizzes": 0, "average_score": 0}
 
-        opened_courses = safe_int(opened_row.get("total"), 0)
+        total_quizzes_row = query_db(
+            """
+            SELECT COUNT(DISTINCT q.quiz_id) AS total
+            FROM quizzes q
+            JOIN courses c ON c.course_id=q.course_id
+            WHERE c.specialization_id=%s
+            """,
+            (spec_id,),
+            fetchone=True
+        ) or {"total": 0}
+
+        enrolled_courses = safe_int(enrolled_row.get("enrolled_courses"), 0)
+        opened_courses = safe_int(enrolled_row.get("opened_courses"), 0)
+        completed_courses = safe_int(enrolled_row.get("completed_courses"), 0)
         completed_quizzes = safe_int(quiz_row.get("completed_quizzes"), 0)
+        total_quizzes = safe_int(total_quizzes_row.get("total"), 0)
         average_score = safe_int(quiz_row.get("average_score"), 0)
+
         if total_courses <= 0:
             percent_value = 0
         else:
-            opened_part = (opened_courses / total_courses) * 50
-            quiz_part = (completed_quizzes / total_courses) * 50
-            percent_value = max(0, min(100, round(opened_part + quiz_part)))
+            opened_part = (opened_courses / total_courses) * 35
+            completed_part = (completed_courses / total_courses) * 35
+            quiz_part = (completed_quizzes / max(total_quizzes, 1)) * 30 if total_quizzes else 0
+            percent_value = max(0, min(100, round(opened_part + completed_part + quiz_part)))
 
         try:
             if table_exists("specialization_progress"):
@@ -1167,17 +1267,16 @@ def compute_user_progress(user_id):
             print("SPECIALIZATION_PROGRESS SAVE ERROR:", exc)
 
         try:
-            if table_exists("specialization_enrollments"):
-                status = "Completed" if percent_value >= 100 else ("In Progress" if percent_value > 0 else "Not Started")
-                query_db(
-                    """
-                    UPDATE specialization_enrollments
-                    SET progress_percentage=%s, status=%s, completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
-                    WHERE user_id=%s AND specialization_id=%s
-                    """,
-                    (percent_value, status, percent_value, user_id, spec_id),
-                    commit=True
-                )
+            status = "Completed" if percent_value >= 100 else ("In Progress" if percent_value > 0 else "Not Started")
+            query_db(
+                """
+                UPDATE specialization_enrollments
+                SET progress_percentage=%s, status=%s, completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+                WHERE user_id=%s AND specialization_id=%s
+                """,
+                (percent_value, status, percent_value, user_id, spec_id),
+                commit=True
+            )
         except Exception as exc:
             print("SPECIALIZATION_ENROLLMENTS PROGRESS ERROR:", exc)
 
@@ -1186,14 +1285,20 @@ def compute_user_progress(user_id):
             "id": spec_id,
             "specialization_name": spec.get("name"),
             "name": spec.get("name"),
+            "enrolled_courses": enrolled_courses,
             "total_courses": total_courses,
             "opened_courses": opened_courses,
+            "completed_courses": completed_courses,
+            "total_quizzes": total_quizzes,
             "completed_quizzes": completed_quizzes,
             "average_quiz_score": average_score,
             "progress": percent_value,
             "percentage": percent_value,
+            "status": "completed" if percent_value >= 100 else ("in_progress" if percent_value > 0 else "not_started"),
         })
+
     return progress_rows
+
 
 
 
@@ -1415,6 +1520,28 @@ def unenroll_specialization(spec_id):
             (user_id, spec_id),
             commit=True
         )
+        if table_exists("course_enrollments"):
+            query_db(
+                """
+                DELETE ce
+                FROM course_enrollments ce
+                JOIN courses c ON c.course_id=ce.course_id
+                WHERE ce.user_id=%s AND c.specialization_id=%s
+                """,
+                (user_id, spec_id),
+                commit=True
+            )
+        if table_exists("user_completed_courses"):
+            query_db(
+                """
+                DELETE ucc
+                FROM user_completed_courses ucc
+                JOIN courses c ON c.course_id=ucc.course_id
+                WHERE ucc.user_id=%s AND c.specialization_id=%s
+                """,
+                (user_id, spec_id),
+                commit=True
+            )
         if table_exists("specialization_progress"):
             query_db(
                 "DELETE FROM specialization_progress WHERE user_id=%s AND specialization_id=%s",
@@ -1692,36 +1819,191 @@ def delete_course(course_id):
     return jsonify({"message": "Course deleted"})
 
 
+@app.route("/api/courses/<int:course_id>/enrollment-status", methods=["GET"])
+@login_required
+def course_enrollment_status(course_id):
+    try:
+        user_id = request.current_user["id"]
+        course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
+        if not course:
+            return jsonify({"error": "Course not found"}), 404
+
+        enrollment = query_db(
+            """
+            SELECT enrollment_id, progress_percentage, status, enrolled_at, completed_at
+            FROM course_enrollments
+            WHERE user_id=%s AND course_id=%s
+            LIMIT 1
+            """,
+            (user_id, course_id),
+            fetchone=True
+        )
+
+        spec_id = row_value(course, "specialization_id", "spec_id")
+        spec_enrollment = None
+        if spec_id:
+            spec_enrollment = query_db(
+                """
+                SELECT enrollment_id, progress_percentage, status
+                FROM specialization_enrollments
+                WHERE user_id=%s AND specialization_id=%s
+                LIMIT 1
+                """,
+                (user_id, spec_id),
+                fetchone=True
+            )
+
+        progress = safe_int(row_value(enrollment or {}, "progress_percentage", "progress"), 0)
+        raw_status = safe_text((enrollment or {}).get("status")) or "Not Started"
+        return jsonify({
+            "success": True,
+            "course_id": course_id,
+            "specialization_id": spec_id,
+            "enrolled": bool(enrollment),
+            "specialization_enrolled": bool(spec_enrollment),
+            "progress": progress,
+            "progress_percentage": progress,
+            "status": raw_status.lower().replace(" ", "_"),
+            "status_label": raw_status,
+        })
+    except Exception as exc:
+        print("COURSE STATUS ERROR:", exc)
+        return jsonify({"error": "Failed to load course enrollment status", "details": str(exc)}), 500
+
+
+@app.route("/api/courses/<int:course_id>/enroll", methods=["POST"])
+@student_required
+def enroll_course(course_id):
+    try:
+        user_id = request.current_user["id"]
+        course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
+        if not course:
+            return jsonify({"error": "Course not found"}), 404
+
+        spec_id = row_value(course, "specialization_id", "spec_id")
+        if spec_id:
+            spec_enrollment = query_db(
+                """
+                SELECT enrollment_id
+                FROM specialization_enrollments
+                WHERE user_id=%s AND specialization_id=%s
+                LIMIT 1
+                """,
+                (user_id, spec_id),
+                fetchone=True
+            )
+            if not spec_enrollment:
+                return jsonify({
+                    "error": "Enroll in the specialization first. The system will not auto-enroll you.",
+                    "needs_specialization_enrollment": True,
+                    "specialization_id": spec_id,
+                }), 409
+
+        query_db(
+            """
+            INSERT INTO course_enrollments (user_id, course_id, progress_percentage, status, enrolled_at)
+            VALUES (%s,%s,0,'Not Started',CURRENT_TIMESTAMP)
+            ON DUPLICATE KEY UPDATE
+                enrolled_at=enrolled_at,
+                status=CASE WHEN status='Completed' THEN status ELSE status END
+            """,
+            (user_id, course_id),
+            commit=True
+        )
+        compute_user_progress(user_id)
+        return jsonify({"success": True, "message": "Course enrolled successfully", "course_id": course_id})
+    except Exception as exc:
+        print("COURSE ENROLL ERROR:", exc)
+        return jsonify({"error": "Failed to enroll course", "details": str(exc)}), 500
+
+
+@app.route("/api/courses/<int:course_id>/unenroll", methods=["DELETE", "POST"])
+@student_required
+def unenroll_course(course_id):
+    try:
+        user_id = request.current_user["id"]
+        query_db(
+            "DELETE FROM course_enrollments WHERE user_id=%s AND course_id=%s",
+            (user_id, course_id),
+            commit=True
+        )
+        if table_exists("user_completed_courses"):
+            query_db(
+                "DELETE FROM user_completed_courses WHERE user_id=%s AND course_id=%s",
+                (user_id, course_id),
+                commit=True
+            )
+        compute_user_progress(user_id)
+        return jsonify({"success": True, "message": "Course unenrolled successfully", "course_id": course_id})
+    except Exception as exc:
+        print("COURSE UNENROLL ERROR:", exc)
+        return jsonify({"error": "Failed to unenroll course", "details": str(exc)}), 500
+
+
 @app.route("/api/courses/<int:course_id>/open", methods=["POST"])
 @student_required
 def open_course(course_id):
     course = query_db("SELECT * FROM courses WHERE course_id=%s", (course_id,), fetchone=True)
     if not course:
         return jsonify({"error": "Course not found"}), 404
+
+    user_id = request.current_user["id"]
+    enrollment = query_db(
+        """
+        SELECT enrollment_id, progress_percentage, status
+        FROM course_enrollments
+        WHERE user_id=%s AND course_id=%s
+        LIMIT 1
+        """,
+        (user_id, course_id),
+        fetchone=True
+    )
+
+    # Important: opening/viewing a course must NOT create enrollment.
+    if not enrollment:
+        return jsonify({
+            "success": True,
+            "message": "Course opened, but progress was not changed because you are not enrolled.",
+            "tracked": False,
+            "enrolled": False,
+            "course_id": course_id,
+        })
+
     data = get_json()
     completed = 1 if data.get("completed") else 0
-    status = "Completed" if completed else "In Progress"
-    progress_value = 100 if completed else 25
+    current_progress = safe_int(enrollment.get("progress_percentage"), 0)
+    progress_value = 100 if completed else max(current_progress, 25)
+    status = "Completed" if progress_value >= 100 else "In Progress"
+
     query_db(
         """
-        INSERT INTO course_enrollments (user_id, course_id, progress_percentage, status, completed_at)
-        VALUES (%s,%s,%s,%s,CASE WHEN %s=100 THEN CURRENT_TIMESTAMP ELSE NULL END)
-        ON DUPLICATE KEY UPDATE
-            progress_percentage=GREATEST(progress_percentage, VALUES(progress_percentage)),
-            status=CASE WHEN VALUES(progress_percentage) >= 100 THEN 'Completed' ELSE 'In Progress' END,
-            completed_at=CASE WHEN VALUES(progress_percentage) >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+        UPDATE course_enrollments
+        SET
+            progress_percentage=GREATEST(progress_percentage,%s),
+            status=%s,
+            completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+        WHERE user_id=%s AND course_id=%s
         """,
-        (request.current_user["id"], course_id, progress_value, status, progress_value),
+        (progress_value, status, progress_value, user_id, course_id),
         commit=True
     )
+
     if completed and table_exists("user_completed_courses"):
         query_db(
             "INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)",
-            (request.current_user["id"], course_id),
+            (user_id, course_id),
             commit=True
         )
-    compute_user_progress(request.current_user["id"])
-    return jsonify({"message": "Course progress tracked"})
+
+    compute_user_progress(user_id)
+    return jsonify({
+        "success": True,
+        "message": "Course progress tracked",
+        "tracked": True,
+        "enrolled": True,
+        "course_id": course_id,
+        "progress": progress_value,
+    })
 
 
 
@@ -1837,6 +2119,7 @@ def submit_quiz(quiz_id):
     quiz = query_db("SELECT * FROM quizzes WHERE quiz_id=%s", (quiz_id,), fetchone=True)
     if not quiz:
         return jsonify({"error": "Quiz not found"}), 404
+
     score = 0
     details = []
     for q in questions:
@@ -1848,46 +2131,81 @@ def submit_quiz(quiz_id):
         if ok:
             score += 1
         details.append({"question_id": qid, "given": normalized, "correct": correct, "correct_boolean": bool(ok)})
+
     total = len(questions)
     percentage = round((score / total) * 100) if total else 0
     passed = 1 if percentage >= 60 else 0
+    user_id = request.current_user["id"]
+
     attempt_id = query_db(
         """
         INSERT INTO quiz_attempts (user_id,quiz_id,score,passed)
         VALUES (%s,%s,%s,%s)
         """,
-        (request.current_user["id"], quiz_id, percentage, passed),
+        (user_id, quiz_id, percentage, passed),
         commit=True
     )
+
     if passed and table_exists("user_completed_quizzes"):
         query_db(
-            "INSERT INTO user_completed_quizzes (user_id, quiz_id, score) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE score=GREATEST(score,VALUES(score)), completed_at=CURRENT_TIMESTAMP",
-            (request.current_user["id"], quiz_id, percentage),
-            commit=True
-        )
-    course_id = quiz.get("course_id")
-    if course_id:
-        progress_value = 100 if passed else 50
-        query_db(
             """
-            INSERT INTO course_enrollments (user_id, course_id, progress_percentage, status, completed_at)
-            VALUES (%s,%s,%s,%s,CASE WHEN %s=100 THEN CURRENT_TIMESTAMP ELSE NULL END)
-            ON DUPLICATE KEY UPDATE
-                progress_percentage=GREATEST(progress_percentage,VALUES(progress_percentage)),
-                status=CASE WHEN VALUES(progress_percentage) >= 100 THEN 'Completed' ELSE 'In Progress' END,
-                completed_at=CASE WHEN VALUES(progress_percentage) >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+            INSERT INTO user_completed_quizzes (user_id, quiz_id, score)
+            VALUES (%s,%s,%s)
+            ON DUPLICATE KEY UPDATE score=GREATEST(score,VALUES(score)), completed_at=CURRENT_TIMESTAMP
             """,
-            (request.current_user["id"], course_id, progress_value, "Completed" if passed else "In Progress", progress_value),
+            (user_id, quiz_id, percentage),
             commit=True
         )
-        if passed and table_exists("user_completed_courses"):
+
+    course_id = quiz.get("course_id")
+    course_progress_tracked = False
+    if course_id:
+        enrollment = query_db(
+            """
+            SELECT enrollment_id, progress_percentage
+            FROM course_enrollments
+            WHERE user_id=%s AND course_id=%s
+            LIMIT 1
+            """,
+            (user_id, course_id),
+            fetchone=True
+        )
+
+        # Important: quiz submission must NOT auto-enroll a course.
+        if enrollment:
+            progress_value = 100 if passed else max(safe_int(enrollment.get("progress_percentage"), 0), 50)
             query_db(
-                "INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)",
-                (request.current_user["id"], course_id),
+                """
+                UPDATE course_enrollments
+                SET
+                    progress_percentage=GREATEST(progress_percentage,%s),
+                    status=CASE WHEN %s >= 100 THEN 'Completed' ELSE 'In Progress' END,
+                    completed_at=CASE WHEN %s >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+                WHERE user_id=%s AND course_id=%s
+                """,
+                (progress_value, progress_value, progress_value, user_id, course_id),
                 commit=True
             )
-    compute_user_progress(request.current_user["id"])
-    return jsonify({"message": "Quiz submitted", "attempt_id": attempt_id, "score": score, "total": total, "score_percentage": percentage, "details": details})
+            course_progress_tracked = True
+
+            if passed and table_exists("user_completed_courses"):
+                query_db(
+                    "INSERT IGNORE INTO user_completed_courses (user_id, course_id) VALUES (%s,%s)",
+                    (user_id, course_id),
+                    commit=True
+                )
+
+    compute_user_progress(user_id)
+    return jsonify({
+        "message": "Quiz submitted",
+        "attempt_id": attempt_id,
+        "score": score,
+        "total": total,
+        "score_percentage": percentage,
+        "passed": bool(passed),
+        "course_progress_tracked": course_progress_tracked,
+        "details": details
+    })
 
 
 
@@ -2576,11 +2894,9 @@ def build_dynamic_resume_payload(data, resume_text):
 
 def generate_ai_resume_payload(data, resume_text):
     fallback = build_dynamic_resume_payload(data, resume_text)
-    if not client:
-        return fallback
-    try:
-        prompt = f"""
+    prompt = f"""
 You are an expert resume writer inside the SQR website. Improve the user's resume like a helpful AI assistant.
+
 Return valid JSON only with these exact keys:
 headline, summary, enhanced_summary, technical_skills, soft_skills, projects, experience, education, certifications, full_resume, improvements, missing_information.
 
@@ -2590,7 +2906,7 @@ Rules:
 - Do not invent companies, years, degrees, GPA, certificates, or experience.
 - Use only the information provided by the user and the uploaded resume text.
 - Make the writing natural, specific, concise, and professional.
-- The summary must be 3 to 5 sentences.
+- The enhanced_summary must be 3 to 5 sentences and must be improved from the user's actual input.
 - The full_resume must be a clean ATS-readable resume text with clear section headings.
 
 User form data:
@@ -2599,31 +2915,24 @@ User form data:
 Uploaded or pasted resume text:
 {safe_text(resume_text)[:7000]}
 """
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Return valid JSON only. Do not invent facts. Improve wording and structure."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.45,
-        )
-        text = response.choices[0].message.content or "{}"
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        payload = json.loads(match.group(0) if match else text)
-        for key, value in fallback.items():
-            if key not in payload or payload.get(key) in [None, "", []]:
-                payload[key] = value
-        payload["summary"] = safe_text(payload.get("summary") or payload.get("enhanced_summary") or fallback["summary"])
-        payload["enhanced_summary"] = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback["summary"])
-        payload["ai_powered"] = True
-        bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
-        if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
-            fallback["ai_powered"] = False
-            return fallback
-        return payload
-    except Exception as exc:
-        print("AI RESUME GENERATION ERROR:", exc)
+    payload = ai_json(prompt, fallback)
+    if not isinstance(payload, dict):
+        payload = fallback
+
+    for key, value in fallback.items():
+        if key not in payload or payload.get(key) in [None, "", []]:
+            payload[key] = value
+
+    payload["summary"] = safe_text(payload.get("summary") or payload.get("enhanced_summary") or fallback["summary"])
+    payload["enhanced_summary"] = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback["summary"])
+    payload["ai_powered"] = bool(GEMINI_API_KEY or client)
+
+    bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
+    if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
+        fallback["ai_powered"] = False
         return fallback
+
+    return payload
 
 
 def generate_ai_enhanced_summary(name, target_role, technical_skills, soft_skills, resume_text):
