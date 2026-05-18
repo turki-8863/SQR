@@ -4,6 +4,7 @@ import json
 import datetime
 import urllib.request
 import urllib.error
+import time
 from io import BytesIO
 from functools import wraps
 
@@ -630,24 +631,33 @@ def gemini_json(prompt, fallback):
                 "responseMimeType": "application/json",
             },
         }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=int(os.getenv("GEMINI_TIMEOUT", "35"))) as response:
-            payload = json.loads(response.read().decode("utf-8", errors="ignore"))
-        candidates = payload.get("candidates") or []
-        if not candidates:
-            return None
-        parts = ((candidates[0].get("content") or {}).get("parts") or [])
-        text_value = "\n".join([safe_text(part.get("text")) for part in parts if isinstance(part, dict)])
-        parsed = extract_json_object(text_value)
-        if isinstance(parsed, dict):
-            parsed["ai_provider"] = "gemini"
-            return parsed
-        return None
+        retries = max(1, safe_int(os.getenv("GEMINI_RETRIES", "2"), 2))
+        for attempt in range(retries):
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(body).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=int(os.getenv("GEMINI_TIMEOUT", "35"))) as response:
+                    payload = json.loads(response.read().decode("utf-8", errors="ignore"))
+                candidates = payload.get("candidates") or []
+                if not candidates:
+                    return None
+                parts = ((candidates[0].get("content") or {}).get("parts") or [])
+                text_value = "\n".join([safe_text(part.get("text")) for part in parts if isinstance(part, dict)])
+                parsed = extract_json_object(text_value)
+                if isinstance(parsed, dict):
+                    parsed["ai_provider"] = "gemini"
+                    return parsed
+                return None
+            except urllib.error.HTTPError as exc:
+                if exc.code in (429, 500, 502, 503, 504) and attempt + 1 < retries:
+                    time.sleep(1.2 * (attempt + 1))
+                    continue
+                print(f"GEMINI TEMPORARY ERROR: HTTP {exc.code}; fallback used")
+                return None
     except Exception as exc:
         print("GEMINI JSON ERROR:", exc)
         return None
@@ -1029,87 +1039,6 @@ def init_db():
                     exec_db(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {definition}")
             except Exception as exc:
                 print(f"init_db alter skipped for {table}.{column}:", exc)
-
-    # Strong compatibility patch: many older SQR databases use *_id columns
-    # while some routes use id/spec_id/progress aliases. Add safe alias columns
-    # and backfill them without deleting any existing data.
-    def ensure_column(table, column, definition):
-        try:
-            if table_exists(table) and not column_exists(table, column):
-                exec_db(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {definition}")
-        except Exception as exc:
-            print(f"compat column skipped for {table}.{column}:", exc)
-
-    alias_columns = {
-        "specializations": [("id", "INT NULL")],
-        "courses": [("id", "INT NULL"), ("name", "VARCHAR(150)"), ("difficulty", "VARCHAR(50)")],
-        "jobs": [("id", "INT NULL"), ("skills", "TEXT"), ("salary", "VARCHAR(100)"), ("link", "VARCHAR(255)"), ("specialization", "VARCHAR(150)")],
-        "quizzes": [("id", "INT NULL"), ("name", "VARCHAR(150)")],
-        "quiz_questions": [("id", "INT NULL")],
-        "specialization_enrollments": [("id", "INT NULL"), ("spec_id", "INT NULL"), ("progress", "INT DEFAULT 0")],
-        "course_enrollments": [("id", "INT NULL"), ("progress", "INT DEFAULT 0")],
-        "quiz_attempts": [("id", "INT NULL"), ("course_id", "INT NULL"), ("percentage", "DECIMAL(5,2) DEFAULT 0.00"), ("total", "INT DEFAULT 0")],
-        "ats_results": [("id", "INT NULL"), ("score", "DECIMAL(5,2) DEFAULT 0.00")],
-        "certificates": [("certification_id", "INT NULL"), ("specialization_id", "INT NULL"), ("official_link", "VARCHAR(255)")],
-        "certifications": [("id", "INT NULL"), ("spec_id", "INT NULL"), ("link", "VARCHAR(255)")],
-        "recommendations": [("id", "INT NULL")],
-        "recommendation_results": [("recommendation_id", "INT NULL")],
-    }
-    for table, columns in alias_columns.items():
-        for column, definition in columns:
-            ensure_column(table, column, definition)
-
-    # Lower-case values are used by routes; make existing Railway ENUM tables accept them safely.
-    for table in ["specialization_enrollments", "course_enrollments"]:
-        try:
-            if table_exists(table) and column_exists(table, "status"):
-                exec_db(f"ALTER TABLE `{table}` MODIFY COLUMN `status` VARCHAR(50) DEFAULT 'not_started'")
-        except Exception as exc:
-            print(f"status compatibility skipped for {table}:", exc)
-    try:
-        if table_exists("courses") and column_exists("courses", "level"):
-            exec_db("ALTER TABLE `courses` MODIFY COLUMN `level` VARCHAR(50) DEFAULT 'beginner'")
-    except Exception as exc:
-        print("course level compatibility skipped:", exc)
-
-    backfill_statements = [
-        "UPDATE specializations SET id=specialization_id WHERE (id IS NULL OR id=0)",
-        "UPDATE courses SET id=course_id WHERE (id IS NULL OR id=0)",
-        "UPDATE courses SET name=title WHERE (name IS NULL OR name='') AND title IS NOT NULL",
-        "UPDATE courses SET difficulty=level WHERE (difficulty IS NULL OR difficulty='') AND level IS NOT NULL",
-        "UPDATE courses SET spec_id=specialization_id WHERE (spec_id IS NULL OR spec_id=0) AND specialization_id IS NOT NULL",
-        "UPDATE jobs SET id=job_id WHERE (id IS NULL OR id=0)",
-        "UPDATE jobs SET skills=required_skills WHERE (skills IS NULL OR skills='') AND required_skills IS NOT NULL",
-        "UPDATE jobs SET salary=average_salary WHERE (salary IS NULL OR salary='') AND average_salary IS NOT NULL",
-        "UPDATE jobs SET link=job_link WHERE (link IS NULL OR link='') AND job_link IS NOT NULL",
-        "UPDATE quizzes SET id=quiz_id WHERE (id IS NULL OR id=0)",
-        "UPDATE quizzes SET name=title WHERE (name IS NULL OR name='') AND title IS NOT NULL",
-        "UPDATE quiz_questions SET id=question_id WHERE (id IS NULL OR id=0)",
-        "UPDATE specialization_enrollments SET id=enrollment_id WHERE (id IS NULL OR id=0)",
-        "UPDATE specialization_enrollments SET spec_id=specialization_id WHERE (spec_id IS NULL OR spec_id=0) AND specialization_id IS NOT NULL",
-        "UPDATE specialization_enrollments SET progress=COALESCE(progress_percentage,0) WHERE progress IS NULL OR progress=0",
-        "UPDATE course_enrollments SET id=enrollment_id WHERE (id IS NULL OR id=0)",
-        "UPDATE course_enrollments SET progress=COALESCE(progress_percentage,0) WHERE progress IS NULL OR progress=0",
-        "UPDATE quiz_attempts SET id=attempt_id WHERE (id IS NULL OR id=0)",
-        "UPDATE quiz_attempts SET percentage=score WHERE (percentage IS NULL OR percentage=0) AND score IS NOT NULL",
-        "UPDATE ats_results SET id=ats_id WHERE (id IS NULL OR id=0)",
-        "UPDATE ats_results SET score=ats_score WHERE (score IS NULL OR score=0) AND ats_score IS NOT NULL",
-        "UPDATE certificates SET certification_id=id WHERE (certification_id IS NULL OR certification_id=0)",
-        "UPDATE certificates SET specialization_id=spec_id WHERE (specialization_id IS NULL OR specialization_id=0) AND spec_id IS NOT NULL",
-        "UPDATE certificates SET official_link=link WHERE (official_link IS NULL OR official_link='') AND link IS NOT NULL",
-        "UPDATE certifications SET id=certification_id WHERE (id IS NULL OR id=0)",
-        "UPDATE certifications SET spec_id=specialization_id WHERE (spec_id IS NULL OR spec_id=0) AND specialization_id IS NOT NULL",
-        "UPDATE certifications SET link=official_link WHERE (link IS NULL OR link='') AND official_link IS NOT NULL",
-        "UPDATE recommendations SET id=recommendation_id WHERE (id IS NULL OR id=0)",
-        "UPDATE recommendation_results SET recommendation_id=id WHERE (recommendation_id IS NULL OR recommendation_id=0)",
-    ]
-    for statement in backfill_statements:
-        try:
-            table_name = statement.split()[1].strip('`')
-            if table_exists(table_name):
-                exec_db(statement)
-        except Exception as exc:
-            print("compat backfill skipped:", exc)
 
 
 
@@ -1623,17 +1552,13 @@ def enroll_specialization(spec_id):
         real_spec_id = safe_int(spec.get("id"), spec_id)
         query_db(
             """
-            INSERT INTO specialization_enrollments
-                (user_id, specialization_id, spec_id, progress, progress_percentage, status, enrolled_at)
-            VALUES (%s, %s, %s, 0, 0, 'in_progress', CURRENT_TIMESTAMP)
+            INSERT INTO specialization_enrollments (user_id, spec_id, progress, status, enrolled_at)
+            VALUES (%s, %s, 0, 'in_progress', CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
-                spec_id=VALUES(spec_id),
-                progress=GREATEST(COALESCE(progress,0), 0),
-                progress_percentage=GREATEST(COALESCE(progress_percentage,0), 0),
                 status=CASE WHEN status='completed' THEN status ELSE 'in_progress' END,
                 enrolled_at=enrolled_at
             """,
-            (user_id, real_spec_id, real_spec_id),
+            (user_id, real_spec_id),
             commit=True
         )
         compute_user_progress(user_id)
@@ -1710,10 +1635,6 @@ def add_specialization():
         ),
         commit=True
     )
-    try:
-        query_db("UPDATE specializations SET id=specialization_id WHERE specialization_id=%s AND (id IS NULL OR id=0)", (spec_id,), commit=True)
-    except Exception as exc:
-        print("SPECIALIZATION ID BACKFILL ERROR:", exc)
     return jsonify({"message": "Specialization added", "id": spec_id, "specialization_id": spec_id})
 
 
@@ -1864,10 +1785,6 @@ def add_course():
         ),
         commit=True
     )
-    try:
-        query_db("UPDATE courses SET id=course_id, name=COALESCE(NULLIF(name,''), title), difficulty=COALESCE(NULLIF(difficulty,''), level), spec_id=COALESCE(spec_id, specialization_id) WHERE course_id=%s", (course_id,), commit=True)
-    except Exception as exc:
-        print("COURSE ID BACKFILL ERROR:", exc)
     return jsonify({"message": "Course added", "id": course_id, "course_id": course_id})
 
 
