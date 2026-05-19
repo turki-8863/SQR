@@ -1459,21 +1459,19 @@ def profile_progress():
 
 
 
-@app.route("/api/specializations", methods=["GET"])
+@app.route("/api/specialization", methods=["GET"])
 def get_specializations():
-    try:
-        search = safe_text(request.args.get("search"))
-        sql = "SELECT * FROM specializations WHERE 1=1"
-        params = []
-        if search:
-            sql += " AND (name LIKE %s OR title LIKE %s OR description LIKE %s)"
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-        sql += " ORDER BY id DESC"
-        rows = query_db(sql, tuple(params), fetchall=True) or []
-        return jsonify({"specializations": [normalize_specialization(row) for row in rows]}), 200
-    except Exception as e:
-        print("GET /api/specializations ERROR:", e)
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+    rows = query_db("""
+        SELECT *
+        FROM specializations
+        ORDER BY specialization_id DESC
+    """, fetchall=True) or []
+
+    return jsonify({
+        "ok": True,
+        "specializations": rows,
+        "data": rows
+    })
 
 
 @app.route("/api/specializations/<int:spec_id>", methods=["GET"])
