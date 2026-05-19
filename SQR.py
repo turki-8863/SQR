@@ -1460,49 +1460,29 @@ def profile_progress():
 
 
 @app.route("/api/specialization", methods=["GET"])
-def get_specializations():
-    rows = query_db("""
-        SELECT *
-        FROM specializations
-        ORDER BY specialization_id DESC
-    """, fetchall=True) or []
-
-    return jsonify({
-        "ok": True,
-        "specializations": rows,
-        "data": rows
-    })
-
-
 @app.route("/api/specializations", methods=["GET"])
 def get_specializations():
     try:
-        rows = query_db(
-            """
-            SELECT
-                specialization_id,
-                name,
-                description,
-                image_url,
-                created_at
-            FROM specialization
+        rows = query_db("""
+            SELECT *
+            FROM specializations
             ORDER BY specialization_id DESC
-            """,
-            fetchall=True
-        ) or []
+        """, fetchall=True) or []
 
         return jsonify({
+            "ok": True,
             "success": True,
-            "specializations": rows
+            "specializations": rows,
+            "data": rows
         }), 200
 
     except Exception as e:
         print("GET SPECIALIZATIONS ERROR:", e)
         return jsonify({
+            "ok": False,
             "success": False,
             "error": "Failed to load specializations"
         }), 500
-
 
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
 @login_required
