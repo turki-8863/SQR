@@ -1499,493 +1499,512 @@
     trackCourseOpened,
     populatePublicSpecializationFilters,
   };
-document.addEventListener("DOMContentLoaded", () => {
-  if (document.body.dataset.page === "admin") {
-    initAdminPage();
-  }
-});
+  const adminState = {
+    specializations: [],
+    courses: [],
+    quizzes: [],
+    jobs: [],
+    certificates: [],
+    users: [],
+  };
 
-function getToken() {
-  return (
-    localStorage.getItem("token") ||
-    localStorage.getItem("sqr_token") ||
-    localStorage.getItem("authToken") ||
-    sessionStorage.getItem("token") ||
-    ""
-  );
-}
-
-async function adminRequest(url, options = {}) {
-  const token = getToken();
-
-  const headers = options.headers || {};
-
-  if (!(options.body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
+  function adminPlural(type) {
+    const map = {
+      specialization: "specializations",
+      course: "courses",
+      quiz: "quizzes",
+      job: "jobs",
+      certificate: "certificates",
+      user: "users",
+    };
+    return map[type] || type;
   }
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  function adminEndpoint(type, id = "") {
+    const plural = adminPlural(type);
+    if (plural === "users") return id ? `/api/admin/users/${id}` : "/api/admin/users";
+    return id ? `/api/admin/${plural}/${encodeURIComponent(id)}` : `/api/admin/${plural}`;
   }
 
-  const res = await fetch(url, {
-    ...options,
-    headers,
-    credentials: "include"
-  });
-
-  let data = {};
-  try {
-    data = await res.json();
-  } catch {
-    data = {};
+  async function adminRequest(url, options = {}) {
+    return apiFetch(url, options);
   }
 
-  if (!res.ok) {
-    throw new Error(data.error || data.message || `Request failed: ${res.status}`);
+  function showAdminMessage(text, type = "success") {
+    message(text, type === "error" ? "error" : "success");
   }
 
-  return data;
-}
-
-function showAdminMessage(text, type = "success") {
-  const box = document.getElementById("message");
-  if (!box) return;
-
-  box.innerHTML = `<div class="alert ${type}">${text}</div>`;
-
-  setTimeout(() => {
-    box.innerHTML = "";
-  }, 3500);
-}
-
-function getList(data, keys) {
-  for (const key of keys) {
-    if (Array.isArray(data[key])) return data[key];
-  }
-
-  if (Array.isArray(data.data)) return data.data;
-  if (Array.isArray(data)) return data;
-
-  return [];
-}
-
-async function initAdminPage() {
-  setupAdminTabs();
-  setupAdminForms();
-
-  try {
-    const me = await adminRequest("/api/me");
-
-    if (!me.user && !me.id && !me.role) {
-      showAdminMessage("You must sign in first.", "error");
-      return;
+  function getList(data, keys) {
+    for (const key of keys) {
+      if (Array.isArray(data?.[key])) return data[key];
     }
-
-    const role = me.role || me.user?.role;
-
-    if (role !== "admin") {
-      showAdminMessage("Only admins can access this page.", "error");
-      return;
-    }
-  } catch (err) {
-    showAdminMessage("Login check failed. Please sign in again.", "error");
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data)) return data;
+    return [];
   }
 
-  await loadAdminData();
-}
+  function adminItemId(item) {
+    return idOf(item, "specialization_id", "course_id", "quiz_id", "job_id", "certificate_id", "certification_id", "user_id");
+  }
 
-function setupAdminTabs() {
-  document.querySelectorAll("[data-admin-tab]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const tab = btn.dataset.adminTab;
+  function adminItemTitle(item, type) {
+    return item?.title || item?.name || item?.full_name || item?.email || `${type} #${adminItemId(item)}`;
+  }
 
-      document.querySelectorAll("[data-admin-tab]").forEach(b => {
-        b.classList.remove("active");
+  function adminItemSubtitle(item) {
+    return item?.description || item?.specialization_name || item?.course_title || item?.role || item?.level || item?.difficulty || item?.email || "";
+  }
+
+  function setupAdminTabs() {
+    $all("[data-admin-tab]").forEach((btn) => {
+      if (btn.dataset.bound === "1") return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.adminTab;
+        $all("[data-admin-tab]").forEach((b) => b.classList.remove("active"));
+        $all(".admin-section").forEach((section) => section.classList.remove("active"));
+        btn.classList.add("active");
+        $(`#admin-${tab}`)?.classList.add("active");
       });
-
-      document.querySelectorAll(".admin-section").forEach(section => {
-        section.classList.remove("active");
-      });
-
-      btn.classList.add("active");
-
-      const section = document.getElementById(`admin-${tab}`);
-      if (section) section.classList.add("active");
     });
-  });
-}
-
-async function loadAdminData() {
-  await Promise.allSettled([
-    loadAdminSpecializations(),
-    loadAdminCourses(),
-    loadAdminJobs(),
-    loadAdminCertificates(),
-    loadAdminQuizzes(),
-    loadAdminUsers()
-  ]);
-}
-
-async function loadAdminSpecializations() {
-  const data = await adminRequest("/api/specializations");
-  const specializations = getList(data, ["specializations"]);
-
-  fillSpecSelect("adminCourseSpecSelect", specializations);
-  fillSpecSelect("adminJobSpecSelect", specializations);
-  fillSpecSelect("adminCertificateSpecSelect", specializations);
-
-  renderAdminList("adminSpecializationsList", specializations, "specialization");
-  updateAdminStats("specializations", specializations.length);
-}
-
-async function loadAdminCourses() {
-  const data = await adminRequest("/api/courses");
-  const courses = getList(data, ["courses"]);
-
-  fillCourseSelect("adminQuizCourseSelect", courses);
-  renderAdminList("adminCoursesList", courses, "course");
-  updateAdminStats("courses", courses.length);
-}
-
-async function loadAdminJobs() {
-  try {
-    const data = await adminRequest("/api/jobs");
-    const jobs = getList(data, ["jobs"]);
-    renderAdminList("adminJobsList", jobs, "job");
-    updateAdminStats("jobs", jobs.length);
-  } catch {
-    renderAdminList("adminJobsList", [], "job");
   }
-}
 
-async function loadAdminCertificates() {
-  try {
-    const data = await adminRequest("/api/certificates");
-    const certificates = getList(data, ["certificates", "certifications"]);
-    renderAdminList("adminCertificatesList", certificates, "certificate");
-    updateAdminStats("certificates", certificates.length);
-  } catch {
-    renderAdminList("adminCertificatesList", [], "certificate");
+  function fillSpecSelect(id, specializations) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = `<option value="">Select specialization</option>` + specializations.map((spec) => {
+      const value = adminItemId(spec);
+      return `<option value="${escapeHTML(value)}">${escapeHTML(spec.name || spec.title || "Specialization")}</option>`;
+    }).join("");
+    if (current) select.value = current;
   }
-}
 
-async function loadAdminQuizzes() {
-  try {
-    const data = await adminRequest("/api/quizzes");
-    const quizzes = getList(data, ["quizzes"]);
-    renderAdminList("adminQuizzesList", quizzes, "quiz");
-    updateAdminStats("quizzes", quizzes.length);
-  } catch {
-    renderAdminList("adminQuizzesList", [], "quiz");
+  function fillCourseSelect(id, courses) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = `<option value="">Select course</option>` + courses.map((course) => {
+      const value = adminItemId(course);
+      return `<option value="${escapeHTML(value)}">${escapeHTML(course.title || course.name || "Course")}</option>`;
+    }).join("");
+    if (current) select.value = current;
   }
-}
 
-async function loadAdminUsers() {
-  try {
-    const data = await adminRequest("/api/admin/users");
-    const users = getList(data, ["users"]);
-    renderAdminList("adminUsersList", users, "user");
-    updateAdminStats("users", users.length);
-  } catch {
-    renderAdminList("adminUsersList", [], "user");
-  }
-}
-
-function fillSpecSelect(id, specializations) {
-  const select = document.getElementById(id);
-  if (!select) return;
-
-  select.innerHTML = `<option value="">Select specialization</option>`;
-
-  specializations.forEach(spec => {
-    const value = spec.specialization_id || spec.id;
-    const name = spec.name || spec.title || "Specialization";
-
-    select.innerHTML += `<option value="${value}">${name}</option>`;
-  });
-}
-
-function fillCourseSelect(id, courses) {
-  const select = document.getElementById(id);
-  if (!select) return;
-
-  select.innerHTML = `<option value="">Select course</option>`;
-
-  courses.forEach(course => {
-    const value = course.course_id || course.id;
-    const title = course.title || course.name || "Course";
-
-    select.innerHTML += `<option value="${value}">${title}</option>`;
-  });
-}
-
-function renderAdminList(id, items, type) {
-  const box = document.getElementById(id);
-  if (!box) return;
-
-  if (!items.length) {
-    box.innerHTML = `
-      <article class="admin-row">
-        <div>
-          <strong>No ${type}s yet</strong>
-          <span>Add one using the form above.</span>
-        </div>
+  function updateAdminStats(type, count) {
+    const box = document.getElementById("adminStatsBox");
+    if (!box) return;
+    const current = box.dataset.stats ? JSON.parse(box.dataset.stats) : {};
+    current[type] = count;
+    box.dataset.stats = JSON.stringify(current);
+    const labels = {
+      specializations: "Specializations",
+      courses: "Courses",
+      quizzes: "Quizzes",
+      jobs: "Jobs",
+      certificates: "Certificates",
+      users: "Users",
+    };
+    box.innerHTML = Object.entries(labels).map(([key, label]) => `
+      <article class="card stat-card admin-stat-tile">
+        <span>${escapeHTML(label)}</span>
+        <strong>${escapeHTML(current[key] ?? 0)}</strong>
       </article>
-    `;
-    return;
+    `).join("");
   }
 
-  box.innerHTML = items.map(item => {
-    const itemId =
-      item.id ||
-      item.specialization_id ||
-      item.course_id ||
-      item.quiz_id ||
-      item.job_id ||
-      item.certificate_id ||
-      item.user_id;
+  function renderAdminList(id, items, type) {
+    const box = document.getElementById(id);
+    if (!box) return;
+    if (!items.length) {
+      box.innerHTML = `
+        <article class="admin-row">
+          <div>
+            <strong>No ${escapeHTML(type)}s yet</strong>
+            <span>Add one using the form above.</span>
+          </div>
+        </article>
+      `;
+      return;
+    }
 
-    const title =
-      item.title ||
-      item.name ||
-      item.full_name ||
-      item.email ||
-      `${type} #${itemId}`;
+    box.innerHTML = items.map((item) => {
+      const itemId = adminItemId(item);
+      const title = adminItemTitle(item, type);
+      const subtitle = adminItemSubtitle(item);
+      return `
+        <article class="admin-row">
+          <div>
+            <strong>${escapeHTML(title)}</strong>
+            <span>${escapeHTML(subtitle)}</span>
+          </div>
+          <div class="row-actions">
+            ${type !== "user" ? `<button type="button" class="btn btn-mini btn-secondary" data-admin-edit="${escapeHTML(type)}" data-admin-id="${escapeHTML(itemId)}">Edit</button>` : userButtons(item)}
+            ${type !== "user" ? `<button type="button" class="btn btn-mini btn-danger" data-admin-delete="${escapeHTML(type)}" data-admin-id="${escapeHTML(itemId)}">Delete</button>` : ""}
+          </div>
+        </article>
+      `;
+    }).join("");
 
-    const subtitle =
-      item.description ||
-      item.specialization_name ||
-      item.role ||
-      item.level ||
-      item.email ||
-      "";
+    $all("[data-admin-edit]", box).forEach((btn) => {
+      btn.addEventListener("click", () => openAdminEditModal(btn.dataset.adminEdit, btn.dataset.adminId));
+    });
+    $all("[data-admin-delete]", box).forEach((btn) => {
+      btn.addEventListener("click", () => deleteAdminItem(btn.dataset.adminDelete, btn.dataset.adminId));
+    });
+    $all("[data-admin-user-action]", box).forEach((btn) => {
+      btn.addEventListener("click", () => adminUserAction(btn.dataset.adminUserAction, btn.dataset.adminId));
+    });
+  }
 
+  function userButtons(user) {
+    const id = adminItemId(user) || user.id;
+    const banned = Number(user?.banned || user?.is_banned || 0) === 1;
+    const role = String(user?.role || "student").toLowerCase();
     return `
-      <article class="admin-row">
-        <div>
-          <strong>${escapeHtml(title)}</strong>
-          <span>${escapeHtml(subtitle)}</span>
-        </div>
-        <div class="row-actions">
-          ${type !== "user" ? `<button type="button" class="btn btn-mini btn-secondary" onclick="openAdminEditModal('${type}', '${itemId}')">Edit</button>` : ""}
-          ${type !== "user" ? `<button type="button" class="btn btn-mini btn-danger" onclick="deleteAdminItem('${type}', '${itemId}')">Delete</button>` : ""}
-        </div>
-      </article>
+      <button type="button" class="btn btn-mini btn-secondary" data-admin-user-action="${banned ? "unban" : "ban"}" data-admin-id="${escapeHTML(id)}">${banned ? "Unban" : "Ban"}</button>
+      <button type="button" class="btn btn-mini btn-secondary" data-admin-user-action="${role === "admin" ? "student" : "admin"}" data-admin-id="${escapeHTML(id)}">Make ${role === "admin" ? "Student" : "Admin"}</button>
     `;
-  }).join("");
-}
+  }
 
-function setupAdminForms() {
-  const specForm = document.getElementById("adminSpecializationForm");
-  if (specForm) {
-    specForm.addEventListener("submit", async e => {
-      e.preventDefault();
+  async function adminUserAction(action, userId) {
+    try {
+      if (!userId) return;
+      if (action === "ban" || action === "unban") {
+        await adminRequest(`/api/admin/users/${userId}/${action}`, { method: "POST", body: {} });
+      } else {
+        await adminRequest(`/api/admin/users/${userId}/role`, { method: "POST", body: { role: action } });
+      }
+      showAdminMessage("User updated successfully.");
+      await loadAdminUsers();
+    } catch (err) {
+      showAdminMessage(err.message, "error");
+    }
+  }
 
+  function adminFormPayload(form, type) {
+    const hasFile = Boolean($("input[type='file']", form));
+    if (hasFile) {
+      const fd = new FormData(form);
+      if (fd.get("spec_id") && !fd.get("specialization_id")) fd.append("specialization_id", fd.get("spec_id"));
+      return fd;
+    }
+    const fd = new FormData(form);
+    const data = Object.fromEntries(fd.entries());
+    if (data.spec_id && !data.specialization_id) data.specialization_id = data.spec_id;
+    if (type === "job") {
+      data.required_skills = data.required_skills || data.skills || "";
+      data.average_salary = data.average_salary || data.salary || "";
+      data.job_link = data.job_link || data.link || "";
+    }
+    if (type === "certificate") {
+      data.official_link = data.official_link || data.link || "";
+    }
+    if (type === "quiz") {
+      const raw = String(data.questions_json || "").trim();
+      if (raw) {
+        data.questions = JSON.parse(raw);
+      }
+    }
+    return data;
+  }
+
+  function setupOneAdminForm(formId, type) {
+    const form = document.getElementById(formId);
+    if (!form || form.dataset.adminCrudBound === "1") return;
+    form.dataset.adminCrudBound = "1";
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
       try {
-        const formData = new FormData(specForm);
-        await adminRequest("/api/admin/specializations", {
-          method: "POST",
-          body: formData
-        });
-
-        specForm.reset();
-        showAdminMessage("Specialization saved successfully.");
-        await loadAdminSpecializations();
+        const payload = adminFormPayload(form, type);
+        const result = await adminRequest(adminEndpoint(type), { method: "POST", body: payload });
+        form.reset();
+        showAdminMessage(result.message || "Saved successfully.");
+        await loadAdminData();
       } catch (err) {
-        showAdminMessage(err.message, "error");
+        showAdminMessage(err.message || "Save failed.", "error");
       }
     });
   }
 
-  const courseForm = document.getElementById("adminCourseForm");
-  if (courseForm) {
-    courseForm.addEventListener("submit", async e => {
-      e.preventDefault();
-
-      try {
-        const formData = new FormData(courseForm);
-
-        if (formData.get("spec_id")) {
-          formData.append("specialization_id", formData.get("spec_id"));
-        }
-
-        await adminRequest("/api/admin/courses", {
-          method: "POST",
-          body: formData
-        });
-
-        courseForm.reset();
-        showAdminMessage("Course saved successfully.");
-        await loadAdminCourses();
-      } catch (err) {
-        showAdminMessage(err.message, "error");
-      }
-    });
+  function setupAdminForms() {
+    setupOneAdminForm("adminSpecializationForm", "specialization");
+    setupOneAdminForm("adminCourseForm", "course");
+    setupOneAdminForm("adminQuizForm", "quiz");
+    setupOneAdminForm("adminJobForm", "job");
+    setupOneAdminForm("adminCertificateForm", "certificate");
   }
 
-  const quizForm = document.getElementById("adminQuizForm");
-  if (quizForm) {
-    quizForm.addEventListener("submit", async e => {
-      e.preventDefault();
-
-      try {
-        const form = new FormData(quizForm);
-        let questions = [];
-
-        const rawQuestions = form.get("questions_json");
-
-        if (rawQuestions && rawQuestions.trim()) {
-          questions = JSON.parse(rawQuestions);
-        }
-
-        await adminRequest("/api/admin/quizzes", {
-          method: "POST",
-          body: JSON.stringify({
-            title: form.get("title"),
-            course_id: form.get("course_id"),
-            description: form.get("description"),
-            questions,
-            questions_json: JSON.stringify(questions)
-          })
-        });
-
-        quizForm.reset();
-        showAdminMessage("Quiz saved successfully.");
-        await loadAdminQuizzes();
-      } catch (err) {
-        showAdminMessage("Quiz not saved. Check the questions JSON.", "error");
-      }
-    });
+  async function loadAdminData() {
+    await Promise.allSettled([
+      loadAdminSpecializations(),
+      loadAdminCourses(),
+      loadAdminJobs(),
+      loadAdminCertificates(),
+      loadAdminQuizzes(),
+      loadAdminUsers(),
+    ]);
   }
 
-  const jobForm = document.getElementById("adminJobForm");
-  if (jobForm) {
-    jobForm.addEventListener("submit", async e => {
-      e.preventDefault();
-
-      try {
-        const form = new FormData(jobForm);
-
-        await adminRequest("/api/admin/jobs", {
-          method: "POST",
-          body: JSON.stringify({
-            title: form.get("title"),
-            specialization_id: form.get("specialization_id"),
-            description: form.get("description"),
-            required_skills: form.get("skills"),
-            skills: form.get("skills"),
-            salary: form.get("salary"),
-            link: form.get("link")
-          })
-        });
-
-        jobForm.reset();
-        showAdminMessage("Job saved successfully.");
-        await loadAdminJobs();
-      } catch (err) {
-        showAdminMessage(err.message, "error");
-      }
-    });
+  async function loadAdminSpecializations() {
+    try {
+      const data = await adminRequest("/api/admin/specializations");
+      const specializations = getList(data, ["specializations"]);
+      adminState.specializations = specializations;
+      fillSpecSelect("adminCourseSpecSelect", specializations);
+      fillSpecSelect("adminJobSpecSelect", specializations);
+      fillSpecSelect("adminCertificateSpecSelect", specializations);
+      renderAdminList("adminSpecializationsList", specializations, "specialization");
+      updateAdminStats("specializations", specializations.length);
+    } catch (err) {
+      renderAdminList("adminSpecializationsList", [], "specialization");
+      showAdminMessage(err.message, "error");
+    }
   }
 
-  const certificateForm = document.getElementById("adminCertificateForm");
-  if (certificateForm) {
-    certificateForm.addEventListener("submit", async e => {
-      e.preventDefault();
-
-      try {
-        const form = new FormData(certificateForm);
-
-        await adminRequest("/api/admin/certificates", {
-          method: "POST",
-          body: JSON.stringify({
-            name: form.get("name"),
-            specialization_id: form.get("spec_id"),
-            spec_id: form.get("spec_id"),
-            description: form.get("description"),
-            link: form.get("link"),
-            price: form.get("price"),
-            type: form.get("type")
-          })
-        });
-
-        certificateForm.reset();
-        showAdminMessage("Certificate saved successfully.");
-        await loadAdminCertificates();
-      } catch (err) {
-        showAdminMessage(err.message, "error");
-      }
-    });
+  async function loadAdminCourses() {
+    try {
+      const data = await adminRequest("/api/admin/courses");
+      const courses = getList(data, ["courses"]);
+      adminState.courses = courses;
+      fillCourseSelect("adminQuizCourseSelect", courses);
+      renderAdminList("adminCoursesList", courses, "course");
+      updateAdminStats("courses", courses.length);
+    } catch (err) {
+      renderAdminList("adminCoursesList", [], "course");
+      showAdminMessage(err.message, "error");
+    }
   }
-}
 
-function updateAdminStats(type, count) {
-  const box = document.getElementById("adminStatsBox");
-  if (!box) return;
+  async function loadAdminJobs() {
+    try {
+      const data = await adminRequest("/api/admin/jobs");
+      const jobs = getList(data, ["jobs"]);
+      adminState.jobs = jobs;
+      renderAdminList("adminJobsList", jobs, "job");
+      updateAdminStats("jobs", jobs.length);
+    } catch (err) {
+      renderAdminList("adminJobsList", [], "job");
+    }
+  }
 
-  const current = box.dataset.stats ? JSON.parse(box.dataset.stats) : {};
-  current[type] = count;
-  box.dataset.stats = JSON.stringify(current);
+  async function loadAdminCertificates() {
+    try {
+      const data = await adminRequest("/api/admin/certificates");
+      const certificates = getList(data, ["certificates", "certifications"]);
+      adminState.certificates = certificates;
+      renderAdminList("adminCertificatesList", certificates, "certificate");
+      updateAdminStats("certificates", certificates.length);
+    } catch (err) {
+      renderAdminList("adminCertificatesList", [], "certificate");
+    }
+  }
 
-  const labels = {
-    specializations: "Specializations",
-    courses: "Courses",
-    quizzes: "Quizzes",
-    jobs: "Jobs",
-    certificates: "Certificates",
-    users: "Users"
-  };
+  async function loadAdminQuizzes() {
+    try {
+      const data = await adminRequest("/api/admin/quizzes");
+      const quizzes = getList(data, ["quizzes"]);
+      adminState.quizzes = quizzes;
+      renderAdminList("adminQuizzesList", quizzes, "quiz");
+      updateAdminStats("quizzes", quizzes.length);
+    } catch (err) {
+      renderAdminList("adminQuizzesList", [], "quiz");
+    }
+  }
 
-  box.innerHTML = Object.entries(labels).map(([key, label]) => `
-    <article class="card stat-card">
-      <span>${label}</span>
-      <strong>${current[key] ?? 0}</strong>
-    </article>
-  `).join("");
-}
+  async function loadAdminUsers() {
+    try {
+      const data = await adminRequest("/api/admin/users");
+      const users = getList(data, ["users"]);
+      adminState.users = users;
+      renderAdminList("adminUsersList", users, "user");
+      updateAdminStats("users", users.length);
+    } catch (err) {
+      renderAdminList("adminUsersList", [], "user");
+    }
+  }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+  function findAdminItem(type, id) {
+    const list = adminState[adminPlural(type)] || [];
+    return list.find((item) => String(adminItemId(item)) === String(id)) || null;
+  }
 
-function openAdminEditModal(type, id) {
-  showAdminMessage(`Edit ${type} #${id} clicked. Connect this to your edit API if needed.`, "success");
-}
+  function editFieldHTML(field, item, type) {
+    const name = field.name;
+    const value = field.value ?? item?.[name] ?? item?.[field.alt] ?? "";
+    if (field.kind === "textarea") {
+      return `<label>${escapeHTML(field.label)}<textarea name="${escapeHTML(name)}">${escapeHTML(value)}</textarea></label>`;
+    }
+    if (field.kind === "select" && field.source === "specializations") {
+      const current = value || item?.spec_id || item?.specialization_id;
+      return `<label>${escapeHTML(field.label)}<select name="${escapeHTML(name)}"><option value="">Select specialization</option>${adminState.specializations.map((spec) => {
+        const id = adminItemId(spec);
+        return `<option value="${escapeHTML(id)}" ${String(id) === String(current) ? "selected" : ""}>${escapeHTML(spec.name || spec.title || "Specialization")}</option>`;
+      }).join("")}</select></label>`;
+    }
+    if (field.kind === "select" && field.source === "courses") {
+      const current = value || item?.course_id;
+      return `<label>${escapeHTML(field.label)}<select name="${escapeHTML(name)}"><option value="">Select course</option>${adminState.courses.map((course) => {
+        const id = adminItemId(course);
+        return `<option value="${escapeHTML(id)}" ${String(id) === String(current) ? "selected" : ""}>${escapeHTML(course.title || course.name || "Course")}</option>`;
+      }).join("")}</select></label>`;
+    }
+    if (field.kind === "select") {
+      return `<label>${escapeHTML(field.label)}<select name="${escapeHTML(name)}">${field.options.map((option) => `<option value="${escapeHTML(option.value)}" ${String(option.value).toLowerCase() === String(value).toLowerCase() ? "selected" : ""}>${escapeHTML(option.label)}</option>`).join("")}</select></label>`;
+    }
+    if (field.kind === "file") {
+      return `<label>${escapeHTML(field.label)}<input type="file" name="${escapeHTML(name)}" accept="${escapeHTML(field.accept || "*")}"></label>`;
+    }
+    return `<label>${escapeHTML(field.label)}<input name="${escapeHTML(name)}" value="${escapeHTML(value)}"></label>`;
+  }
 
-function closeAdminEditModal() {
-  const modal = document.getElementById("adminEditModal");
-  if (modal) modal.classList.add("hidden");
-}
+  function editFields(type, item) {
+    const commonText = (name, label, alt = "") => ({ name, label, alt, kind: "textarea" });
+    const commonInput = (name, label, alt = "") => ({ name, label, alt, kind: "input" });
+    const specSelect = { name: "specialization_id", label: "Specialization", source: "specializations", kind: "select" };
+    const courseSelect = { name: "course_id", label: "Course", source: "courses", kind: "select" };
+    const levelSelect = { name: "level", label: "Level", kind: "select", options: [
+      { value: "beginner", label: "Beginner" },
+      { value: "intermediate", label: "Intermediate" },
+      { value: "advanced", label: "Advanced" },
+    ] };
+    const typeSelect = { name: "type", label: "Type", kind: "select", options: [
+      { value: "both", label: "Both" },
+      { value: "practical", label: "Practical" },
+      { value: "theoretical", label: "Theoretical" },
+    ] };
 
-async function deleteAdminItem(type, id) {
-  const confirmDelete = confirm(`Delete this ${type}?`);
-  if (!confirmDelete) return;
+    const map = {
+      specialization: [
+        commonInput("name", "Name"),
+        commonText("description", "Description"),
+        commonText("skills", "Skills"),
+        commonText("roadmap", "Roadmap"),
+        commonText("career_paths", "Career paths"),
+        { name: "image", label: "Replace image", kind: "file", accept: "image/*" },
+      ],
+      course: [
+        commonInput("title", "Course title", "name"),
+        specSelect,
+        commonText("description", "Description"),
+        levelSelect,
+        commonInput("link", "Course link", "course_link"),
+        { name: "image", label: "Replace image", kind: "file", accept: "image/*" },
+        { name: "video", label: "Replace video", kind: "file", accept: "video/*" },
+      ],
+      quiz: [
+        commonInput("title", "Quiz title", "name"),
+        courseSelect,
+        commonText("description", "Description"),
+        commonText("questions_json", "Questions JSON"),
+      ],
+      job: [
+        commonInput("title", "Job title"),
+        specSelect,
+        commonText("description", "Description"),
+        commonText("skills", "Required skills", "required_skills"),
+        commonInput("salary", "Average salary", "average_salary"),
+        commonInput("link", "Job link", "job_link"),
+      ],
+      certificate: [
+        commonInput("name", "Certificate name"),
+        specSelect,
+        commonText("description", "Description"),
+        commonInput("link", "Certificate link", "official_link"),
+        commonInput("price", "Price"),
+        typeSelect,
+      ],
+    };
 
-  const endpoints = {
-    specialization: `/api/admin/specializations/${id}`,
-    course: `/api/admin/courses/${id}`,
-    quiz: `/api/admin/quizzes/${id}`,
-    job: `/api/admin/jobs/${id}`,
-    certificate: `/api/admin/certificates/${id}`
-  };
+    return (map[type] || []).map((field) => editFieldHTML(field, item, type)).join("");
+  }
 
-  try {
-    await adminRequest(endpoints[type], {
-      method: "DELETE"
-    });
+  function ensureAdminModal() {
+    let modal = document.getElementById("adminEditModal");
+    if (modal) return modal;
+    modal = document.createElement("div");
+    modal.id = "adminEditModal";
+    modal.className = "admin-modal hidden";
+    modal.innerHTML = `
+      <div class="admin-modal-backdrop" data-close-admin-modal></div>
+      <div class="admin-modal-panel color-card">
+        <button type="button" class="admin-modal-close" data-close-admin-modal>&times;</button>
+        <h2 id="adminEditTitle">Edit</h2>
+        <form id="adminEditForm" class="stack-form"></form>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    $all("[data-close-admin-modal]", modal).forEach((el) => el.addEventListener("click", closeAdminEditModal));
+    return modal;
+  }
 
-    showAdminMessage(`${type} deleted successfully.`);
+  function openAdminEditModal(type, id) {
+    const item = findAdminItem(type, id);
+    if (!item) {
+      showAdminMessage(`Could not find ${type} #${id} in the loaded admin list.`, "error");
+      return;
+    }
+    const modal = ensureAdminModal();
+    const form = document.getElementById("adminEditForm");
+    document.getElementById("adminEditTitle").textContent = `Edit ${type}`;
+    form.innerHTML = editFields(type, item) + `
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-close-admin-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    `;
+    form.dataset.type = type;
+    form.dataset.id = id;
+    $("[data-close-admin-modal]", form)?.addEventListener("click", closeAdminEditModal);
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      try {
+        const payload = adminFormPayload(form, type);
+        const result = await adminRequest(adminEndpoint(type, id), { method: "PUT", body: payload });
+        closeAdminEditModal();
+        showAdminMessage(result.message || "Updated successfully.");
+        await loadAdminData();
+      } catch (err) {
+        showAdminMessage(err.message || "Update failed.", "error");
+      }
+    };
+    modal.classList.remove("hidden");
+  }
+
+  function closeAdminEditModal() {
+    const modal = document.getElementById("adminEditModal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  async function deleteAdminItem(type, id) {
+    if (!id) {
+      showAdminMessage("Missing item ID.", "error");
+      return;
+    }
+    if (!confirm(`Delete this ${type}?`)) return;
+    try {
+      const result = await adminRequest(adminEndpoint(type, id), { method: "DELETE" });
+      showAdminMessage(result.message || "Deleted successfully.");
+      await loadAdminData();
+    } catch (err) {
+      showAdminMessage(err.message || "Delete failed.", "error");
+    }
+  }
+
+  async function initAdminPage() {
+    if (document.body.dataset.page !== "admin" && !pageName.includes("admin")) return;
+    requireAdmin();
+    setupAdminTabs();
+    setupAdminForms();
     await loadAdminData();
-  } catch (err) {
-    showAdminMessage(err.message, "error");
   }
-}
+
+  document.addEventListener("DOMContentLoaded", initAdminPage);
+
+  window.initAdminPage = initAdminPage;
+  window.openAdminEditModal = openAdminEditModal;
+  window.closeAdminEditModal = closeAdminEditModal;
+  window.deleteAdminItem = deleteAdminItem;
   window.navbar = navbar;
   window.requireLogin = requireLogin;
   window.requireAdmin = requireAdmin;

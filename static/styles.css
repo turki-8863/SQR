@@ -5161,3 +5161,90 @@ body[data-page="specializations"]:not(.details-mode) #specializationGrid .sqr-ca
     max-width: 100% !important;
   }
 }
+
+/* Admin CRUD compatibility patch */
+.admin-modal.hidden { display: none; }
+.admin-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.admin-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(8px);
+}
+.admin-modal-panel {
+  position: relative;
+  width: min(760px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: 26px;
+  padding: 26px;
+  box-shadow: 0 30px 90px rgba(2, 6, 23, 0.35);
+}
+.admin-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  border: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.8);
+}
+.modal-actions,
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.admin-row > div:first-child {
+  min-width: 0;
+}
+.admin-row strong,
+.admin-row span {
+  display: block;
+}
+.admin-row span {
+  overflow-wrap: anywhere;
+}
+.btn-mini,
+.btn.btn-mini {
+  padding: 8px 12px;
+  min-height: 34px;
+  font-size: 0.82rem;
+  border-radius: 999px;
+}
+.admin-stat-tile strong {
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+}
+@media (max-width: 720px) {
+  .admin-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .row-actions,
+  .modal-actions {
+    justify-content: flex-start;
+  }
+  .admin-modal-panel {
+    padding: 20px;
+  }
+}
