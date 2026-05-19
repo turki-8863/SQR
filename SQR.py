@@ -1474,59 +1474,34 @@ def get_specializations():
     })
 
 
-@app.route("/api/specializations/<int:spec_id>", methods=["GET"])
-def get_specialization(spec_id):
+@app.route("/api/specializations", methods=["GET"])
+def get_specializations():
     try:
-        spec = fetch_specialization_by_any_id(spec_id)
-        if not spec:
-            return jsonify({"error": "Specialization not found"}), 404
-        real_spec_id = safe_int(spec.get("id"), spec_id)
-
-        courses = query_db(
+        rows = query_db(
             """
-            SELECT c.*, s.name AS specialization_name
-            FROM courses c
-            LEFT JOIN specializations s ON s.id=COALESCE(c.spec_id, c.specialization_id)
-            WHERE c.spec_id=%s OR c.specialization_id=%s
-            ORDER BY c.id DESC
+            SELECT
+                specialization_id,
+                name,
+                description,
+                image_url,
+                created_at
+            FROM specialization
+            ORDER BY specialization_id DESC
             """,
-            (real_spec_id, real_spec_id),
-            fetchall=True
-        ) or []
-
-        jobs = query_db(
-            """
-            SELECT j.*, s.name AS specialization_name
-            FROM jobs j
-            LEFT JOIN specializations s ON s.id=j.specialization_id
-            WHERE j.specialization_id=%s OR j.specialization=%s
-            ORDER BY j.id DESC
-            """,
-            (real_spec_id, spec.get("name")),
             fetchall=True
         ) or []
 
         return jsonify({
-            "specialization": normalize_specialization(spec),
-            "courses": [normalize_course(row) for row in courses],
-            "jobs": [normalize_job(row) for row in jobs]
+            "success": True,
+            "specializations": rows
         }), 200
+
     except Exception as e:
-        print("GET /api/specializations/<id> ERROR:", e)
-        return jsonify({"error": "Server error", "details": str(e)}), 500
-
-
-def get_logged_user_id():
-    user = getattr(request, "current_user", None)
-    if isinstance(user, dict):
-        return row_value(user, "id", "user_id")
-    user_id = getattr(request, "user_id", None)
-    if user_id:
-        return user_id
-    user_data = getattr(request, "user", None)
-    if isinstance(user_data, dict):
-        return row_value(user_data, "id", "user_id")
-    return None
+        print("GET SPECIALIZATIONS ERROR:", e)
+        return jsonify({
+            "success": False,
+            "error": "Failed to load specializations"
+        }), 500
 
 
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
