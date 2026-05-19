@@ -8,13 +8,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260519-adminfix">
+<script defer src="{{ url_for('static', filename='app.js') }}?v=20260519-adminfix"></script>
 </head>
 <body class="page-body admin-body colorful-page" data-page="admin">
   <main class="page-shell admin-shell">
     <div id="message" class="message-holder"></div>
-    <section class="page-hero compact-hero gradient-admin"><div><span class="eyebrow">Admin Dashboard</span><h1>Manage the dynamic SQR website.</h1><p>Admins add content, upload media, manage users, and keep the student pages database-driven.</p></div><button type="button" class="btn btn-light" data-switch-mode="student">Switch to Student Mode</button></section>
+    <section class="page-hero compact-hero gradient-admin"><div><span class="eyebrow">Admin Dashboard</span><h1>Manage SQR website.</h1></div></section>
     <section id="adminStatsBox" class="admin-stats grid cards-6"><article class="card skeleton-card"><div class="skeleton-line wide"></div></article></section>
     <section class="admin-layout section-block">
       <aside class="admin-menu color-card">
