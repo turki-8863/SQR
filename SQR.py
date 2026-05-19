@@ -346,8 +346,9 @@ def fetch_specialization_by_any_id(spec_id):
     spec_id = safe_int(spec_id, None)
     if not spec_id:
         return None
-    condition, count = _condition_for_existing_columns("specializations", "s", ["id", "specialization_id"])
-    return query_db(f"SELECT s.* FROM specializations s WHERE {condition} LIMIT 1", tuple([spec_id] * count), fetchone=True)
+    table = admin_spec_table()
+    condition, cols = where_existing_id(table, "s", ["id", "specialization_id", "spec_id"])
+    return query_db(f"SELECT s.* FROM `{table}` s WHERE {condition} LIMIT 1", tuple([spec_id] * len(cols)), fetchone=True)
 
 
 def fetch_course_by_any_id(course_id):
@@ -368,6 +369,102 @@ def fetch_quiz_by_any_id(quiz_id):
 
 def real_id(row):
     return safe_int(row_value(row or {}, "id", "specialization_id", "course_id", "quiz_id", "job_id"), None)
+
+
+def existing_table(*names):
+    """Return the first existing table from a compatibility list."""
+    for name in names:
+        try:
+            if table_exists(name):
+                return name
+        except Exception:
+            continue
+    return names[0]
+
+
+def existing_pk(table_name, candidates):
+    existing = table_column_names(table_name)
+    for column in candidates:
+        if column in existing:
+            return column
+    return candidates[0]
+
+
+def existing_columns(table_name, candidates):
+    existing = table_column_names(table_name)
+    return [column for column in candidates if column in existing]
+
+
+def coalesce_existing(alias, table_name, candidates, fallback="NULL"):
+    cols = existing_columns(table_name, candidates)
+    refs = [f"{alias}.`{column}`" for column in cols]
+    if not refs:
+        return fallback
+    if len(refs) == 1:
+        return refs[0]
+    return "COALESCE(" + ", ".join(refs) + ")"
+
+
+def where_existing_id(table_name, alias, candidates):
+    cols = existing_columns(table_name, candidates)
+    if not cols:
+        cols = [candidates[0]]
+    prefix = f"{alias}." if alias else ""
+    condition = " OR ".join([f"{prefix}`{column}`=%s" for column in cols])
+    return "(" + condition + ")", cols
+
+
+def admin_insert_dynamic(table_name, payload):
+    clean = {}
+    existing = table_column_names(table_name)
+    for key, value in (payload or {}).items():
+        if key in existing:
+            clean[key] = value
+    if not clean:
+        raise ValueError(f"No matching columns found for {table_name}")
+    columns = list(clean.keys())
+    placeholders = ",".join(["%s"] * len(columns))
+    column_sql = ",".join([f"`{column}`" for column in columns])
+    return query_db(
+        f"INSERT INTO `{table_name}` ({column_sql}) VALUES ({placeholders})",
+        tuple(clean[column] for column in columns),
+        commit=True
+    )
+
+
+def admin_update_dynamic(table_name, item_id, id_candidates, payload):
+    existing = table_column_names(table_name)
+    clean = {}
+    for key, value in (payload or {}).items():
+        if key in existing:
+            clean[key] = value
+    if not clean:
+        raise ValueError(f"No matching columns found for {table_name}")
+    set_sql = ", ".join([f"`{column}`=%s" for column in clean.keys()])
+    where_sql, cols = where_existing_id(table_name, "", id_candidates)
+    params = list(clean.values()) + [item_id] * len(cols)
+    query_db(f"UPDATE `{table_name}` SET {set_sql} WHERE {where_sql}", tuple(params), commit=True)
+
+
+def admin_delete_dynamic(table_name, item_id, id_candidates):
+    where_sql, cols = where_existing_id(table_name, "", id_candidates)
+    query_db(f"DELETE FROM `{table_name}` WHERE {where_sql}", tuple([item_id] * len(cols)), commit=True)
+
+
+def admin_order_sql(table_name, candidates):
+    return f"`{existing_pk(table_name, candidates)}` DESC"
+
+
+def admin_spec_table():
+    return existing_table("specializations", "specialization")
+
+
+def normalize_inserted_image(data):
+    return save_file("image") or safe_text(data.get("image") or data.get("image_url"))
+
+
+def normalize_inserted_video(data):
+    return save_file("video") or safe_text(data.get("video") or data.get("video_url"))
 
 
 def specialization_filter_sql(alias="c"):
@@ -548,9 +645,17 @@ def save_file(field_name):
 
 
 def request_data():
-    if request.content_type and "multipart/form-data" in request.content_type:
-        return dict(request.form)
-    return get_json()
+    """Read JSON, multipart FormData, and normal HTML forms safely."""
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+    data = {}
+    try:
+        data.update(request.form.to_dict(flat=True))
+    except Exception:
+        pass
+    if data:
+        return data
+    return request.get_json(silent=True) or {}
 
 
 def calculate_match_percentage(profile_text, target_text):
@@ -1016,12 +1121,31 @@ def init_db():
         ],
         "courses": [
             ("spec_id", "INT"),
+            ("name", "VARCHAR(150)"),
+            ("difficulty", "VARCHAR(50)"),
             ("link", "VARCHAR(255)"),
             ("image", "VARCHAR(255)"),
             ("video", "VARCHAR(255)"),
             ("course_link", "VARCHAR(255)"),
             ("video_url", "VARCHAR(255)"),
             ("image_url", "VARCHAR(255)"),
+        ],
+        "jobs": [
+            ("skills", "TEXT"),
+            ("salary", "VARCHAR(100)"),
+            ("link", "VARCHAR(255)"),
+        ],
+        "quizzes": [
+            ("name", "VARCHAR(150)"),
+            ("spec_id", "INT"),
+            ("total_questions", "INT DEFAULT 0"),
+            ("description", "TEXT"),
+        ],
+        "quiz_attempts": [
+            ("course_id", "INT"),
+            ("total", "INT DEFAULT 0"),
+            ("percentage", "DECIMAL(5,2) DEFAULT 0.00"),
+            ("answers_json", "TEXT"),
         ],
         "quiz_questions": [
             ("question", "TEXT"),
@@ -1459,30 +1583,24 @@ def profile_progress():
 
 
 
+@app.route("/api/admin/specializations", methods=["GET"])
 @app.route("/api/specialization", methods=["GET"])
 @app.route("/api/specializations", methods=["GET"])
 def get_specializations():
     try:
-        rows = query_db("""
-            SELECT *
-            FROM specializations
-            ORDER BY specialization_id DESC
-        """, fetchall=True) or []
-
+        table = admin_spec_table()
+        pk = existing_pk(table, ["specialization_id", "id", "spec_id"])
+        rows = query_db(f"SELECT * FROM `{table}` ORDER BY `{pk}` DESC", fetchall=True) or []
+        rows = [normalize_specialization(row) for row in rows]
         return jsonify({
             "ok": True,
-            "success": True,
             "specializations": rows,
             "data": rows
-        }), 200
-
+        })
     except Exception as e:
-        print("GET SPECIALIZATIONS ERROR:", e)
-        return jsonify({
-            "ok": False,
-            "success": False,
-            "error": "Failed to load specializations"
-        }), 500
+        print("GET /api/specializations ERROR:", e)
+        return jsonify({"ok": False, "error": "Failed to load specializations", "details": str(e)}), 500
+
 
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
 @login_required
@@ -1593,231 +1711,212 @@ def unenroll_specialization(spec_id):
 
 
 
+@app.route("/api/admin/specializations", methods=["POST"])
 @app.route("/api/specializations", methods=["POST"])
 @admin_required
 def add_specialization():
     data = request_data()
-    image = save_file("image") or safe_text(data.get("image") or data.get("image_url"))
+    image = normalize_inserted_image(data)
     name = safe_text(data.get("name"))
     if not name:
-        return jsonify({"error": "Specialization name is required"}), 400
-    spec_id = query_db(
-        """
-        INSERT INTO specializations (name, description, roadmap, job_titles, career_paths, skills, image_url, image)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-        """,
-        (
-            name,
-            safe_text(data.get("description")),
-            safe_text(data.get("roadmap")),
-            safe_text(data.get("job_titles")),
-            safe_text(data.get("career_paths")),
-            safe_text(data.get("skills")),
-            image,
-            image,
-        ),
-        commit=True
-    )
-    return jsonify({"message": "Specialization added", "id": spec_id, "specialization_id": spec_id})
+        return jsonify({"ok": False, "error": "Specialization name is required"}), 400
+    table = admin_spec_table()
+    spec_id = admin_insert_dynamic(table, {
+        "name": name,
+        "description": safe_text(data.get("description")),
+        "roadmap": safe_text(data.get("roadmap")),
+        "job_titles": safe_text(data.get("job_titles")),
+        "career_paths": safe_text(data.get("career_paths")),
+        "skills": safe_text(data.get("skills")),
+        "image_url": image,
+        "image": image,
+    })
+    return jsonify({"ok": True, "message": "Specialization added", "id": spec_id, "specialization_id": spec_id})
 
 
 @app.route("/api/admin/specializations/<int:spec_id>", methods=["PUT"])
+@app.route("/api/specializations/<int:spec_id>", methods=["PUT"])
 @admin_required
 def admin_update_specialization(spec_id):
     data = request_data()
-    image = save_file("image") or safe_text(data.get("image") or data.get("image_url"))
+    image = normalize_inserted_image(data)
     name = safe_text(data.get("name"))
     if not name:
-        return jsonify({"error": "Specialization name is required"}), 400
+        return jsonify({"ok": False, "error": "Specialization name is required"}), 400
+    table = admin_spec_table()
+    payload = {
+        "name": name,
+        "description": safe_text(data.get("description")),
+        "roadmap": safe_text(data.get("roadmap")),
+        "job_titles": safe_text(data.get("job_titles")),
+        "career_paths": safe_text(data.get("career_paths")),
+        "skills": safe_text(data.get("skills")),
+    }
+    if image:
+        payload["image_url"] = image
+        payload["image"] = image
+    admin_update_dynamic(table, spec_id, ["id", "specialization_id", "spec_id"], payload)
+    return jsonify({"ok": True, "success": True, "message": "Specialization updated successfully"})
 
-    query_db(
-        """
-        UPDATE specializations
-        SET
-            name=%s,
-            description=%s,
-            roadmap=%s,
-            job_titles=%s,
-            career_paths=%s,
-            skills=%s,
-            image_url=COALESCE(NULLIF(%s,''), image_url),
-            image=COALESCE(NULLIF(%s,''), image)
-        WHERE id=%s OR specialization_id=%s
-        """,
-        (
-            name,
-            safe_text(data.get("description")),
-            safe_text(data.get("roadmap")),
-            safe_text(data.get("job_titles")),
-            safe_text(data.get("career_paths")),
-            safe_text(data.get("skills")),
-            image,
-            image,
-            spec_id,
-            spec_id,
-        ),
-        commit=True
-    )
-    return jsonify({"success": True, "message": "Specialization updated successfully"})
-    
+
+@app.route("/api/admin/specializations/<int:spec_id>", methods=["DELETE"])
 @app.route("/api/specializations/<int:spec_id>", methods=["DELETE"])
 @admin_required
 def delete_specialization(spec_id):
-    exec_db("DELETE FROM specializations WHERE id=%s OR specialization_id=%s", (spec_id, spec_id))
-    return jsonify({"message": "Specialization deleted"})
+    table = admin_spec_table()
+    admin_delete_dynamic(table, spec_id, ["id", "specialization_id", "spec_id"])
+    return jsonify({"ok": True, "message": "Specialization deleted"})
 
 
 
 
 
+@app.route("/api/admin/courses", methods=["GET"])
 @app.route("/api/courses", methods=["GET"])
 def get_courses():
     try:
         search = safe_text(request.args.get("search"))
         spec_id = request.args.get("specialization_id") or request.args.get("spec_id")
-        sql = """
+        spec_table = admin_spec_table()
+        spec_pk = existing_pk(spec_table, ["id", "specialization_id", "spec_id"])
+        course_pk = existing_pk("courses", ["id", "course_id"])
+        course_spec = coalesce_existing("c", "courses", ["spec_id", "specialization_id"], "NULL")
+        searchable = existing_columns("courses", ["title", "name", "description", "level", "difficulty"])
+        sql = f"""
             SELECT c.*, s.name AS specialization_name
             FROM courses c
-            LEFT JOIN specializations s ON s.id=COALESCE(c.spec_id, c.specialization_id)
+            LEFT JOIN `{spec_table}` s ON s.`{spec_pk}`={course_spec}
             WHERE 1=1
         """
         params = []
-        if search:
-            sql += " AND (c.title LIKE %s OR c.name LIKE %s OR c.description LIKE %s OR c.level LIKE %s OR c.difficulty LIKE %s)"
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
-        if spec_id:
-            sql += " AND (c.spec_id=%s OR c.specialization_id=%s)"
-            params.extend([spec_id, spec_id])
-        sql += " ORDER BY c.id DESC"
+        if search and searchable:
+            sql += " AND (" + " OR ".join([f"c.`{col}` LIKE %s" for col in searchable]) + ")"
+            params.extend([f"%{search}%"] * len(searchable))
+        if spec_id and course_spec != "NULL":
+            refs = existing_columns("courses", ["spec_id", "specialization_id"])
+            sql += " AND (" + " OR ".join([f"c.`{col}`=%s" for col in refs]) + ")"
+            params.extend([spec_id] * len(refs))
+        sql += f" ORDER BY c.`{course_pk}` DESC"
         rows = query_db(sql, tuple(params), fetchall=True) or []
-        return jsonify({"courses": [normalize_course(row) for row in rows]}), 200
+        return jsonify({"ok": True, "courses": [normalize_course(row) for row in rows], "data": [normalize_course(row) for row in rows]}), 200
     except Exception as e:
         print("GET /api/courses ERROR:", e)
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        return jsonify({"ok": False, "error": "Server error", "details": str(e)}), 500
 
 
 @app.route("/api/courses/<int:course_id>", methods=["GET"])
 def get_course(course_id):
     try:
+        spec_table = admin_spec_table()
+        spec_pk = existing_pk(spec_table, ["id", "specialization_id", "spec_id"])
+        course_pk = existing_pk("courses", ["id", "course_id"])
+        course_spec = coalesce_existing("c", "courses", ["spec_id", "specialization_id"], "NULL")
+        where_sql, cols = where_existing_id("courses", "c", ["id", "course_id"])
         row = query_db(
-            """
+            f"""
             SELECT c.*, s.name AS specialization_name
             FROM courses c
-            LEFT JOIN specializations s ON s.id=COALESCE(c.spec_id, c.specialization_id)
-            WHERE c.id=%s OR c.course_id=%s
+            LEFT JOIN `{spec_table}` s ON s.`{spec_pk}`={course_spec}
+            WHERE {where_sql}
             LIMIT 1
             """,
-            (course_id, course_id),
+            tuple([course_id] * len(cols)),
             fetchone=True
         )
         if not row:
             return jsonify({"error": "Course not found"}), 404
-        real_course_id = safe_int(row.get("id"), course_id)
-        quizzes = query_db(
-            """
-            SELECT *
-            FROM quizzes
-            WHERE course_id=%s
-            ORDER BY id DESC
-            """,
-            (real_course_id,),
-            fetchall=True
-        ) or []
+        real_course_id = safe_int(row_value(row, course_pk, "id", "course_id"), course_id)
+        quiz_pk = existing_pk("quizzes", ["id", "quiz_id"])
+        quizzes = query_db(f"SELECT * FROM quizzes WHERE course_id=%s ORDER BY `{quiz_pk}` DESC", (real_course_id,), fetchall=True) or []
         return jsonify({"course": normalize_course(row), "quizzes": [normalize_quiz(q) for q in quizzes]}), 200
     except Exception as e:
         print("GET /api/courses/<id> ERROR:", e)
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 
+@app.route("/api/admin/courses", methods=["POST"])
 @app.route("/api/courses", methods=["POST"])
 @admin_required
 def add_course():
     data = request_data()
-    image = save_file("image") or safe_text(data.get("image") or data.get("image_url"))
-    video = save_file("video") or safe_text(data.get("video") or data.get("video_url"))
+    image = normalize_inserted_image(data)
+    video = normalize_inserted_video(data)
     title = safe_text(data.get("title") or data.get("name"))
     spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not title:
-        return jsonify({"error": "Course title is required"}), 400
+        return jsonify({"ok": False, "error": "Course title is required"}), 400
     if not spec_id:
-        return jsonify({"error": "Specialization is required"}), 400
+        return jsonify({"ok": False, "error": "Specialization is required"}), 400
     spec = fetch_specialization_by_any_id(spec_id)
     if not spec:
-        return jsonify({"error": "Specialization not found"}), 404
-    real_spec_id = safe_int(spec.get("id"), spec_id)
+        return jsonify({"ok": False, "error": "Specialization not found"}), 404
+    real_spec_id = safe_int(row_value(spec, "id", "specialization_id", "spec_id"), spec_id)
     level = normalize_level(data.get("level") or data.get("difficulty"))
-    course_id = query_db(
-        """
-        INSERT INTO courses (spec_id, specialization_id, title, name, description, level, difficulty, course_link, link, image_url, image, video_url, video)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """,
-        (
-            real_spec_id,
-            real_spec_id,
-            title,
-            title,
-            safe_text(data.get("description") or data.get("content")),
-            level,
-            level,
-            safe_text(data.get("course_link") or data.get("link")),
-            safe_text(data.get("course_link") or data.get("link")),
-            image,
-            image,
-            video,
-            video,
-        ),
-        commit=True
-    )
-    return jsonify({"message": "Course added", "id": course_id, "course_id": course_id})
+    link = safe_text(data.get("course_link") or data.get("link"))
+    course_id = admin_insert_dynamic("courses", {
+        "spec_id": real_spec_id,
+        "specialization_id": real_spec_id,
+        "title": title,
+        "name": title,
+        "description": safe_text(data.get("description") or data.get("content")),
+        "level": level,
+        "difficulty": level,
+        "course_link": link,
+        "link": link,
+        "image_url": image,
+        "image": image,
+        "video_url": video,
+        "video": video,
+    })
+    return jsonify({"ok": True, "message": "Course added", "id": course_id, "course_id": course_id})
 
 
 @app.route("/api/admin/courses/<int:course_id>", methods=["PUT"])
+@app.route("/api/courses/<int:course_id>", methods=["PUT"])
 @admin_required
 def admin_update_course(course_id):
     data = request_data()
     title = safe_text(data.get("title") or data.get("name"))
     spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not title:
-        return jsonify({"error": "Course title is required"}), 400
+        return jsonify({"ok": False, "error": "Course title is required"}), 400
     if not spec_id:
-        return jsonify({"error": "Specialization is required"}), 400
+        return jsonify({"ok": False, "error": "Specialization is required"}), 400
     spec = fetch_specialization_by_any_id(spec_id)
     if not spec:
-        return jsonify({"error": "Specialization not found"}), 404
-    real_spec_id = safe_int(spec.get("id"), spec_id)
-    image = save_file("image") or safe_text(data.get("image") or data.get("image_url"))
-    video = save_file("video") or safe_text(data.get("video") or data.get("video_url"))
+        return jsonify({"ok": False, "error": "Specialization not found"}), 404
+    real_spec_id = safe_int(row_value(spec, "id", "specialization_id", "spec_id"), spec_id)
+    image = normalize_inserted_image(data)
+    video = normalize_inserted_video(data)
     level = normalize_level(data.get("level") or data.get("difficulty"))
     link = safe_text(data.get("course_link") or data.get("link"))
-    query_db(
-        """
-        UPDATE courses
-        SET title=%s,
-            name=%s,
-            description=%s,
-            specialization_id=%s,
-            spec_id=%s,
-            level=%s,
-            difficulty=%s,
-            course_link=%s,
-            link=%s,
-            image_url=COALESCE(NULLIF(%s,''), image_url),
-            image=COALESCE(NULLIF(%s,''), image),
-            video_url=COALESCE(NULLIF(%s,''), video_url),
-            video=COALESCE(NULLIF(%s,''), video)
-        WHERE id=%s OR course_id=%s
-        """,
-        (title, title, safe_text(data.get("description") or data.get("content")), real_spec_id, real_spec_id, level, level, link, link, image, image, video, video, course_id, course_id),
-        commit=True
-    )
-    return jsonify({"success": True, "message": "Course updated successfully"})
+    payload = {
+        "title": title,
+        "name": title,
+        "description": safe_text(data.get("description") or data.get("content")),
+        "specialization_id": real_spec_id,
+        "spec_id": real_spec_id,
+        "level": level,
+        "difficulty": level,
+        "course_link": link,
+        "link": link,
+    }
+    if image:
+        payload["image_url"] = image
+        payload["image"] = image
+    if video:
+        payload["video_url"] = video
+        payload["video"] = video
+    admin_update_dynamic("courses", course_id, ["id", "course_id"], payload)
+    return jsonify({"ok": True, "success": True, "message": "Course updated successfully"})
 
 
+@app.route("/api/admin/courses/<int:course_id>", methods=["DELETE"])
 @app.route("/api/courses/<int:course_id>", methods=["DELETE"])
 @admin_required
 def delete_course(course_id):
-    exec_db("DELETE FROM courses WHERE id=%s OR course_id=%s", (course_id, course_id))
-    return jsonify({"message": "Course deleted"})
+    admin_delete_dynamic("courses", course_id, ["id", "course_id"])
+    return jsonify({"ok": True, "message": "Course deleted"})
 
 
 @app.route("/api/courses/<int:course_id>/enrollment-status", methods=["GET"])
@@ -1950,61 +2049,71 @@ def open_course(course_id):
 
 
 
+@app.route("/api/admin/quizzes", methods=["GET"])
 @app.route("/api/quizzes", methods=["GET"])
 def get_quizzes():
     course_id = request.args.get("course_id")
-    sql = """
+    course_pk = existing_pk("courses", ["id", "course_id"])
+    quiz_pk = existing_pk("quizzes", ["id", "quiz_id"])
+    sql = f"""
         SELECT q.*, COALESCE(c.title, c.name) AS course_title
         FROM quizzes q
-        LEFT JOIN courses c ON c.id=q.course_id
+        LEFT JOIN courses c ON c.`{course_pk}`=q.course_id
         WHERE 1=1
     """
     params = []
     if course_id:
         sql += " AND q.course_id=%s"
         params.append(course_id)
-    sql += " ORDER BY q.id DESC"
+    sql += f" ORDER BY q.`{quiz_pk}` DESC"
     rows = query_db(sql, tuple(params), fetchall=True) or []
-    return jsonify({"quizzes": [normalize_quiz(row) for row in rows]})
+    return jsonify({"ok": True, "quizzes": [normalize_quiz(row) for row in rows], "data": [normalize_quiz(row) for row in rows]})
 
 
 @app.route("/api/quizzes/<int:quiz_id>", methods=["GET"])
 def get_quiz(quiz_id):
+    course_pk = existing_pk("courses", ["id", "course_id"])
+    where_sql, cols = where_existing_id("quizzes", "q", ["id", "quiz_id"])
     quiz = query_db(
-        """
+        f"""
         SELECT q.*, COALESCE(c.title, c.name) AS course_title
         FROM quizzes q
-        LEFT JOIN courses c ON c.id=q.course_id
-        WHERE q.id=%s OR q.quiz_id=%s
+        LEFT JOIN courses c ON c.`{course_pk}`=q.course_id
+        WHERE {where_sql}
         LIMIT 1
         """,
-        (quiz_id, quiz_id),
+        tuple([quiz_id] * len(cols)),
         fetchone=True
     )
     if not quiz:
         return jsonify({"error": "Quiz not found"}), 404
-    real_quiz_id = safe_int(quiz.get("id"), quiz_id)
-    questions = query_db("SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY id", (real_quiz_id,), fetchall=True) or []
+    real_quiz_id = safe_int(row_value(quiz, "id", "quiz_id"), quiz_id)
+    question_pk = existing_pk("quiz_questions", ["id", "question_id"])
+    questions = query_db(f"SELECT * FROM quiz_questions WHERE quiz_id=%s ORDER BY `{question_pk}`", (real_quiz_id,), fetchall=True) or []
     return jsonify({"quiz": normalize_quiz(quiz), "questions": [normalize_question(row) for row in questions]})
 
 
+@app.route("/api/admin/quizzes", methods=["POST"])
 @app.route("/api/quizzes", methods=["POST"])
 @admin_required
 def add_quiz():
-    data = get_json()
+    data = get_json() if request.is_json else request_data()
     title = safe_text(data.get("title") or data.get("name"))
     course_id = safe_int(data.get("course_id"), None)
     if not title or not course_id:
-        return jsonify({"error": "Quiz title and course are required"}), 400
+        return jsonify({"ok": False, "error": "Quiz title and course are required"}), 400
     course = fetch_course_by_any_id(course_id)
     if not course:
-        return jsonify({"error": "Course not found"}), 404
-    real_course_id = safe_int(course.get("id"), course_id)
-    quiz_id = query_db(
-        "INSERT INTO quizzes (course_id,title,name,description,total_questions,spec_id) VALUES (%s,%s,%s,%s,0,%s)",
-        (real_course_id, title, title, safe_text(data.get("description")), row_value(course, "spec_id", "specialization_id")),
-        commit=True
-    )
+        return jsonify({"ok": False, "error": "Course not found"}), 404
+    real_course_id = safe_int(row_value(course, "id", "course_id"), course_id)
+    quiz_id = admin_insert_dynamic("quizzes", {
+        "course_id": real_course_id,
+        "title": title,
+        "name": title,
+        "description": safe_text(data.get("description")),
+        "total_questions": 0,
+        "spec_id": row_value(course, "spec_id", "specialization_id"),
+    })
     questions = data.get("questions") or []
     if not questions and data.get("questions_json"):
         try:
@@ -2015,8 +2124,10 @@ def add_quiz():
     for q in questions:
         add_question_to_quiz(quiz_id, q)
         count += 1
-    exec_db("UPDATE quizzes SET total_questions=%s WHERE id=%s", (count, quiz_id))
-    return jsonify({"message": "Quiz added", "id": quiz_id, "quiz_id": quiz_id})
+    if column_exists("quizzes", "total_questions"):
+        pk = existing_pk("quizzes", ["id", "quiz_id"])
+        exec_db(f"UPDATE quizzes SET total_questions=%s WHERE `{pk}`=%s", (count, quiz_id))
+    return jsonify({"ok": True, "message": "Quiz added", "id": quiz_id, "quiz_id": quiz_id})
 
 
 def add_question_to_quiz(quiz_id, data):
@@ -2045,18 +2156,63 @@ def add_quiz_question(quiz_id):
     quiz = fetch_quiz_by_any_id(quiz_id)
     if not quiz:
         return jsonify({"error": "Quiz not found"}), 404
-    real_quiz_id = safe_int(quiz.get("id"), quiz_id)
+    real_quiz_id = safe_int(row_value(quiz, "id", "quiz_id"), quiz_id)
     question_id = add_question_to_quiz(real_quiz_id, get_json())
     row = query_db("SELECT COUNT(*) AS total FROM quiz_questions WHERE quiz_id=%s", (real_quiz_id,), fetchone=True) or {"total": 0}
-    exec_db("UPDATE quizzes SET total_questions=%s WHERE id=%s", (safe_int(row.get("total"), 0), real_quiz_id))
-    return jsonify({"message": "Question added", "id": question_id})
+    if column_exists("quizzes", "total_questions"):
+        pk = existing_pk("quizzes", ["id", "quiz_id"])
+        exec_db(f"UPDATE quizzes SET total_questions=%s WHERE `{pk}`=%s", (safe_int(row.get("total"), 0), real_quiz_id))
+    return jsonify({"ok": True, "message": "Question added", "id": question_id})
 
 
+@app.route("/api/admin/quizzes/<int:quiz_id>", methods=["PUT"])
+@app.route("/api/quizzes/<int:quiz_id>", methods=["PUT"])
+@admin_required
+def admin_update_quiz(quiz_id):
+    data = get_json() if request.is_json else request_data()
+    title = safe_text(data.get("title") or data.get("name"))
+    course_id = safe_int(data.get("course_id"), None)
+    if not title:
+        return jsonify({"ok": False, "error": "Quiz title is required"}), 400
+    payload = {
+        "title": title,
+        "name": title,
+        "description": safe_text(data.get("description")),
+    }
+    if course_id:
+        course = fetch_course_by_any_id(course_id)
+        if not course:
+            return jsonify({"ok": False, "error": "Course not found"}), 404
+        payload["course_id"] = safe_int(row_value(course, "id", "course_id"), course_id)
+        payload["spec_id"] = row_value(course, "spec_id", "specialization_id")
+    admin_update_dynamic("quizzes", quiz_id, ["id", "quiz_id"], payload)
+    questions = data.get("questions") or []
+    if not questions and data.get("questions_json"):
+        try:
+            questions = json.loads(data.get("questions_json"))
+        except Exception:
+            questions = []
+    if questions:
+        real_quiz = fetch_quiz_by_any_id(quiz_id)
+        real_quiz_id = safe_int(row_value(real_quiz, "id", "quiz_id"), quiz_id)
+        query_db("DELETE FROM quiz_questions WHERE quiz_id=%s", (real_quiz_id,), commit=True)
+        for q in questions:
+            add_question_to_quiz(real_quiz_id, q)
+        if column_exists("quizzes", "total_questions"):
+            pk = existing_pk("quizzes", ["id", "quiz_id"])
+            exec_db(f"UPDATE quizzes SET total_questions=%s WHERE `{pk}`=%s", (len(questions), real_quiz_id))
+    return jsonify({"ok": True, "success": True, "message": "Quiz updated successfully"})
+
+
+@app.route("/api/admin/quizzes/<int:quiz_id>", methods=["DELETE"])
 @app.route("/api/quizzes/<int:quiz_id>", methods=["DELETE"])
 @admin_required
 def delete_quiz(quiz_id):
-    exec_db("DELETE FROM quizzes WHERE id=%s OR quiz_id=%s", (quiz_id, quiz_id))
-    return jsonify({"message": "Quiz deleted"})
+    quiz = fetch_quiz_by_any_id(quiz_id)
+    real_quiz_id = safe_int(row_value(quiz or {}, "id", "quiz_id"), quiz_id)
+    query_db("DELETE FROM quiz_questions WHERE quiz_id=%s", (real_quiz_id,), commit=True)
+    admin_delete_dynamic("quizzes", quiz_id, ["id", "quiz_id"])
+    return jsonify({"ok": True, "message": "Quiz deleted"})
 
 
 @app.route("/api/quizzes/<int:quiz_id>/submit", methods=["POST"])
@@ -2127,194 +2283,223 @@ def submit_quiz(quiz_id):
 
 
 
+@app.route("/api/admin/jobs", methods=["GET"])
 @app.route("/api/jobs", methods=["GET"])
 def get_jobs():
     try:
         search = safe_text(request.args.get("search"))
         spec_id = request.args.get("specialization_id") or request.args.get("spec_id")
-
-        sql = """
+        spec_table = admin_spec_table()
+        spec_pk = existing_pk(spec_table, ["id", "specialization_id", "spec_id"])
+        job_pk = existing_pk("jobs", ["id", "job_id"])
+        job_spec = coalesce_existing("j", "jobs", ["specialization_id", "spec_id"], "NULL")
+        searchable = existing_columns("jobs", ["title", "description", "required_skills", "skills"])
+        sql = f"""
             SELECT j.*, s.name AS specialization_name
             FROM jobs j
-            LEFT JOIN specializations s 
-                ON s.id = j.specialization_id
+            LEFT JOIN `{spec_table}` s ON s.`{spec_pk}`={job_spec}
             WHERE 1=1
         """
-
         params = []
-
-        if search:
-            sql += """
-                AND (
-                    j.title LIKE %s
-                    OR j.description LIKE %s
-                    OR j.required_skills LIKE %s
-                    OR j.skills LIKE %s
-                )
-            """
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
-
-        if spec_id:
-            sql += " AND j.specialization_id = %s"
-            params.append(spec_id)
-
-        sql += " ORDER BY j.id DESC"
-
+        if search and searchable:
+            sql += " AND (" + " OR ".join([f"j.`{col}` LIKE %s" for col in searchable]) + ")"
+            params.extend([f"%{search}%"] * len(searchable))
+        if spec_id and job_spec != "NULL":
+            refs = existing_columns("jobs", ["specialization_id", "spec_id"])
+            sql += " AND (" + " OR ".join([f"j.`{col}`=%s" for col in refs]) + ")"
+            params.extend([spec_id] * len(refs))
+        sql += f" ORDER BY j.`{job_pk}` DESC"
         rows = query_db(sql, tuple(params), fetchall=True) or []
-
-        return jsonify({
-            "jobs": [normalize_job(row) for row in rows]
-        }), 200
-
+        return jsonify({"ok": True, "jobs": [normalize_job(row) for row in rows], "data": [normalize_job(row) for row in rows]}), 200
     except Exception as e:
         print("GET /api/jobs ERROR:", e)
-        return jsonify({
-            "error": "Server error",
-            "details": str(e)
-        }), 500
+        return jsonify({"ok": False, "error": "Server error", "details": str(e)}), 500
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["GET"])
 def get_job(job_id):
     try:
+        spec_table = admin_spec_table()
+        spec_pk = existing_pk(spec_table, ["id", "specialization_id", "spec_id"])
+        job_spec = coalesce_existing("j", "jobs", ["specialization_id", "spec_id"], "NULL")
+        where_sql, cols = where_existing_id("jobs", "j", ["id", "job_id"])
         row = query_db(
-            """
+            f"""
             SELECT j.*, s.name AS specialization_name
             FROM jobs j
-            LEFT JOIN specializations s 
-                ON s.id = j.specialization_id
-            WHERE j.id = %s OR j.job_id = %s
+            LEFT JOIN `{spec_table}` s ON s.`{spec_pk}`={job_spec}
+            WHERE {where_sql}
+            LIMIT 1
             """,
-            (job_id, job_id),
+            tuple([job_id] * len(cols)),
             fetchone=True
         )
-
         if not row:
             return jsonify({"error": "Job not found"}), 404
-
-        return jsonify({
-            "job": normalize_job(row)
-        }), 200
-
+        return jsonify({"job": normalize_job(row)}), 200
     except Exception as e:
         print("GET /api/jobs/<id> ERROR:", e)
-        return jsonify({
-            "error": "Server error",
-            "details": str(e)
-        }), 500
+        return jsonify({"error": "Server error", "details": str(e)}), 500
 
+@app.route("/api/admin/jobs", methods=["POST"])
 @app.route("/api/jobs", methods=["POST"])
 @admin_required
 def add_job():
-    data = get_json()
+    data = get_json() if request.is_json else request_data()
     title = safe_text(data.get("title"))
     spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not title:
-        return jsonify({"error": "Job title is required"}), 400
+        return jsonify({"ok": False, "error": "Job title is required"}), 400
     if not spec_id:
-        return jsonify({"error": "Specialization is required"}), 400
-    job_id = query_db(
-        """
-        INSERT INTO jobs (specialization_id,title,description,required_skills,skills,average_salary,salary,job_link,link)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """,
-        (spec_id, title, safe_text(data.get("description")), safe_text(data.get("required_skills") or data.get("skills")), safe_text(data.get("required_skills") or data.get("skills")), safe_text(data.get("average_salary") or data.get("salary")), safe_text(data.get("average_salary") or data.get("salary")), safe_text(data.get("job_link") or data.get("link")), safe_text(data.get("job_link") or data.get("link"))),
-        commit=True
-    )
-    return jsonify({"message": "Job added", "id": job_id, "job_id": job_id})
+        return jsonify({"ok": False, "error": "Specialization is required"}), 400
+    job_id = admin_insert_dynamic("jobs", {
+        "specialization_id": spec_id,
+        "spec_id": spec_id,
+        "title": title,
+        "description": safe_text(data.get("description")),
+        "required_skills": safe_text(data.get("required_skills") or data.get("skills")),
+        "skills": safe_text(data.get("required_skills") or data.get("skills")),
+        "average_salary": safe_text(data.get("average_salary") or data.get("salary")),
+        "salary": safe_text(data.get("average_salary") or data.get("salary")),
+        "job_link": safe_text(data.get("job_link") or data.get("link")),
+        "link": safe_text(data.get("job_link") or data.get("link")),
+    })
+    return jsonify({"ok": True, "message": "Job added", "id": job_id, "job_id": job_id})
 
 
 @app.route("/api/admin/jobs/<int:job_id>", methods=["PUT"])
+@app.route("/api/jobs/<int:job_id>", methods=["PUT"])
 @admin_required
 def admin_update_job(job_id):
-    data = get_json()
+    data = get_json() if request.is_json else request_data()
     title = safe_text(data.get("title"))
     spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not title:
-        return jsonify({"error": "Job title is required"}), 400
+        return jsonify({"ok": False, "error": "Job title is required"}), 400
     if not spec_id:
-        return jsonify({"error": "Specialization is required"}), 400
-
-    query_db(
-        """
-        UPDATE jobs
-        SET title=%s, description=%s, required_skills=%s, skills=%s, specialization_id=%s, average_salary=%s, salary=%s, job_link=%s, link=%s
-        WHERE id=%s OR job_id=%s
-        """,
-        (
-            title,
-            safe_text(data.get("description")),
-            safe_text(data.get("required_skills") or data.get("skills")),
-            safe_text(data.get("required_skills") or data.get("skills")),
-            spec_id,
-            safe_text(data.get("average_salary") or data.get("salary")),
-            safe_text(data.get("average_salary") or data.get("salary")),
-            safe_text(data.get("job_link") or data.get("link")),
-            safe_text(data.get("job_link") or data.get("link")),
-            job_id,
-            job_id,
-        ),
-        commit=True
-    )
-    return jsonify({"success": True, "message": "Job updated successfully"})
+        return jsonify({"ok": False, "error": "Specialization is required"}), 400
+    admin_update_dynamic("jobs", job_id, ["id", "job_id"], {
+        "title": title,
+        "description": safe_text(data.get("description")),
+        "required_skills": safe_text(data.get("required_skills") or data.get("skills")),
+        "skills": safe_text(data.get("required_skills") or data.get("skills")),
+        "specialization_id": spec_id,
+        "spec_id": spec_id,
+        "average_salary": safe_text(data.get("average_salary") or data.get("salary")),
+        "salary": safe_text(data.get("average_salary") or data.get("salary")),
+        "job_link": safe_text(data.get("job_link") or data.get("link")),
+        "link": safe_text(data.get("job_link") or data.get("link")),
+    })
+    return jsonify({"ok": True, "success": True, "message": "Job updated successfully"})
 
 
+@app.route("/api/admin/jobs/<int:job_id>", methods=["DELETE"])
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
 @admin_required
 def delete_job(job_id):
-    exec_db("DELETE FROM jobs WHERE id=%s OR job_id=%s", (job_id, job_id))
-    return jsonify({"message": "Job deleted"})
+    admin_delete_dynamic("jobs", job_id, ["id", "job_id"])
+    return jsonify({"ok": True, "message": "Job deleted"})
 
 
+@app.route("/api/admin/certificates", methods=["GET"])
 @app.route("/api/certificates", methods=["GET"])
 def get_certificates():
     rows = []
+    spec_table = admin_spec_table()
+    spec_pk = existing_pk(spec_table, ["id", "specialization_id", "spec_id"])
     if table_exists("certificates"):
+        cert_pk = existing_pk("certificates", ["id", "certificate_id", "certification_id"])
+        cert_spec = coalesce_existing("c", "certificates", ["spec_id", "specialization_id"], "NULL")
         rows += query_db(
-            """
-            SELECT c.id, c.spec_id AS specialization_id, c.name, c.description, c.link, c.price, c.type, c.created_at, s.name AS specialization_name
+            f"""
+            SELECT c.*, c.`{cert_pk}` AS id, {cert_spec} AS specialization_id, s.name AS specialization_name
             FROM certificates c
-            LEFT JOIN specializations s ON s.id=c.spec_id
-            ORDER BY c.id DESC
+            LEFT JOIN `{spec_table}` s ON s.`{spec_pk}`={cert_spec}
+            ORDER BY c.`{cert_pk}` DESC
             """,
             fetchall=True
         ) or []
     if table_exists("certifications"):
+        cert_pk = existing_pk("certifications", ["certification_id", "id", "certificate_id"])
+        cert_spec = coalesce_existing("c", "certifications", ["specialization_id", "spec_id"], "NULL")
+        link_expr = coalesce_existing("c", "certifications", ["official_link", "link"], "''")
         rows += query_db(
-            """
-            SELECT c.certification_id AS id, c.specialization_id, c.name, c.description, c.official_link AS link, c.price, c.type, c.created_at, s.name AS specialization_name
+            f"""
+            SELECT c.*, c.`{cert_pk}` AS id, {cert_spec} AS specialization_id, {link_expr} AS link, s.name AS specialization_name
             FROM certifications c
-            LEFT JOIN specializations s ON s.id=c.specialization_id
-            ORDER BY c.certification_id DESC
+            LEFT JOIN `{spec_table}` s ON s.`{spec_pk}`={cert_spec}
+            ORDER BY c.`{cert_pk}` DESC
             """,
             fetchall=True
         ) or []
-    return jsonify({"certificates": rows})
+    return jsonify({"ok": True, "certificates": rows, "data": rows})
 
 
+@app.route("/api/admin/certificates", methods=["POST"])
 @app.route("/api/certificates", methods=["POST"])
 @admin_required
 def add_certificate():
-    data = get_json()
+    data = get_json() if request.is_json else request_data()
     name = safe_text(data.get("name"))
     spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
     if not name:
-        return jsonify({"error": "Certificate name is required"}), 400
+        return jsonify({"ok": False, "error": "Certificate name is required"}), 400
     if not spec_id:
-        return jsonify({"error": "Specialization is required"}), 400
-    cert_id = query_db(
-        "INSERT INTO certificates (spec_id,name,description,link,price,type) VALUES (%s,%s,%s,%s,%s,%s)",
-        (spec_id, name, safe_text(data.get("description")), safe_text(data.get("link") or data.get("official_link")), safe_text(data.get("price")), safe_text(data.get("type")).lower() or "both"),
-        commit=True
-    )
-    return jsonify({"message": "Certificate added", "id": cert_id})
+        return jsonify({"ok": False, "error": "Specialization is required"}), 400
+    table = existing_table("certificates", "certifications")
+    cert_id = admin_insert_dynamic(table, {
+        "spec_id": spec_id,
+        "specialization_id": spec_id,
+        "name": name,
+        "description": safe_text(data.get("description")),
+        "link": safe_text(data.get("link") or data.get("official_link") or data.get("certificate_url")),
+        "official_link": safe_text(data.get("link") or data.get("official_link") or data.get("certificate_url")),
+        "price": safe_text(data.get("price")),
+        "type": safe_text(data.get("type")).lower() or "both",
+    })
+    return jsonify({"ok": True, "message": "Certificate added", "id": cert_id, "certificate_id": cert_id})
 
 
+@app.route("/api/admin/certificates/<int:cert_id>", methods=["PUT"])
+@app.route("/api/certificates/<int:cert_id>", methods=["PUT"])
+@admin_required
+def admin_update_certificate(cert_id):
+    data = get_json() if request.is_json else request_data()
+    name = safe_text(data.get("name"))
+    spec_id = safe_int(data.get("specialization_id") or data.get("spec_id"), None)
+    if not name:
+        return jsonify({"ok": False, "error": "Certificate name is required"}), 400
+    if not spec_id:
+        return jsonify({"ok": False, "error": "Specialization is required"}), 400
+    table = "certificates" if table_exists("certificates") else "certifications"
+    admin_update_dynamic(table, cert_id, ["id", "certificate_id", "certification_id"], {
+        "spec_id": spec_id,
+        "specialization_id": spec_id,
+        "name": name,
+        "description": safe_text(data.get("description")),
+        "link": safe_text(data.get("link") or data.get("official_link") or data.get("certificate_url")),
+        "official_link": safe_text(data.get("link") or data.get("official_link") or data.get("certificate_url")),
+        "price": safe_text(data.get("price")),
+        "type": safe_text(data.get("type")).lower() or "both",
+    })
+    return jsonify({"ok": True, "success": True, "message": "Certificate updated successfully"})
+
+
+@app.route("/api/admin/certificates/<int:cert_id>", methods=["DELETE"])
 @app.route("/api/certificates/<int:cert_id>", methods=["DELETE"])
 @admin_required
 def delete_certificate(cert_id):
-    exec_db("DELETE FROM certificates WHERE id=%s", (cert_id,))
-    return jsonify({"message": "Certificate deleted"})
+    deleted = False
+    if table_exists("certificates"):
+        admin_delete_dynamic("certificates", cert_id, ["id", "certificate_id", "certification_id"])
+        deleted = True
+    if table_exists("certifications"):
+        try:
+            admin_delete_dynamic("certifications", cert_id, ["certification_id", "id", "certificate_id"])
+            deleted = True
+        except Exception:
+            pass
+    return jsonify({"ok": True, "message": "Certificate deleted" if deleted else "Certificate delete checked"})
 
 
 
@@ -2991,7 +3176,7 @@ def admin_stats():
         return safe_int(row.get("total"), 0)
     return jsonify({
         "users": count("users"),
-        "specializations": count("specializations"),
+        "specializations": count(admin_spec_table()),
         "courses": count("courses"),
         "quizzes": count("quizzes"),
         "jobs": count("jobs"),
