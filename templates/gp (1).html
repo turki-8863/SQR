@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SQR Skill Quest Road dashboard.">
+  <title>SQR | Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deep:    #070b14;
+      --bg-surface: #0d1424;
+      --bg-card:    #111827;
+      --border:     rgba(255,255,255,0.07);
+      --border-glow:rgba(56,189,248,0.3);
+      --cyan:   #38bdf8;
+      --purple: #a78bfa;
+      --amber:  #fbbf24;
+      --green:  #34d399;
+      --text-1: #f1f5f9;
+      --text-2: #94a3b8;
+      --text-3: #475569;
+      --font-display: 'Syne', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-body: 'DM Sans', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg-deep);
+      color: var(--text-1);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── CANVAS BACKGROUND ── */
+    #bg-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ── GRID OVERLAY ── */
+    .grid-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background-image:
+        linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    /* ── SHELL ── */
+    .shell {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── TOP NAV ── */
+    .top-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 2.5rem;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      background: rgba(7,11,20,0.6);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-badge {
+      background: var(--cyan);
+      color: var(--bg-deep);
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 0.875rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: 6px;
+      letter-spacing: 0.05em;
+    }
+
+    .brand-name {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--text-2);
+      letter-spacing: 0.02em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-2);
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 0.4rem 0.85rem;
+      border-radius: 8px;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-1);
+      background: rgba(255,255,255,0.05);
+      border-color: var(--border);
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 0.6rem;
+    }
+
+    /* ── BUTTONS ── */
+    .btn {
+      font-family: var(--font-body);
+      font-weight: 500;
+      font-size: 0.875rem;
+      padding: 0.5rem 1.2rem;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn-primary {
+      background: var(--cyan);
+      color: var(--bg-deep);
+      font-weight: 700;
+    }
+
+    .btn-primary:hover {
+      background: #7dd3fc;
+      transform: translateY(-1px);
+      box-shadow: 0 0 20px rgba(56,189,248,0.4);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-2);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover {
+      color: var(--text-1);
+      border-color: rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .btn-soft-purple {
+      background: rgba(167,139,250,0.12);
+      color: var(--purple);
+      border: 1px solid rgba(167,139,250,0.2);
+    }
+
+    .btn-soft-purple:hover {
+      background: rgba(167,139,250,0.2);
+      box-shadow: 0 0 16px rgba(167,139,250,0.2);
+    }
+
+    .btn-soft-amber {
+      background: rgba(251,191,36,0.1);
+      color: var(--amber);
+      border: 1px solid rgba(251,191,36,0.2);
+    }
+
+    .btn-soft-amber:hover {
+      background: rgba(251,191,36,0.18);
+    }
+
+    /* ── HERO ── */
+    .hero {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 3rem;
+      align-items: center;
+      padding: 5rem 2.5rem 3rem;
+      max-width: 1300px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* ── HERO LEFT ── */
+    .hero-left {
+      animation: fadeUp 0.7s ease both;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--cyan);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 1.25rem;
+      padding: 0.35rem 0.75rem;
+      background: rgba(56,189,248,0.08);
+      border: 1px solid rgba(56,189,248,0.2);
+      border-radius: 100px;
+    }
+
+    .eyebrow::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--cyan);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: clamp(3rem, 5vw, 4.5rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.5rem;
+    }
+
+    .h1-line1 { color: var(--text-1); }
+    .h1-line2 {
+      background: linear-gradient(90deg, var(--cyan), var(--purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-desc {
+      color: var(--text-2);
+      font-size: 1.05rem;
+      line-height: 1.75;
+      max-width: 520px;
+      margin-bottom: 2rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* feature chips */
+    .feature-chips {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 2.5rem;
+    }
+
+    .chip {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.25rem 0.6rem;
+      transition: all 0.2s;
+    }
+
+    .chip:hover {
+      color: var(--text-2);
+      border-color: rgba(255,255,255,0.12);
+    }
+
+    /* ── STATS PANEL ── */
+    .stats-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      animation: fadeUp 0.7s 0.15s ease both;
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem 1.75rem;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s;
+      cursor: default;
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-3px);
+    }
+
+    .metric-card:hover::before { opacity: 1; }
+
+    .card-cyan { border-color: rgba(56,189,248,0.15); }
+    .card-cyan::before { background: radial-gradient(ellipse at top left, rgba(56,189,248,0.06), transparent 60%); }
+    .card-cyan:hover { border-color: rgba(56,189,248,0.35); box-shadow: 0 8px 32px rgba(56,189,248,0.1); }
+
+    .card-purple { border-color: rgba(167,139,250,0.15); }
+    .card-purple::before { background: radial-gradient(ellipse at top left, rgba(167,139,250,0.06), transparent 60%); }
+    .card-purple:hover { border-color: rgba(167,139,250,0.35); box-shadow: 0 8px 32px rgba(167,139,250,0.1); }
+
+    .card-amber { border-color: rgba(251,191,36,0.15); }
+    .card-amber::before { background: radial-gradient(ellipse at top left, rgba(251,191,36,0.06), transparent 60%); }
+    .card-amber:hover { border-color: rgba(251,191,36,0.35); box-shadow: 0 8px 32px rgba(251,191,36,0.1); }
+
+    .metric-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .metric-label {
+      font-size: 0.8rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-3);
+    }
+
+    .metric-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+
+    .icon-cyan { background: rgba(56,189,248,0.12); }
+    .icon-purple { background: rgba(167,139,250,0.12); }
+    .icon-amber { background: rgba(251,191,36,0.1); }
+
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 2.75rem;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+
+    .val-cyan { color: var(--cyan); }
+    .val-purple { color: var(--purple); }
+    .val-amber { color: var(--amber); }
+
+    .metric-sub {
+      font-size: 0.8rem;
+      color: var(--text-3);
+    }
+
+    .metric-bar {
+      height: 3px;
+      border-radius: 2px;
+      background: var(--border);
+      margin-top: 1rem;
+      overflow: hidden;
+    }
+
+    .metric-fill {
+      height: 100%;
+      border-radius: 2px;
+      width: 0;
+      transition: width 1.5s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    .fill-cyan { background: var(--cyan); }
+    .fill-purple { background: var(--purple); }
+    .fill-amber { background: var(--amber); }
+
+    /* ── BOTTOM SECTION ── */
+    .bottom-section {
+      border-top: 1px solid var(--border);
+      padding: 2rem 2.5rem;
+      max-width: 1300px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .quick-links-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+
+    .quick-link-card {
+      flex: 1;
+      min-width: 140px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      text-decoration: none;
+      color: var(--text-2);
+      font-size: 0.875rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      transition: all 0.2s;
+    }
+
+    .quick-link-card:hover {
+      color: var(--text-1);
+      border-color: rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      transform: translateY(-2px);
+    }
+
+    .ql-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── FOOTER NAV ── */
+    .footer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .footer-brand {
+      font-family: var(--font-display);
+      font-size: 0.85rem;
+      color: var(--text-3);
+    }
+
+    .footer-brand strong {
+      color: var(--cyan);
+      font-weight: 700;
+    }
+
+    .footer-nav {
+      display: flex;
+      gap: 0.2rem;
+      flex-wrap: wrap;
+    }
+
+    .footer-nav a {
+      text-decoration: none;
+      color: var(--text-3);
+      font-size: 0.8rem;
+      padding: 0.3rem 0.65rem;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .footer-nav a:hover {
+      color: var(--text-1);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .footer-actions { display: flex; gap: 0.5rem; }
+
+    /* ── MESSAGE ── */
+    #message { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 200; }
+
+    /* ── ROAD DECO ── */
+    .road-deco {
+      position: absolute;
+      bottom: -60px;
+      right: -40px;
+      width: 220px;
+      opacity: 0.06;
+      pointer-events: none;
+    }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes countUp {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; padding: 3rem 1.25rem 2rem; }
+      .stats-panel { flex-direction: row; flex-wrap: wrap; }
+      .metric-card { flex: 1; min-width: 200px; }
+      .top-nav { padding: 1rem 1.25rem; }
+      .nav-links { display: none; }
+    }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 2.4rem; }
+      .stats-panel { flex-direction: column; }
+      .bottom-section { padding: 1.5rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Particle canvas -->
+  <canvas id="bg-canvas"></canvas>
+  <div class="grid-overlay"></div>
+
+  <div class="shell">
+    <div id="message" class="message-holder"></div>
+
+    <!-- TOP NAV -->
+    <nav class="top-nav">
+      <div class="nav-brand">
+        <span class="brand-badge">SQR</span>
+        <span class="brand-name">Skill Quest Road</span>
+      </div>
+      <ul class="nav-links">
+        <li><a href="gp.html">Home</a></li>
+        <li><a href="Specialization.html">Specializations</a></li>
+        <li><a href="Courses.html">Courses</a></li>
+        <li><a href="ATS.html">ATS</a></li>
+        <li><a href="jobs.html">Jobs</a></li>
+        <li><a href="recommendation.html">Recommendation</a></li>
+        <li><a href="profile.html">Profile</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="signin.html" class="btn btn-ghost">Sign In</a>
+        <a href="signup.html" class="btn btn-primary">Sign Up →</a>
+      </div>
+    </nav>
+
+    <!-- HERO -->
+    <main class="hero">
+
+      <!-- LEFT -->
+      <div class="hero-left">
+        <div class="eyebrow">CS Career Platform</div>
+
+        <h1>
+          <div class="h1-line1">Navigate your</div>
+          <div class="h1-line2">CS Career Path.</div>
+        </h1>
+
+        <p class="hero-desc">
+          SQR connects you to real specializations, curated courses, industry jobs,
+          and AI-powered guidance — all from a live database. Your journey,
+          your roadmap, your future.
+        </p>
+
+        <div class="hero-actions">
+          <a href="Specialization.html" class="btn btn-primary">Explore Specializations →</a>
+          <a href="Courses.html" class="btn btn-soft-purple">Browse Courses</a>
+          <a href="recommendation.html" class="btn btn-soft-amber">Get Recommendation</a>
+        </div>
+
+        <div class="feature-chips">
+          <span class="chip">// quizzes</span>
+          <span class="chip">// ATS resume tools</span>
+          <span class="chip">// job matching</span>
+          <span class="chip">// progress tracking</span>
+          <span class="chip">// live database</span>
+        </div>
+      </div>
+
+      <!-- RIGHT: STATS -->
+      <div class="stats-panel">
+
+        <!-- Specializations -->
+        <div class="metric-card card-cyan">
+          <div class="metric-top">
+            <span class="metric-label">Specializations</span>
+            <div class="metric-icon icon-cyan">🎯</div>
+          </div>
+          <div class="metric-value val-cyan" id="homeSpecCount">0</div>
+          <div class="metric-sub">Total tracks added by admin</div>
+          <div class="metric-bar"><div class="metric-fill fill-cyan" id="bar-spec"></div></div>
+        </div>
+
+        <!-- Courses -->
+        <div class="metric-card card-purple">
+          <div class="metric-top">
+            <span class="metric-label">Courses</span>
+            <div class="metric-icon icon-purple">📚</div>
+          </div>
+          <div class="metric-value val-purple" id="homeCourseCount">0</div>
+          <div class="metric-sub">Available across all specializations</div>
+          <div class="metric-bar"><div class="metric-fill fill-purple" id="bar-course"></div></div>
+        </div>
+
+        <!-- Jobs -->
+        <div class="metric-card card-amber">
+          <div class="metric-top">
+            <span class="metric-label">Jobs</span>
+            <div class="metric-icon icon-amber">💼</div>
+          </div>
+          <div class="metric-value val-amber" id="homeJobCount">0</div>
+          <div class="metric-sub">Roles connected to specializations</div>
+          <div class="metric-bar"><div class="metric-fill fill-amber" id="bar-job"></div></div>
+        </div>
+
+        <!-- Road SVG decoration inside stats -->
+        <svg class="road-deco" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 180 Q60 100 100 80 Q140 60 180 20" stroke="white" stroke-width="3" stroke-dasharray="10 6"/>
+          <circle cx="20" cy="180" r="6" fill="white"/>
+          <circle cx="180" cy="20" r="6" fill="white"/>
+        </svg>
+      </div>
+
+    </main>
+
+    <!-- QUICK LINKS + FOOTER -->
+    <div class="bottom-section">
+      <div class="quick-links-row">
+        <a href="Specialization.html" class="quick-link-card">
+          <span class="ql-dot" style="background:var(--cyan)"></span>Specializations
+        </a>
+        <a href="Courses.html" class="quick-link-card">
+          <span class="ql-dot" style="background:var(--purple)"></span>Courses
+        </a>
+        <a href="ATS.html" class="quick-link-card">
+          <span class="ql-dot" style="background:var(--green)"></span>ATS Tool
+        </a>
+        <a href="jobs.html" class="quick-link-card">
+          <span class="ql-dot" style="background:var(--amber)"></span>Jobs
+        </a>
+        <a href="recommendation.html" class="quick-link-card">
+          <span class="ql-dot" style="background:#f472b6"></span>Recommendation
+        </a>
+        <a href="profile.html" class="quick-link-card">
+          <span class="ql-dot" style="background:var(--text-3)"></span>Profile
+        </a>
+      </div>
+
+      <div class="footer-row">
+        <div class="footer-brand">
+          <strong>SQR</strong> &nbsp;·&nbsp; Skill Quest Road &nbsp;·&nbsp; CS Career Guidance Platform
+        </div>
+        <nav class="footer-nav" aria-label="Footer navigation">
+          <a href="gp.html">Home</a>
+          <a href="Specialization.html">Specializations</a>
+          <a href="Courses.html">Courses</a>
+          <a href="jobs.html">Jobs</a>
+          <a href="profile.html">Profile</a>
+        </nav>
+        <div class="footer-actions">
+          <a href="signin.html" class="btn btn-ghost">Sign In</a>
+          <a href="signup.html" class="btn btn-primary">Sign Up</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTICLE + ANIMATION SCRIPT -->
+  <script>
+    /* ── PARTICLES ── */
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    let W, H, dots;
+
+    function resize() {
+      W = canvas.width  = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+
+    function initDots() {
+      dots = Array.from({ length: 55 }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: Math.random() * 1.5 + 0.3,
+        vx: (Math.random() - 0.5) * 0.25,
+        vy: (Math.random() - 0.5) * 0.25,
+        color: ['#38bdf8','#a78bfa','#fbbf24','#34d399'][Math.floor(Math.random()*4)]
+      }));
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      // Draw connections
+      for (let i = 0; i < dots.length; i++) {
+        for (let j = i + 1; j < dots.length; j++) {
+          const dx = dots[i].x - dots[j].x;
+          const dy = dots[i].y - dots[j].y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < 130) {
+            ctx.strokeStyle = `rgba(56,189,248,${0.04 * (1 - dist/130)})`;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(dots[i].x, dots[i].y);
+            ctx.lineTo(dots[j].x, dots[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Draw dots
+      dots.forEach(d => {
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+        ctx.fillStyle = d.color + '55';
+        ctx.fill();
+
+        d.x += d.vx;
+        d.y += d.vy;
+        if (d.x < 0 || d.x > W) d.vx *= -1;
+        if (d.y < 0 || d.y > H) d.vy *= -1;
+      });
+
+      requestAnimationFrame(draw);
+    }
+
+    resize();
+    initDots();
+    draw();
+    window.addEventListener('resize', () => { resize(); initDots(); });
+
+    /* ── ANIMATED COUNTER ── */
+    function animateCount(el, target, duration = 1600) {
+      const start = performance.now();
+      const step = (now) => {
+        const t = Math.min((now - start) / duration, 1);
+        const ease = 1 - Math.pow(1 - t, 3);
+        el.textContent = Math.round(ease * target);
+        if (t < 1) requestAnimationFrame(step);
+        else el.textContent = target;
+      };
+      requestAnimationFrame(step);
+    }
+
+    /* ── PROGRESS BARS ── */
+    function animateBar(el, pct, delay = 400) {
+      setTimeout(() => { el.style.width = pct + '%'; }, delay);
+    }
+
+    /* ── OBSERVER TO TRIGGER ON VIEW ── */
+    const statsPanel = document.querySelector('.stats-panel');
+    let triggered = false;
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && !triggered) {
+          triggered = true;
+
+          // Read values set by app.js (or use defaults for demo)
+          const specEl   = document.getElementById('homeSpecCount');
+          const courseEl = document.getElementById('homeCourseCount');
+          const jobEl    = document.getElementById('homeJobCount');
+
+          const specTarget   = parseInt(specEl.textContent)   || 12;
+          const courseTarget = parseInt(courseEl.textContent) || 84;
+          const jobTarget    = parseInt(jobEl.textContent)    || 230;
+
+          animateCount(specEl,   specTarget);
+          animateCount(courseEl, courseTarget, 1800);
+          animateCount(jobEl,    jobTarget, 2000);
+
+          animateBar(document.getElementById('bar-spec'),   70);
+          animateBar(document.getElementById('bar-course'), 88, 500);
+          animateBar(document.getElementById('bar-job'),    60, 700);
+        }
+      });
+    }, { threshold: 0.2 });
+
+    observer.observe(statsPanel);
+
+    /* ── CARD HOVER GLOW on mouse move ── */
+    document.querySelectorAll('.metric-card').forEach(card => {
+      card.addEventListener('mousemove', e => {
+        const rect = card.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width  * 100).toFixed(1);
+        const y = ((e.clientY - rect.top)  / rect.height * 100).toFixed(1);
+        card.style.setProperty('--mx', x + '%');
+        card.style.setProperty('--my', y + '%');
+      });
+    });
+
+    /* ── STAGGER entrance for quick-link cards ── */
+    document.querySelectorAll('.quick-link-card').forEach((el, i) => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(12px)';
+      el.style.transition = `opacity 0.4s ${i * 0.06}s ease, transform 0.4s ${i * 0.06}s ease, color 0.2s, background 0.2s, border-color 0.2s`;
+      setTimeout(() => {
+        el.style.opacity = '1';
+        el.style.transform = 'translateY(0)';
+      }, 600 + i * 60);
+    });
+  </script>
+
+</body>
+</html>
