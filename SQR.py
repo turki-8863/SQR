@@ -3089,12 +3089,10 @@ Uploaded or pasted resume text:
     if not isinstance(payload, dict):
         payload = fallback
 
-    # Keep every expected key stable for the frontend.
     for key, value in fallback.items():
         if key not in payload or payload.get(key) in [None, "", []]:
             payload[key] = value
 
-    # Normalize common list fields even if the model returns comma-separated strings.
     for key in ("technical_skills", "soft_skills", "improvements", "missing_information"):
         value = payload.get(key)
         if isinstance(value, str):
@@ -3129,10 +3127,13 @@ Uploaded or pasted resume text:
                 sections.extend(["", label, value])
         payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
 
-    provider = safe_text(payload.get("ai_provider"))
-    payload["ai_powered"] = provider.lower() == "gemini" or bool(payload.get("ai_powered"))
-    if not payload["ai_powered"]:
-        payload["ai_provider"] = "local_dynamic_fallback"
+        provider = safe_text(payload.get("ai_provider")).lower()
+        payload["ai_powered"] = provider in ["grok", "xai", "grok-4.3"] or bool(payload.get("ai_powered"))
+
+       if payload["ai_powered"]:
+           payload["ai_provider"] = "grok"
+       else: 
+           payload["ai_provider"] = "local_dynamic_fallback"
 
     bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
     if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
