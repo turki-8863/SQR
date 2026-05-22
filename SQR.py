@@ -1330,10 +1330,10 @@ def health():
 def ai_status():
     return jsonify({
         "ai_provider_mode": AI_PROVIDER,
-        "gemini_configured": bool(GEMINI_API_KEY),
-        "gemini_sdk_installed": bool(genai),
-        "gemini_client_ready": bool(gemini_client),
-        "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else "",
+        "xai_configured": bool(XAI_API_KEY),
+        "openai_sdk_installed": bool(OpenAI),
+        "xai_client_ready": bool(xai_client),
+        "xai_model": XAI_MODEL if XAI_API_KEY else "",
         "max_retries": AI_MAX_RETRIES,
         "timeout_seconds": AI_TIMEOUT,
     })
