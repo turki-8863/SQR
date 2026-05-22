@@ -721,75 +721,7 @@ def extract_json_object(text_value):
 
 
 def gemini_json(prompt, fallback=None):
-    """Call Google Gemini with the google-genai SDK and return a parsed JSON object.
-    If Gemini is unavailable, the caller receives None and the app uses a dynamic local fallback.
-    """
-    if not gemini_client:
-        return None
-
-    prompt_text = (
-        "Return valid JSON only. Do not use markdown. "
-        "Do not invent user facts, companies, years, GPA, certificates, degrees, projects, jobs, or experience. "
-        "Use only the user's provided information.\n\n"
-        + safe_text(prompt)
-    )
-    last_error = None
-
-    for attempt in range(AI_MAX_RETRIES):
-        try:
-            config_kwargs = {
-                "temperature": 0.28,
-                "top_p": 0.9,
-                "max_output_tokens": 4096,
-            }
-            if types:
-                config = types.GenerateContentConfig(**config_kwargs, response_mime_type="application/json")
-            else:
-                config = config_kwargs
-
-            try:
-                response = gemini_client.models.generate_content(
-                    model=GEMINI_MODEL,
-                    contents=prompt_text,
-                    config=config,
-                )
-            except Exception as first_exc:
-                if "response_mime_type" not in str(first_exc).lower() and "responseMimeType" not in str(first_exc):
-                    raise
-                config = types.GenerateContentConfig(**config_kwargs) if types else config_kwargs
-                response = gemini_client.models.generate_content(
-                    model=GEMINI_MODEL,
-                    contents=prompt_text,
-                    config=config,
-                )
-
-            text_value = safe_text(getattr(response, "text", ""))
-            if not text_value:
-                try:
-                    candidates = getattr(response, "candidates", []) or []
-                    parts = getattr(getattr(candidates[0], "content", None), "parts", []) if candidates else []
-                    text_value = "\n".join([safe_text(getattr(part, "text", "")) for part in parts])
-                except Exception:
-                    text_value = ""
-
-            parsed = extract_json_object(text_value)
-            if isinstance(parsed, dict):
-                parsed["ai_provider"] = "gemini"
-                parsed["ai_powered"] = True
-                return parsed
-            last_error = f"Gemini JSON parse failed: {text_value[:300]}"
-        except Exception as exc:
-            last_error = str(exc)
-            temporary = any(code in last_error for code in ["429", "500", "502", "503", "504", "UNAVAILABLE", "RESOURCE_EXHAUSTED"])
-            if temporary and attempt < AI_MAX_RETRIES - 1:
-                time.sleep(min(2 + attempt, 5))
-                continue
-            break
-
-    if last_error:
-        print("GEMINI JSON ERROR:", last_error)
-    return None
-
+    return ai_json(prompt, fallback)
 
 def ai_json(prompt, fallback=None):
     fallback = fallback or {}
