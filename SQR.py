@@ -754,7 +754,6 @@ def gemini_json(prompt, fallback=None):
                     config=config,
                 )
             except Exception as first_exc:
-                # Some model/API combinations may reject response_mime_type. Retry without it.
                 if "response_mime_type" not in str(first_exc).lower() and "responseMimeType" not in str(first_exc):
                     raise
                 config = types.GenerateContentConfig(**config_kwargs) if types else config_kwargs
