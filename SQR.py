@@ -432,11 +432,16 @@ def admin_insert_dynamic(table_name, payload):
     columns = list(clean.keys())
     placeholders = ",".join(["%s"] * len(columns))
     column_sql = ",".join([f"`{column}`" for column in columns])
-    return query_db(
+    new_id = query_db(
         f"INSERT INTO `{table_name}` ({column_sql}) VALUES ({placeholders})",
         tuple(clean[column] for column in columns),
         commit=True
     )
+    try:
+        sync_compatibility_alias_columns()
+    except Exception as exc:
+        print("alias sync after insert skipped:", exc)
+    return new_id
 
 
 def admin_update_dynamic(table_name, item_id, id_candidates, payload):
@@ -488,7 +493,7 @@ def specialization_filter_sql(alias="c"):
 
 def set_course_progress(user_id, course_id, progress_value, completed=False):
     progress_value = max(0, min(100, safe_int(progress_value, 0)))
-    status = "completed" if completed or progress_value >= 100 else ("in_progress" if progress_value > 0 else "not_started")
+    status = "Completed" if completed or progress_value >= 100 else ("In Progress" if progress_value > 0 else "Not Started")
     query_db(
         """
         UPDATE course_enrollments
@@ -505,7 +510,7 @@ def set_course_progress(user_id, course_id, progress_value, completed=False):
 
 def ensure_course_enrollment(user_id, course_id, start_progress=0):
     start_progress = max(0, min(100, safe_int(start_progress, 0)))
-    status = "in_progress" if start_progress > 0 else "not_started"
+    status = "In Progress" if start_progress > 0 else "Not Started"
     query_db(
         """
         INSERT INTO course_enrollments (user_id, course_id, progress, progress_percentage, status, enrolled_at)
@@ -514,15 +519,14 @@ def ensure_course_enrollment(user_id, course_id, start_progress=0):
             progress=GREATEST(COALESCE(progress,0), VALUES(progress)),
             progress_percentage=GREATEST(COALESCE(progress_percentage,0), VALUES(progress_percentage)),
             status=CASE
-                WHEN status='completed' THEN status
-                WHEN VALUES(progress) > 0 THEN 'in_progress'
+                WHEN LOWER(status) IN ('Completed') THEN status
+                WHEN VALUES(progress) > 0 THEN 'In Progress'
                 ELSE status
             END
         """,
         (user_id, course_id, start_progress, start_progress, status),
         commit=True
     )
-
 
 def clean_user(user):
     if not user:
@@ -593,6 +597,12 @@ def get_current_user():
         return user
     except Exception:
         return None
+
+
+def get_logged_user_id():
+    """Compatibility helper used by older enrollment routes."""
+    user = getattr(request, "current_user", None) or get_current_user()
+    return row_value(user or {}, "id", "user_id")
 
 
 
@@ -702,26 +712,35 @@ def extract_resume_text(file):
     return ""
 
 
-def extract_json_object(text_value):
-    text_value = safe_text(text_value)
-    if not text_value:
-        return None
-    text_value = re.sub(r"^```(?:json)?\s*|\s*```$", "", text_value.strip(), flags=re.I | re.S)
+def extract_json_object(text_value, fallback=None):
+    fallback = fallback if fallback is not None else None
+    value = safe_text(text_value)
+    if not value:
+        return fallback
+
+    value = re.sub(r"^```(?:json)?\s*", "", value, flags=re.I).strip()
+    value = re.sub(r"\s*```$", "", value).strip()
+
     try:
-        return json.loads(text_value)
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else fallback
     except Exception:
         pass
-    match = re.search(r"\{.*\}", text_value, re.DOTALL)
+
+    match = re.search(r"\{.*\}", value, re.S)
     if not match:
-        return None
+        return fallback
+
     try:
-        return json.loads(match.group(0))
+        parsed = json.loads(match.group(0))
+        return parsed if isinstance(parsed, dict) else fallback
     except Exception:
-        return None
+        return fallback
 
 
 def gemini_json(prompt, fallback=None):
     return ai_json(prompt, fallback)
+
 
 def ai_json(prompt, fallback=None):
     fallback = fallback or {}
@@ -731,44 +750,49 @@ def ai_json(prompt, fallback=None):
         fallback["ai_provider"] = "local_dynamic_fallback"
         return fallback
 
-    try:
-        response = xai_client.responses.create(
-            model=XAI_MODEL,
-            input=[
-                {
-                    "role": "system",
-                    "content": "You are the SQR AI engine. Return valid JSON only. Do not use markdown."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            max_output_tokens=2200
-        )
+    last_error = ""
+    for attempt in range(AI_MAX_RETRIES):
+        try:
+            response = xai_client.responses.create(
+                model=XAI_MODEL,
+                input=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are the SQR AI engine. Return valid JSON only. "
+                            "Do not use markdown. Do not invent facts that the user did not provide."
+                        ),
+                    },
+                    {"role": "user", "content": safe_text(prompt)},
+                ],
+                max_output_tokens=3200,
+            )
 
-        raw_text = safe_text(response.output_text).strip()
+            raw_text = safe_text(getattr(response, "output_text", ""))
+            parsed = extract_json_object(raw_text, fallback)
 
-        raw_text = re.sub(r"^```json", "", raw_text, flags=re.I).strip()
-        raw_text = re.sub(r"^```", "", raw_text).strip()
-        raw_text = re.sub(r"```$", "", raw_text).strip()
+            if isinstance(parsed, dict) and parsed is not fallback:
+                parsed["ai_powered"] = True
+                parsed["ai_provider"] = "grok"
+                return parsed
 
-        parsed = json.loads(raw_text)
+            last_error = f"Could not parse Grok JSON: {raw_text[:250]}"
+            break
 
-        if isinstance(parsed, dict):
-            parsed["ai_powered"] = True
-            parsed["ai_provider"] = "grok"
-            return parsed
+        except Exception as exc:
+            last_error = str(exc)
+            temporary = any(word in last_error.lower() for word in ["429", "500", "502", "503", "504", "rate", "timeout"])
+            if temporary and attempt < AI_MAX_RETRIES - 1:
+                time.sleep(min(2 + attempt, 5))
+                continue
+            break
 
-        fallback["ai_powered"] = False
-        fallback["ai_provider"] = "local_dynamic_fallback"
-        return fallback
+    if last_error:
+        print("GROK AI ERROR:", last_error)
 
-    except Exception as exc:
-        print("GROK AI ERROR:", exc)
-        fallback["ai_powered"] = False
-        fallback["ai_provider"] = "local_dynamic_fallback"
-        return fallback
+    fallback["ai_powered"] = False
+    fallback["ai_provider"] = "local_dynamic_fallback"
+    return fallback
 
 
 def init_db():
@@ -1086,6 +1110,8 @@ def init_db():
             ("goal", "TEXT"),
         ],
         "specializations": [
+            ("id", "INT"),
+            ("spec_id", "INT"),
             ("roadmap", "TEXT"),
             ("job_titles", "TEXT"),
             ("career_paths", "TEXT"),
@@ -1094,6 +1120,7 @@ def init_db():
             ("image", "VARCHAR(255)"),
         ],
         "courses": [
+            ("id", "INT"),
             ("spec_id", "INT"),
             ("name", "VARCHAR(150)"),
             ("difficulty", "VARCHAR(50)"),
@@ -1105,29 +1132,50 @@ def init_db():
             ("image_url", "VARCHAR(255)"),
         ],
         "jobs": [
+            ("id", "INT"),
             ("skills", "TEXT"),
             ("salary", "VARCHAR(100)"),
             ("link", "VARCHAR(255)"),
         ],
         "quizzes": [
+            ("id", "INT"),
             ("name", "VARCHAR(150)"),
             ("spec_id", "INT"),
             ("total_questions", "INT DEFAULT 0"),
             ("description", "TEXT"),
         ],
         "quiz_attempts": [
+            ("id", "INT"),
             ("course_id", "INT"),
             ("total", "INT DEFAULT 0"),
             ("percentage", "DECIMAL(5,2) DEFAULT 0.00"),
             ("answers_json", "TEXT"),
         ],
         "quiz_questions": [
+            ("id", "INT"),
             ("question", "TEXT"),
             ("option1", "VARCHAR(255)"),
             ("option2", "VARCHAR(255)"),
             ("option3", "VARCHAR(255)"),
             ("option4", "VARCHAR(255)"),
             ("answer", "VARCHAR(255)"),
+        ],
+        "ats_results": [
+            ("id", "INT"),
+            ("score", "DECIMAL(5,2) DEFAULT 0.00"),
+            ("summary", "TEXT"),
+        ],
+        "specialization_enrollments": [
+            ("id", "INT"),
+            ("spec_id", "INT"),
+            ("progress", "INT DEFAULT 0"),
+            ("specialization_id", "INT"),
+            ("progress_percentage", "DECIMAL(5,2) DEFAULT 0.00"),
+        ],
+        "course_enrollments": [
+            ("id", "INT"),
+            ("progress", "INT DEFAULT 0"),
+            ("progress_percentage", "DECIMAL(5,2) DEFAULT 0.00"),
         ],
     }
     for table, columns in compatibility_columns.items():
@@ -1139,6 +1187,97 @@ def init_db():
                     exec_db(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {definition}")
             except Exception as exc:
                 print(f"init_db alter skipped for {table}.{column}:", exc)
+
+    try:
+        sync_compatibility_alias_columns()
+    except Exception as exc:
+        print("compatibility alias sync skipped:", exc)
+
+
+def sync_compatibility_alias_columns():
+    """Keep old frontend/backend aliases like id/spec_id/progress synced with Railway-style columns."""
+    def has(table, column):
+        return table_exists(table) and column_exists(table, column)
+
+    updates = []
+
+    if has("specializations", "id") and has("specializations", "specialization_id"):
+        updates.append("UPDATE specializations SET id=specialization_id WHERE id IS NULL OR id=0")
+    if has("specializations", "spec_id") and has("specializations", "specialization_id"):
+        updates.append("UPDATE specializations SET spec_id=specialization_id WHERE spec_id IS NULL OR spec_id=0")
+
+    if has("courses", "id") and has("courses", "course_id"):
+        updates.append("UPDATE courses SET id=course_id WHERE id IS NULL OR id=0")
+    if has("courses", "spec_id") and has("courses", "specialization_id"):
+        updates.append("UPDATE courses SET spec_id=specialization_id WHERE spec_id IS NULL OR spec_id=0")
+    if has("courses", "name") and has("courses", "title"):
+        updates.append("UPDATE courses SET name=title WHERE name IS NULL OR name=''")
+    if has("courses", "difficulty") and has("courses", "level"):
+        updates.append("UPDATE courses SET difficulty=level WHERE difficulty IS NULL OR difficulty=''")
+    if has("courses", "link") and has("courses", "course_link"):
+        updates.append("UPDATE courses SET link=course_link WHERE link IS NULL OR link=''")
+    if has("courses", "image") and has("courses", "image_url"):
+        updates.append("UPDATE courses SET image=image_url WHERE image IS NULL OR image=''")
+    if has("courses", "video") and has("courses", "video_url"):
+        updates.append("UPDATE courses SET video=video_url WHERE video IS NULL OR video=''")
+
+    if has("quizzes", "id") and has("quizzes", "quiz_id"):
+        updates.append("UPDATE quizzes SET id=quiz_id WHERE id IS NULL OR id=0")
+    if has("quizzes", "name") and has("quizzes", "title"):
+        updates.append("UPDATE quizzes SET name=title WHERE name IS NULL OR name=''")
+
+    if has("quiz_questions", "id") and has("quiz_questions", "question_id"):
+        updates.append("UPDATE quiz_questions SET id=question_id WHERE id IS NULL OR id=0")
+    if has("quiz_questions", "question") and has("quiz_questions", "question_text"):
+        updates.append("UPDATE quiz_questions SET question=question_text WHERE question IS NULL OR question=''")
+    if has("quiz_questions", "option1") and has("quiz_questions", "option_a"):
+        updates.append("UPDATE quiz_questions SET option1=option_a WHERE option1 IS NULL OR option1=''")
+    if has("quiz_questions", "option2") and has("quiz_questions", "option_b"):
+        updates.append("UPDATE quiz_questions SET option2=option_b WHERE option2 IS NULL OR option2=''")
+    if has("quiz_questions", "option3") and has("quiz_questions", "option_c"):
+        updates.append("UPDATE quiz_questions SET option3=option_c WHERE option3 IS NULL OR option3=''")
+    if has("quiz_questions", "option4") and has("quiz_questions", "option_d"):
+        updates.append("UPDATE quiz_questions SET option4=option_d WHERE option4 IS NULL OR option4=''")
+    if has("quiz_questions", "answer") and has("quiz_questions", "correct_answer"):
+        updates.append("UPDATE quiz_questions SET answer=correct_answer WHERE answer IS NULL OR answer=''")
+
+    if has("jobs", "id") and has("jobs", "job_id"):
+        updates.append("UPDATE jobs SET id=job_id WHERE id IS NULL OR id=0")
+    if has("jobs", "skills") and has("jobs", "required_skills"):
+        updates.append("UPDATE jobs SET skills=required_skills WHERE skills IS NULL OR skills=''")
+    if has("jobs", "salary") and has("jobs", "average_salary"):
+        updates.append("UPDATE jobs SET salary=average_salary WHERE salary IS NULL OR salary=''")
+    if has("jobs", "link") and has("jobs", "job_link"):
+        updates.append("UPDATE jobs SET link=job_link WHERE link IS NULL OR link=''")
+
+    if has("specialization_enrollments", "id") and has("specialization_enrollments", "enrollment_id"):
+        updates.append("UPDATE specialization_enrollments SET id=enrollment_id WHERE id IS NULL OR id=0")
+    if has("specialization_enrollments", "spec_id") and has("specialization_enrollments", "specialization_id"):
+        updates.append("UPDATE specialization_enrollments SET spec_id=specialization_id WHERE spec_id IS NULL OR spec_id=0")
+    if has("specialization_enrollments", "progress") and has("specialization_enrollments", "progress_percentage"):
+        updates.append("UPDATE specialization_enrollments SET progress=progress_percentage WHERE progress IS NULL OR progress=0")
+    if has("course_enrollments", "id") and has("course_enrollments", "enrollment_id"):
+        updates.append("UPDATE course_enrollments SET id=enrollment_id WHERE id IS NULL OR id=0")
+    if has("course_enrollments", "progress") and has("course_enrollments", "progress_percentage"):
+        updates.append("UPDATE course_enrollments SET progress=progress_percentage WHERE progress IS NULL OR progress=0")
+
+    if has("quiz_attempts", "id") and has("quiz_attempts", "attempt_id"):
+        updates.append("UPDATE quiz_attempts SET id=attempt_id WHERE id IS NULL OR id=0")
+    if has("quiz_attempts", "percentage") and has("quiz_attempts", "score"):
+        updates.append("UPDATE quiz_attempts SET percentage=score WHERE percentage IS NULL OR percentage=0")
+
+    if has("ats_results", "id") and has("ats_results", "ats_id"):
+        updates.append("UPDATE ats_results SET id=ats_id WHERE id IS NULL OR id=0")
+    if has("ats_results", "score") and has("ats_results", "ats_score"):
+        updates.append("UPDATE ats_results SET score=ats_score WHERE score IS NULL OR score=0")
+    if has("ats_results", "summary") and has("ats_results", "suggestions"):
+        updates.append("UPDATE ats_results SET summary=suggestions WHERE summary IS NULL OR summary=''")
+
+    for sql in updates:
+        try:
+            exec_db(sql)
+        except Exception as exc:
+            print("alias sync skipped:", exc)
 
 
 
@@ -1446,8 +1585,8 @@ def compute_user_progress(user_id):
             """
             SELECT
                 COUNT(DISTINCT ce.course_id) AS enrolled_courses,
-                SUM(CASE WHEN COALESCE(ce.progress_percentage, ce.progress, 0) > 0 OR ce.status IN ('in_progress','completed') THEN 1 ELSE 0 END) AS opened_courses,
-                SUM(CASE WHEN COALESCE(ce.progress_percentage, ce.progress, 0) >= 100 OR ce.status='completed' THEN 1 ELSE 0 END) AS completed_courses
+                SUM(CASE WHEN COALESCE(ce.progress_percentage, ce.progress, 0) > 0 OR LOWER(ce.status) IN ('in progress','completed','in_progress') THEN 1 ELSE 0 END) AS opened_courses,
+                SUM(CASE WHEN COALESCE(ce.progress_percentage, ce.progress, 0) >= 100 OR LOWER(ce.status) IN ('completed') THEN 1 ELSE 0 END) AS completed_courses
             FROM course_enrollments ce
             JOIN courses c ON c.id=ce.course_id
             WHERE ce.user_id=%s AND (c.spec_id=%s OR c.specialization_id=%s)
@@ -1514,7 +1653,7 @@ def compute_user_progress(user_id):
             print("SPECIALIZATION_PROGRESS SAVE ERROR:", exc)
 
         try:
-            status = "completed" if percent_value >= 100 else ("in_progress" if percent_value > 0 else "not_started")
+            status = "Completed" if percent_value >= 100 else ("In Progress" if percent_value > 0 else "Not Started")
             query_db(
                 """
                 UPDATE specialization_enrollments
@@ -1542,7 +1681,7 @@ def compute_user_progress(user_id):
             "progress": percent_value,
             "progress_percentage": percent_value,
             "percentage": percent_value,
-            "status": "completed" if percent_value >= 100 else ("in_progress" if percent_value > 0 else "not_started"),
+            "status": "Completed" if percent_value >= 100 else ("In Progress" if percent_value > 0 else "Not Started"),
         })
 
     return progress_rows
@@ -1627,13 +1766,16 @@ def enroll_specialization(spec_id):
         real_spec_id = safe_int(spec.get("id"), spec_id)
         query_db(
             """
-            INSERT INTO specialization_enrollments (user_id, spec_id, progress, status, enrolled_at)
-            VALUES (%s, %s, 0, 'in_progress', CURRENT_TIMESTAMP)
+            INSERT INTO specialization_enrollments (user_id, spec_id, specialization_id, progress, progress_percentage, status, enrolled_at)
+            VALUES (%s, %s, %s, 0, 0, 'In Progress', CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
-                status=CASE WHEN status='completed' THEN status ELSE 'in_progress' END,
+                spec_id=VALUES(spec_id),
+                progress=GREATEST(COALESCE(progress,0), VALUES(progress)),
+                progress_percentage=GREATEST(COALESCE(progress_percentage,0), VALUES(progress_percentage)),
+                status=CASE WHEN LOWER(status) IN ('completed') THEN status ELSE 'In Progress' END,
                 enrolled_at=enrolled_at
             """,
-            (user_id, real_spec_id),
+            (user_id, real_spec_id, real_spec_id),
             commit=True
         )
         compute_user_progress(user_id)
@@ -2991,6 +3133,7 @@ def generate_ai_resume_payload(data, resume_text):
 
     target_role = safe_text(data.get("target_role") or data.get("role") or data.get("target_job") or fallback.get("headline"))
     original_summary = safe_text(data.get("summary") or data.get("original_summary"))
+
     prompt = f"""
 You are an expert resume writer inside the SQR website. Rewrite and improve the user's resume details like a real AI assistant.
 
@@ -3059,13 +3202,9 @@ Uploaded or pasted resume text:
                 sections.extend(["", label, value])
         payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
 
-        provider = safe_text(payload.get("ai_provider")).lower()
-        payload["ai_powered"] = provider in ["grok", "xai", "grok-4.3"] or bool(payload.get("ai_powered"))
-
-       if payload["ai_powered"]:
-           payload["ai_provider"] = "grok"
-       else: 
-           payload["ai_provider"] = "local_dynamic_fallback"
+    provider = safe_text(payload.get("ai_provider")).lower()
+    payload["ai_powered"] = provider in {"grok", "xai", "grok-4.3"} or bool(payload.get("ai_powered"))
+    payload["ai_provider"] = "grok" if payload["ai_powered"] else "local_dynamic_fallback"
 
     bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
     if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
@@ -3104,6 +3243,8 @@ def ats_generate():
         "target_role": safe_text(data.get("target_role") or data.get("role") or data.get("target_job")),
     })
     return jsonify(payload)
+
+
 @app.route("/api/ats/export/pdf", methods=["POST"])
 @student_required
 def export_pdf():
