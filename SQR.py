@@ -17,11 +17,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 try:
-    from google import genai
-    from google.genai import types
+    from openai import OpenAI
 except Exception:
-    genai = None
-    types = None
+    OpenAI = None
 
 try:
     from PyPDF2 import PdfReader
@@ -75,12 +73,21 @@ DB_CONFIG = {
 }
 
 pool = None
-GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GEIMINI_API_KEY") or "").strip()
-GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or os.getenv("GEIMINI_MODEL") or "gemini-2.0-flash").strip()
-AI_PROVIDER = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
-AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", os.getenv("GEMINI_TIMEOUT", "45")))
+XAI_API_KEY = (os.getenv("XAI_API_KEY") or "").strip()
+XAI_MODEL = (os.getenv("XAI_MODEL") or "grok-4.3").strip()
+AI_PROVIDER = (os.getenv("AI_PROVIDER") or "grok").strip().lower()
+AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "45"))
 AI_MAX_RETRIES = max(1, int(os.getenv("AI_MAX_RETRIES", "3")))
-gemini_client = genai.Client(api_key=GEMINI_API_KEY) if genai and GEMINI_API_KEY else None
+
+xai_client = None
+
+if OpenAI and XAI_API_KEY:
+    xai_client = OpenAI(
+        api_key=XAI_API_KEY,
+        base_url="https://api.x.ai/v1",
+        timeout=AI_TIMEOUT,
+        max_retries=AI_MAX_RETRIES
+    )
 
 TECH_SKILLS = [
     "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql",
