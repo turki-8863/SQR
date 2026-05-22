@@ -791,16 +791,52 @@ def gemini_json(prompt, fallback=None):
     return None
 
 
-def ai_json(prompt, fallback):
-    fallback = dict(fallback or {})
-    if AI_PROVIDER not in {"none", "off", "local"}:
-        result = gemini_json(prompt, fallback)
-        if isinstance(result, dict):
-            return result
+def ai_json(prompt, fallback=None):
+    fallback = fallback or {}
 
-    fallback["ai_provider"] = "local_dynamic_fallback"
-    fallback["ai_powered"] = False
-    return fallback
+    if not xai_client:
+        fallback["ai_powered"] = False
+        fallback["ai_provider"] = "local_dynamic_fallback"
+        return fallback
+
+    try:
+        response = xai_client.responses.create(
+            model=XAI_MODEL,
+            input=[
+                {
+                    "role": "system",
+                    "content": "You are the SQR AI engine. Return valid JSON only. Do not use markdown."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_output_tokens=2200
+        )
+
+        raw_text = safe_text(response.output_text).strip()
+
+        raw_text = re.sub(r"^```json", "", raw_text, flags=re.I).strip()
+        raw_text = re.sub(r"^```", "", raw_text).strip()
+        raw_text = re.sub(r"```$", "", raw_text).strip()
+
+        parsed = json.loads(raw_text)
+
+        if isinstance(parsed, dict):
+            parsed["ai_powered"] = True
+            parsed["ai_provider"] = "grok"
+            return parsed
+
+        fallback["ai_powered"] = False
+        fallback["ai_provider"] = "local_dynamic_fallback"
+        return fallback
+
+    except Exception as exc:
+        print("GROK AI ERROR:", exc)
+        fallback["ai_powered"] = False
+        fallback["ai_provider"] = "local_dynamic_fallback"
+        return fallback
 
 
 def init_db():
