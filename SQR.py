@@ -3224,7 +3224,46 @@ def generate_ai_enhanced_summary(name, target_role, technical_skills, soft_skill
     }, resume_text)
     return payload.get("enhanced_summary") or payload.get("summary") or local_dynamic_summary(name, target_role, technical_skills, soft_skills, resume_text)
 
+@app.route("/api/debug/xai", methods=["GET"])
+def debug_xai():
+    try:
+        import os
+        from openai import OpenAI
 
+        key = os.getenv("XAI_API_KEY")
+
+        if not key:
+            return jsonify({
+                "ok": False,
+                "problem": "XAI_API_KEY is missing from Render environment variables"
+            }), 500
+
+        client = OpenAI(
+            api_key=key,
+            base_url="https://api.x.ai/v1"
+        )
+
+        response = client.chat.completions.create(
+            model="grok-4.3",
+            messages=[
+                {"role": "system", "content": "Return only valid JSON."},
+                {"role": "user", "content": "{\"test\":\"Say AI works\"}"}
+            ],
+            temperature=0.2
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": response.choices[0].message.content
+        })
+
+    except Exception as e:
+        print("XAI DEBUG ERROR:", repr(e))
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
+        
 @app.route("/api/ats/generate", methods=["POST"])
 @login_required
 def ats_generate():
