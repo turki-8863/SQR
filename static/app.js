@@ -1052,36 +1052,86 @@
     });
   }
 
+  function safeLink(value) {
+    const link = String(value || "").trim();
+    if (!link) return "";
+    if (/^https?:\/\//i.test(link)) return link;
+    if (/^(www\.)?(linkedin\.com|github\.com)\//i.test(link)) return `https://${link}`;
+    return link;
+  }
+
+  function linkHTML(value, label) {
+    const link = safeLink(value);
+    if (!link) return `<span class="muted">Not provided</span>`;
+    return `<a class="sqr-link" href="${escapeHTML(link)}" target="_blank" rel="noopener">${escapeHTML(label || link)}</a>`;
+  }
+
   function renderATSGenerate(result, output) {
     const box = output || first("#atsOutput", "#atsResult", "#resumeResult", "#generatedResume", "[data-ats-output]");
     if (!box) return;
     revealBox(box);
     const fullResume = result.full_resume || result.resume || "";
+    const technicalSkills = joinText(result.technical_skills) || "Not provided";
+    const softSkills = joinText(result.soft_skills) || "Not provided";
+    const linkedin = result.linkedin || result.linkedin_url || "";
+    const github = result.github || result.github_url || "";
+    const providerLabel = result.ai_powered
+      ? `AI Generated: ${escapeHTML(result.ai_provider || "grok")}`
+      : "Dynamic fallback";
+
     box.innerHTML = `
-      <section class="card sqr-card">
-        <div class="sqr-card-top">
-          <span class="badge">${result.ai_powered ? `AI Generated: ${escapeHTML(result.ai_provider || "gemini")}` : "Dynamic fallback"}</span>
-          ${result.target_role ? `<span class="badge badge-soft">${escapeHTML(result.target_role)}</span>` : ""}
+      <section class="card sqr-card ats-pro-result">
+        <div class="sqr-card-top ats-pro-header">
+          <div>
+            <span class="badge ${result.ai_powered ? "badge-ai" : "badge-warning"}">${providerLabel}</span>
+            ${result.target_role || result.headline ? `<span class="badge badge-soft">${escapeHTML(result.target_role || result.headline)}</span>` : ""}
+          </div>
         </div>
-        <h2>Enhanced Summary</h2>
-        <p>${escapeHTML(result.enhanced_summary || result.summary || "")}</p>
 
-        <h2>Technical Skills</h2>
-        <p>${escapeHTML(joinText(result.technical_skills))}</p>
+        <div class="ats-summary-card">
+          <span class="panel-kicker">Enhanced Summary</span>
+          <p>${escapeHTML(result.enhanced_summary || result.summary || "")}</p>
+        </div>
 
-        <h2>Soft Skills</h2>
-        <p>${escapeHTML(joinText(result.soft_skills))}</p>
+        <div class="ats-pro-grid">
+          <article>
+            <h3>Technical Skills</h3>
+            <p>${escapeHTML(technicalSkills)}</p>
+          </article>
+          <article>
+            <h3>Soft Skills</h3>
+            <p>${escapeHTML(softSkills)}</p>
+          </article>
+          <article>
+            <h3>LinkedIn</h3>
+            <p>${linkHTML(linkedin, "Open LinkedIn")}</p>
+          </article>
+          <article>
+            <h3>GitHub</h3>
+            <p>${linkHTML(github, "Open GitHub")}</p>
+          </article>
+        </div>
 
-        <h2>Full ATS Resume</h2>
-        <textarea id="finalResumeText" class="sqr-resume-textarea">${escapeHTML(fullResume)}</textarea>
+        <div class="ats-resume-preview">
+          <div class="ats-resume-preview-head">
+            <div>
+              <span class="panel-kicker">Professional CV Layout</span>
+              <h2>Full ATS Resume</h2>
+            </div>
+            <span class="badge badge-soft">Editable before export</span>
+          </div>
+          <textarea id="finalResumeText" class="sqr-resume-textarea" spellcheck="true">${escapeHTML(fullResume)}</textarea>
+        </div>
 
-        <h2>Improvements</h2>
-        <ul>${asArray(result.improvements || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>
+        <div class="ats-improvements">
+          <h2>Improvements</h2>
+          <ul>${asArray(result.improvements || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>
+        </div>
 
-        <div class="sqr-card-actions">
-          <button class="btn" type="button" data-copy-resume>Copy Resume</button>
-          <button class="btn" type="button" data-export="pdf">Export PDF</button>
-          <button class="btn" type="button" data-export="docx">Export DOCX</button>
+        <div class="sqr-card-actions ats-action-row">
+          <button class="btn btn-secondary ats-action-btn" type="button" data-copy-resume>Copy Resume</button>
+          <button class="btn btn-primary ats-action-btn" type="button" data-export="pdf">Export PDF</button>
+          <button class="btn btn-primary ats-action-btn" type="button" data-export="docx">Export DOCX</button>
         </div>
       </section>
     `;
