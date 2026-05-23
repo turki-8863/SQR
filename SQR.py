@@ -322,6 +322,21 @@ def normalize_job(row):
     return row
 
 
+def normalize_certificate(row):
+    if not row:
+        return row
+    row = dict(row)
+    row["id"] = row_value(row, "id", "certificate_id", "certification_id")
+    row["certificate_id"] = row["id"]
+    row["certification_id"] = row["id"]
+    row["title"] = row_value(row, "title", "name") or "Certificate"
+    row["name"] = row["title"]
+    row["link"] = row_value(row, "link", "official_link", "certificate_url") or ""
+    row["official_link"] = row["link"]
+    row["specialization_id"] = row_value(row, "specialization_id", "spec_id")
+    return row
+
+
 def table_column_names(table_name):
     try:
         rows = query_db(
@@ -738,39 +753,173 @@ def extract_json_object(text_value, fallback=None):
         return fallback
 
 
+
+
+def _resume_line_kind(line):
+    value = safe_text(line)
+    upper = value.upper()
+    heading_words = {
+        "PROFESSIONAL SUMMARY", "SUMMARY", "TECHNICAL SKILLS", "SOFT SKILLS",
+        "LINKEDIN", "GITHUB", "LINKS", "PROJECTS", "EXPERIENCE", "EDUCATION",
+        "CERTIFICATIONS", "CERTIFICATES", "CONTACT"
+    }
+    if upper in heading_words:
+        return "heading"
+    if value.startswith(("- ", "• ", "* ")):
+        return "bullet"
+    return "normal"
+
+
+def build_resume_pdf(text):
+    """Build a clean professional ATS resume PDF from plain text."""
+    if not SimpleDocTemplate or not Paragraph or not Spacer or not A4 or not getSampleStyleSheet:
+        return None
+
+    def esc(value):
+        return (safe_text(value)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;"))
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=42,
+        leftMargin=42,
+        topMargin=42,
+        bottomMargin=38,
+        title="SQR Resume",
+    )
+    styles = getSampleStyleSheet()
+    normal = ParagraphStyle(
+        "SQRNormal",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=10.2,
+        leading=14.2,
+        textColor=colors.HexColor("#1f2937") if colors else None,
+        spaceAfter=5,
+    )
+    name_style = ParagraphStyle(
+        "SQRName",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=19,
+        leading=22,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#0f172a") if colors else None,
+        spaceAfter=3,
+    )
+    role_style = ParagraphStyle(
+        "SQRRole",
+        parent=styles["BodyText"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=14,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#2563eb") if colors else None,
+        spaceAfter=12,
+    )
+    heading = ParagraphStyle(
+        "SQRHeading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=11.4,
+        leading=14,
+        textColor=colors.HexColor("#0f172a") if colors else None,
+        borderWidth=0,
+        borderPadding=0,
+        spaceBefore=9,
+        spaceAfter=4,
+    )
+    bullet = ParagraphStyle(
+        "SQRBullet",
+        parent=normal,
+        leftIndent=14,
+        firstLineIndent=-8,
+        bulletIndent=0,
+        spaceAfter=3,
+    )
+
+    story = []
+    lines = [safe_text(x) for x in safe_text(text).splitlines()]
+    lines = [x for x in lines if x is not None]
+
+    first_nonempty = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first_nonempty is None:
+        return None
+
+    story.append(Paragraph(esc(lines[first_nonempty].strip()), name_style))
+    cursor = first_nonempty + 1
+    while cursor < len(lines) and not lines[cursor].strip():
+        cursor += 1
+    if cursor < len(lines) and _resume_line_kind(lines[cursor]) == "normal" and len(lines[cursor].split()) <= 10:
+        story.append(Paragraph(esc(lines[cursor].strip()), role_style))
+        cursor += 1
+
+    for raw in lines[cursor:]:
+        line = raw.strip()
+        if not line:
+            story.append(Spacer(1, 4))
+            continue
+        kind = _resume_line_kind(line)
+        if kind == "heading":
+            story.append(Paragraph(esc(line.upper()), heading))
+            if HRFlowable:
+                story.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#cbd5e1"), spaceBefore=0, spaceAfter=5))
+        elif kind == "bullet":
+            cleaned = re.sub(r"^[•\-*]\s*", "", line)
+            story.append(Paragraph("- " + esc(cleaned), bullet))
+        else:
+            story.append(Paragraph(esc(line), normal))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 def gemini_json(prompt, fallback=None):
     return ai_json(prompt, fallback)
 
 
 def ai_json(prompt, fallback=None):
-    fallback = fallback or {}
+    fallback = dict(fallback or {})
 
     if not xai_client:
         fallback["ai_powered"] = False
         fallback["ai_provider"] = "local_dynamic_fallback"
+        fallback["ai_error"] = "XAI client is not configured. Check XAI_API_KEY and openai package."
         return fallback
 
     last_error = ""
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are the SQR AI engine. Return valid JSON only. "
+                "Do not use markdown. Do not invent facts that the user did not provide. "
+                "Separate technical skills from soft skills."
+            ),
+        },
+        {"role": "user", "content": safe_text(prompt)},
+    ]
+
     for attempt in range(AI_MAX_RETRIES):
         try:
-            response = xai_client.responses.create(
+            raw_text = ""
+
+            # xAI/Grok is OpenAI-compatible through chat.completions.
+            # The previous responses.create call can fail on some xAI accounts/SDK versions,
+            # which made the website silently return Dynamic Fallback.
+            response = xai_client.chat.completions.create(
                 model=XAI_MODEL,
-                input=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are the SQR AI engine. Return valid JSON only. "
-                            "Do not use markdown. Do not invent facts that the user did not provide."
-                        ),
-                    },
-                    {"role": "user", "content": safe_text(prompt)},
-                ],
-                max_output_tokens=3200,
+                messages=messages,
+                temperature=0.25,
+                max_tokens=3200,
             )
+            raw_text = safe_text(response.choices[0].message.content)
 
-            raw_text = safe_text(getattr(response, "output_text", ""))
             parsed = extract_json_object(raw_text, fallback)
-
             if isinstance(parsed, dict) and parsed is not fallback:
                 parsed["ai_powered"] = True
                 parsed["ai_provider"] = "grok"
@@ -792,6 +941,7 @@ def ai_json(prompt, fallback=None):
 
     fallback["ai_powered"] = False
     fallback["ai_provider"] = "local_dynamic_fallback"
+    fallback["ai_error"] = last_error or "Grok returned no usable JSON."
     return fallback
 
 
@@ -1713,6 +1863,64 @@ def get_specializations():
     except Exception as e:
         print("GET /api/specializations ERROR:", e)
         return jsonify({"ok": False, "error": "Failed to load specializations", "details": str(e)}), 500
+
+
+
+@app.route("/api/specializations/<int:spec_id>", methods=["GET"])
+def get_specialization_detail(spec_id):
+    try:
+        spec = fetch_specialization_by_any_id(spec_id)
+        if not spec:
+            return jsonify({"ok": False, "error": "Specialization not found"}), 404
+        spec = normalize_specialization(spec)
+        real_spec_id = safe_int(spec.get("id"), spec_id)
+
+        course_pk = existing_pk("courses", ["id", "course_id"])
+        course_spec_cols = existing_columns("courses", ["spec_id", "specialization_id"])
+        courses = []
+        if course_spec_cols:
+            where = " OR ".join([f"`{col}`=%s" for col in course_spec_cols])
+            courses = query_db(
+                f"SELECT * FROM courses WHERE {where} ORDER BY `{course_pk}` DESC",
+                tuple([real_spec_id] * len(course_spec_cols)),
+                fetchall=True
+            ) or []
+
+        job_pk = existing_pk("jobs", ["id", "job_id"])
+        job_spec_cols = existing_columns("jobs", ["spec_id", "specialization_id"])
+        jobs = []
+        if job_spec_cols:
+            where = " OR ".join([f"`{col}`=%s" for col in job_spec_cols])
+            jobs = query_db(
+                f"SELECT * FROM jobs WHERE {where} ORDER BY `{job_pk}` DESC",
+                tuple([real_spec_id] * len(job_spec_cols)),
+                fetchall=True
+            ) or []
+
+        certificates = []
+        cert_table = existing_table("certificates", "certifications")
+        if table_exists(cert_table):
+            cert_pk = existing_pk(cert_table, ["id", "certificate_id", "certification_id"])
+            cert_spec_cols = existing_columns(cert_table, ["spec_id", "specialization_id"])
+            if cert_spec_cols:
+                where = " OR ".join([f"`{col}`=%s" for col in cert_spec_cols])
+                certificates = query_db(
+                    f"SELECT * FROM `{cert_table}` WHERE {where} ORDER BY `{cert_pk}` DESC",
+                    tuple([real_spec_id] * len(cert_spec_cols)),
+                    fetchall=True
+                ) or []
+
+        return jsonify({
+            "ok": True,
+            "specialization": spec,
+            "courses": [normalize_course(row) for row in courses],
+            "jobs": [normalize_job(row) for row in jobs],
+            "certificates": [normalize_certificate(row) for row in certificates],
+            "data": spec,
+        }), 200
+    except Exception as e:
+        print("GET /api/specializations/<id> ERROR:", e)
+        return jsonify({"ok": False, "error": "Failed to load specialization details", "details": str(e)}), 500
 
 
 @app.route("/api/specializations/<int:spec_id>/enrollment-status", methods=["GET"])
@@ -3046,49 +3254,114 @@ def local_dynamic_summary(name, target_role, technical_skills, soft_skills, resu
     ).strip()
 
 
+SOFT_SKILL_KEYWORDS = [
+    "communication", "teamwork", "problem solving", "problem-solving", "leadership",
+    "time management", "adaptability", "critical thinking", "creativity", "collaboration",
+    "presentation", "continuous learning", "attention to detail", "organization",
+    "work ethic", "ownership", "reliability", "active listening", "decision making"
+]
+
+
+def sqr_clean_link(value):
+    link = safe_text(value)
+    if not link:
+        return ""
+    if link.lower().startswith(("http://", "https://")):
+        return link
+    if link.lower().startswith(("linkedin.com", "www.linkedin.com", "github.com", "www.github.com")):
+        return "https://" + link
+    return link
+
+
+def sqr_is_soft_skill(skill):
+    value = safe_text(skill).lower()
+    value = re.sub(r"\s+", " ", value)
+    return any(keyword in value for keyword in SOFT_SKILL_KEYWORDS)
+
+
+def sqr_split_resume_skills(technical_text="", soft_text="", resume_text=""):
+    entered_technical = sqr_compact_list(technical_text, 50)
+    entered_soft = sqr_compact_list(soft_text, 50)
+
+    technical = []
+    soft = []
+    for item in entered_technical:
+        if sqr_is_soft_skill(item):
+            soft.append(item)
+        else:
+            technical.append(item)
+    for item in entered_soft:
+        if item and item.lower() not in [x.lower() for x in soft]:
+            soft.append(item)
+
+    resume_lower = safe_text(resume_text).lower()
+    if not technical and resume_lower:
+        for skill in TECH_SKILLS:
+            if skill.lower() in resume_lower and not sqr_is_soft_skill(skill):
+                technical.append(skill)
+    if not soft:
+        for skill in SOFT_SKILL_KEYWORDS:
+            if skill.lower() in resume_lower:
+                soft.append(skill.title())
+
+    if not soft:
+        soft = ["Communication", "Teamwork", "Problem Solving", "Continuous Learning"]
+
+    # Remove accidental duplicates and soft skills from technical skills.
+    final_technical = []
+    for item in technical:
+        clean = safe_text(item)
+        if clean and not sqr_is_soft_skill(clean) and clean.lower() not in [x.lower() for x in final_technical]:
+            final_technical.append(clean)
+
+    final_soft = []
+    for item in soft:
+        clean = safe_text(item)
+        if clean and clean.lower() not in [x.lower() for x in final_soft]:
+            final_soft.append(clean)
+
+    return final_technical[:14], final_soft[:10]
+
+
 def build_dynamic_resume_payload(data, resume_text):
+    data = data or {}
     name = safe_text(data.get("name")) or "Candidate"
     target_role = safe_text(data.get("target_role") or data.get("role") or data.get("target_job")) or "Technology Role"
-    technical_skills = safe_text(data.get("technical_skills") or data.get("skills"))
-    soft_skills = safe_text(data.get("soft_skills"))
+    technical_skills_text = safe_text(data.get("technical_skills") or data.get("skills"))
+    soft_skills_text = safe_text(data.get("soft_skills"))
     education = safe_text(data.get("education"))
     experience = safe_text(data.get("experience"))
     projects = safe_text(data.get("projects"))
-    certifications = safe_text(data.get("certifications"))
+    certifications = safe_text(data.get("certifications") or data.get("certificates"))
     original_summary = safe_text(data.get("summary") or data.get("original_summary"))
+    linkedin = sqr_clean_link(data.get("linkedin") or data.get("linkedin_url"))
+    github = sqr_clean_link(data.get("github") or data.get("github_url"))
+
+    technical_list, soft_list = sqr_split_resume_skills(technical_skills_text, soft_skills_text, resume_text)
 
     summary = sqr_local_enhanced_summary(
         target_role,
         original_summary,
-        technical_skills,
-        soft_skills,
+        ", ".join(technical_list),
+        ", ".join(soft_list),
         education,
         experience,
         projects,
         certifications,
     )
     if not summary:
-        summary = local_dynamic_summary(name, target_role, technical_skills, soft_skills, resume_text)
-
-    technical_list = sqr_compact_list(technical_skills, 12)
-    if not technical_list:
-        technical_list = [skill for skill in TECH_SKILLS if skill.lower() in safe_text(resume_text).lower()][:12]
-    soft_list = sqr_compact_list(soft_skills, 8)
-    if not soft_list:
-        soft_list = ["Communication", "Teamwork", "Problem solving", "Continuous learning"]
+        summary = local_dynamic_summary(name, target_role, ", ".join(technical_list), ", ".join(soft_list), resume_text)
 
     sections = []
     sections.append(name.upper())
     sections.append(target_role)
-    sections.append("")
-    sections.append("PROFESSIONAL SUMMARY")
-    sections.append(summary)
-    sections.append("")
-    sections.append("TECHNICAL SKILLS")
-    sections.append(", ".join(technical_list) if technical_list else "Add role-specific tools, languages, platforms, and frameworks.")
-    sections.append("")
-    sections.append("SOFT SKILLS")
-    sections.append(", ".join(soft_list))
+    if linkedin:
+        sections.extend(["", "LINKEDIN", linkedin])
+    if github:
+        sections.extend(["", "GITHUB", github])
+    sections.extend(["", "PROFESSIONAL SUMMARY", summary])
+    sections.extend(["", "TECHNICAL SKILLS", ", ".join(technical_list) if technical_list else "Add role-specific tools, languages, platforms, and frameworks."])
+    sections.extend(["", "SOFT SKILLS", ", ".join(soft_list)])
     if projects:
         sections.extend(["", "PROJECTS", projects])
     if experience:
@@ -3104,6 +3377,8 @@ def build_dynamic_resume_payload(data, resume_text):
         "enhanced_summary": summary,
         "technical_skills": technical_list,
         "soft_skills": soft_list,
+        "linkedin": linkedin,
+        "github": github,
         "projects": projects,
         "experience": experience,
         "education": education,
@@ -3113,10 +3388,12 @@ def build_dynamic_resume_payload(data, resume_text):
             "Add numbers to achievements, such as percentage improvements, users served, or project size.",
             "Add exact tools and technologies beside each project.",
             "Mirror the most important keywords from the target job description.",
-            "Keep sections clear: Summary, Technical Skills, Projects, Experience, Education, Certifications."
+            "Keep sections clear: Summary, Technical Skills, Soft Skills, Projects, Experience, Education, Certifications."
         ],
         "missing_information": [
             item for item, value in {
+                "linkedin": linkedin,
+                "github": github,
                 "projects": projects,
                 "experience": experience,
                 "education": education,
@@ -3124,6 +3401,7 @@ def build_dynamic_resume_payload(data, resume_text):
             }.items() if not value
         ],
         "ai_powered": False,
+        "ai_provider": "local_dynamic_fallback",
     }
 
 
@@ -3133,25 +3411,34 @@ def generate_ai_resume_payload(data, resume_text):
 
     target_role = safe_text(data.get("target_role") or data.get("role") or data.get("target_job") or fallback.get("headline"))
     original_summary = safe_text(data.get("summary") or data.get("original_summary"))
+    linkedin = fallback.get("linkedin", "")
+    github = fallback.get("github", "")
 
     prompt = f"""
 You are an expert resume writer inside the SQR website. Rewrite and improve the user's resume details like a real AI assistant.
 
 Return valid JSON only with these exact keys:
-headline, summary, enhanced_summary, technical_skills, soft_skills, projects, experience, education, certifications, full_resume, improvements, missing_information.
+headline, summary, enhanced_summary, technical_skills, soft_skills, linkedin, github, projects, experience, education, certifications, full_resume, improvements, missing_information.
 
 Rules:
 - Use only the information provided in the form and uploaded/pasted resume text.
-- Do not invent companies, dates, GPA, certificates, degrees, projects, jobs, or years.
+- Do not invent companies, dates, GPA, certificates, degrees, projects, jobs, links, or years.
 - Do not use fixed generic text.
 - Do not say "ATS-friendly career readiness".
 - enhanced_summary must be 3 to 5 specific sentences based on the user's actual summary, skills, target job, projects, education, and resume text.
+- Separate technical_skills from soft_skills.
+- technical_skills must include only programming languages, tools, frameworks, databases, platforms, methods, and technologies.
+- soft_skills must include only personal/workplace strengths such as communication, teamwork, problem solving, leadership, time management, and continuous learning.
+- Put LinkedIn only in linkedin and GitHub only in github if provided.
+- Do not put soft skills inside technical_skills.
 - Improve wording, action verbs, clarity, and ATS keyword alignment for the target role.
 - If information is missing, list it in missing_information instead of inventing it.
-- full_resume must be clean ATS-readable plain text with these headings when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
+- full_resume must be clean ATS-readable plain text with these headings when data exists: LINKEDIN, GITHUB, PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
 - If a section has no user data, do not invent bullet points for it.
 
 Target role: {target_role}
+LinkedIn: {linkedin}
+GitHub: {github}
 User's original summary: {original_summary}
 User form data JSON:
 {json.dumps(data, ensure_ascii=False)}
@@ -3177,30 +3464,35 @@ Uploaded or pasted resume text:
         else:
             payload[key] = fallback.get(key, [])
 
+    # Clean any skill mixing after AI returns.
+    technical_clean, soft_clean = sqr_split_resume_skills(", ".join(payload.get("technical_skills") or []), ", ".join(payload.get("soft_skills") or []), resume_text)
+    payload["technical_skills"] = technical_clean or fallback.get("technical_skills", [])
+    payload["soft_skills"] = soft_clean or fallback.get("soft_skills", [])
+
+    payload["linkedin"] = sqr_clean_link(payload.get("linkedin") or fallback.get("linkedin"))
+    payload["github"] = sqr_clean_link(payload.get("github") or fallback.get("github"))
     payload["summary"] = safe_text(payload.get("summary") or payload.get("enhanced_summary") or fallback["summary"])
     payload["enhanced_summary"] = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback["summary"])
     payload["headline"] = safe_text(payload.get("headline") or fallback.get("headline") or target_role)
 
-    full_resume = safe_text(payload.get("full_resume"))
-    if not full_resume or len(full_resume.split()) < 35:
-        sections = [
-            safe_text(data.get("name") or "Candidate").upper(),
-            payload["headline"],
-            "",
-            "PROFESSIONAL SUMMARY",
-            payload["enhanced_summary"],
-            "",
-            "TECHNICAL SKILLS",
-            ", ".join(payload.get("technical_skills") or fallback.get("technical_skills") or []),
-            "",
-            "SOFT SKILLS",
-            ", ".join(payload.get("soft_skills") or fallback.get("soft_skills") or []),
-        ]
-        for label, key in (("PROJECTS", "projects"), ("EXPERIENCE", "experience"), ("EDUCATION", "education"), ("CERTIFICATIONS", "certifications")):
-            value = safe_text(payload.get(key) or fallback.get(key))
-            if value:
-                sections.extend(["", label, value])
-        payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
+    sections = [
+        safe_text(data.get("name") or "Candidate").upper(),
+        payload["headline"],
+    ]
+    if payload.get("linkedin"):
+        sections.extend(["", "LINKEDIN", payload["linkedin"]])
+    if payload.get("github"):
+        sections.extend(["", "GITHUB", payload["github"]])
+    sections.extend([
+        "", "PROFESSIONAL SUMMARY", payload["enhanced_summary"],
+        "", "TECHNICAL SKILLS", ", ".join(payload.get("technical_skills") or fallback.get("technical_skills") or []),
+        "", "SOFT SKILLS", ", ".join(payload.get("soft_skills") or fallback.get("soft_skills") or []),
+    ])
+    for label, key in (("PROJECTS", "projects"), ("EXPERIENCE", "experience"), ("EDUCATION", "education"), ("CERTIFICATIONS", "certifications")):
+        value = safe_text(payload.get(key) or fallback.get(key))
+        if value:
+            sections.extend(["", label, value])
+    payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
 
     provider = safe_text(payload.get("ai_provider")).lower()
     payload["ai_powered"] = provider in {"grok", "xai", "grok-4.3"} or bool(payload.get("ai_powered"))
@@ -3213,7 +3505,6 @@ Uploaded or pasted resume text:
         return fallback
 
     return payload
-
 
 def generate_ai_enhanced_summary(name, target_role, technical_skills, soft_skills, resume_text):
     payload = generate_ai_resume_payload({
@@ -3244,7 +3535,7 @@ def debug_xai():
         )
 
         response = client.chat.completions.create(
-            model="grok-4.3",
+            model=XAI_MODEL,
             messages=[
                 {"role": "system", "content": "Return only valid JSON."},
                 {"role": "user", "content": "{\"test\":\"Say AI works\"}"}
@@ -3285,7 +3576,7 @@ def ats_generate():
 
 
 @app.route("/api/ats/export/pdf", methods=["POST"])
-@student_required
+@login_required
 def export_pdf():
     data = get_json()
     text = safe_text(data.get("resume") or data.get("text"))
@@ -3298,7 +3589,7 @@ def export_pdf():
 
 
 @app.route("/api/ats/export/docx", methods=["POST"])
-@student_required
+@login_required
 def export_docx():
     if not Document:
         return jsonify({"error": "DOCX export library is not installed"}), 500
