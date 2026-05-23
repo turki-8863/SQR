@@ -74,7 +74,7 @@ DB_CONFIG = {
 
 pool = None
 XAI_API_KEY = (os.getenv("XAI_API_KEY") or "").strip()
-XAI_MODEL = (os.getenv("XAI_MODEL") or "grok-4.3").strip()
+XAI_MODEL = (os.getenv("XAI_MODEL") or "grok-3").strip()
 AI_PROVIDER = (os.getenv("AI_PROVIDER") or "grok").strip().lower()
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "45"))
 AI_MAX_RETRIES = max(1, int(os.getenv("AI_MAX_RETRIES", "3")))
@@ -3495,7 +3495,7 @@ Uploaded or pasted resume text:
     payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
 
     provider = safe_text(payload.get("ai_provider")).lower()
-    payload["ai_powered"] = provider in {"grok", "xai", "grok-4.3"} or bool(payload.get("ai_powered"))
+    payload["ai_powered"] = provider in {"grok", "xai", "grok-3", "grok-3-mini"} or bool(payload.get("ai_powered"))
     payload["ai_provider"] = "grok" if payload["ai_powered"] else "local_dynamic_fallback"
 
     bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
