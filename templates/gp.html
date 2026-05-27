@@ -71,7 +71,6 @@
       flex-direction: column;
     }
 
-    /* ── TOP NAV ── */
     .top-nav {
       display: flex;
       align-items: center;
@@ -200,7 +199,6 @@
       background: rgba(251,191,36,0.18);
     }
 
-    /* ── HERO ── */
     .hero {
       flex: 1;
       display: grid;
@@ -213,7 +211,6 @@
       width: 100%;
     }
 
-    /* ── HERO LEFT ── */
     .hero-left {
       animation: fadeUp 0.7s ease both;
     }
@@ -504,10 +501,8 @@
 
     .footer-actions { display: flex; gap: 0.5rem; }
 
-    /* ── MESSAGE ── */
     #message { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 200; }
 
-    /* ── ROAD DECO ── */
     .road-deco {
       position: absolute;
       bottom: -60px;
@@ -517,7 +512,6 @@
       pointer-events: none;
     }
 
-    /* ── ANIMATIONS ── */
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(24px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -528,7 +522,6 @@
       to   { opacity: 1; }
     }
 
-    /* ── RESPONSIVE ── */
     @media (max-width: 900px) {
       .hero { grid-template-columns: 1fr; padding: 3rem 1.25rem 2rem; }
       .stats-panel { flex-direction: row; flex-wrap: wrap; }
@@ -546,14 +539,12 @@
 </head>
 <body>
 
-  <!-- Particle canvas -->
   <canvas id="bg-canvas"></canvas>
   <div class="grid-overlay"></div>
 
   <div class="shell">
     <div id="message" class="message-holder"></div>
 
-    <!-- TOP NAV -->
     <nav class="top-nav">
       <div class="nav-brand">
         <span class="brand-badge">SQR</span>
@@ -574,10 +565,8 @@
       </div>
     </nav>
 
-    <!-- HERO -->
     <main class="hero">
 
-      <!-- LEFT -->
       <div class="hero-left">
         <div class="eyebrow">CS Career Platform</div>
 
@@ -586,11 +575,7 @@
           <div class="h1-line2">CS Career Path.</div>
         </h1>
 
-        <p class="hero-desc">
-          SQR connects you to real specializations, curated courses, industry jobs,
-          and AI-powered guidance — all from a live database. Your journey,
-          your roadmap, your future.
-        </p>
+        
 
         <div class="hero-actions">
           <a href="Specialization.html" class="btn btn-primary">Explore Specializations →</a>
@@ -603,14 +588,11 @@
           <span class="chip">// ATS resume tools</span>
           <span class="chip">// job matching</span>
           <span class="chip">// progress tracking</span>
-          <span class="chip">// live database</span>
         </div>
       </div>
 
-      <!-- RIGHT: STATS -->
       <div class="stats-panel">
 
-        <!-- Specializations -->
         <div class="metric-card card-cyan">
           <div class="metric-top">
             <span class="metric-label">Specializations</span>
@@ -621,7 +603,6 @@
           <div class="metric-bar"><div class="metric-fill fill-cyan" id="bar-spec"></div></div>
         </div>
 
-        <!-- Courses -->
         <div class="metric-card card-purple">
           <div class="metric-top">
             <span class="metric-label">Courses</span>
@@ -632,7 +613,6 @@
           <div class="metric-bar"><div class="metric-fill fill-purple" id="bar-course"></div></div>
         </div>
 
-        <!-- Jobs -->
         <div class="metric-card card-amber">
           <div class="metric-top">
             <span class="metric-label">Jobs</span>
@@ -643,7 +623,6 @@
           <div class="metric-bar"><div class="metric-fill fill-amber" id="bar-job"></div></div>
         </div>
 
-        <!-- Road SVG decoration inside stats -->
         <svg class="road-deco" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M20 180 Q60 100 100 80 Q140 60 180 20" stroke="white" stroke-width="3" stroke-dasharray="10 6"/>
           <circle cx="20" cy="180" r="6" fill="white"/>
@@ -653,7 +632,6 @@
 
     </main>
 
-    <!-- QUICK LINKS + FOOTER -->
     <div class="bottom-section">
       <div class="quick-links-row">
         <a href="Specialization.html" class="quick-link-card">
@@ -695,9 +673,7 @@
     </div>
   </div>
 
-  <!-- PARTICLE + ANIMATION SCRIPT -->
   <script>
-    /* ── PARTICLES ── */
     const canvas = document.getElementById('bg-canvas');
     const ctx = canvas.getContext('2d');
     let W, H, dots;
@@ -738,7 +714,6 @@
         }
       }
 
-      // Draw dots
       dots.forEach(d => {
         ctx.beginPath();
         ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
@@ -759,7 +734,6 @@
     draw();
     window.addEventListener('resize', () => { resize(); initDots(); });
 
-    /* ── ANIMATED COUNTER ── */
     function animateCount(el, target, duration = 1600) {
       const start = performance.now();
       const step = (now) => {
@@ -772,12 +746,10 @@
       requestAnimationFrame(step);
     }
 
-    /* ── PROGRESS BARS ── */
     function animateBar(el, pct, delay = 400) {
       setTimeout(() => { el.style.width = pct + '%'; }, delay);
     }
 
-    /* ── OBSERVER TO TRIGGER ON VIEW ── */
     const statsPanel = document.querySelector('.stats-panel');
     let triggered = false;
 
@@ -786,7 +758,6 @@
         if (entry.isIntersecting && !triggered) {
           triggered = true;
 
-          // Read values set by app.js (or use defaults for demo)
           const specEl   = document.getElementById('homeSpecCount');
           const courseEl = document.getElementById('homeCourseCount');
           const jobEl    = document.getElementById('homeJobCount');
@@ -808,7 +779,6 @@
 
     observer.observe(statsPanel);
 
-    /* ── CARD HOVER GLOW on mouse move ── */
     document.querySelectorAll('.metric-card').forEach(card => {
       card.addEventListener('mousemove', e => {
         const rect = card.getBoundingClientRect();
@@ -819,7 +789,6 @@
       });
     });
 
-    /* ── STAGGER entrance for quick-link cards ── */
     document.querySelectorAll('.quick-link-card').forEach((el, i) => {
       el.style.opacity = '0';
       el.style.transform = 'translateY(12px)';
