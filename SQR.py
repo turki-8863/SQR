@@ -5,6 +5,7 @@ import datetime
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 from io import BytesIO
 from functools import wraps
 
@@ -73,21 +74,15 @@ DB_CONFIG = {
 }
 
 pool = None
-XAI_API_KEY = (os.getenv("XAI_API_KEY") or "").strip()
-XAI_MODEL = (os.getenv("XAI_MODEL") or "grok-3").strip()
-AI_PROVIDER = (os.getenv("AI_PROVIDER") or "grok").strip().lower()
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
+AI_PROVIDER = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "45"))
 AI_MAX_RETRIES = max(1, int(os.getenv("AI_MAX_RETRIES", "3")))
 
-xai_client = None
-
-if OpenAI and XAI_API_KEY:
-    xai_client = OpenAI(
-        api_key=XAI_API_KEY,
-        base_url="https://api.x.ai/v1",
-        timeout=AI_TIMEOUT,
-        max_retries=AI_MAX_RETRIES
-    )
+# Gemini is called through the official REST endpoint, so no extra SDK is required.
+# This flag is kept because /api/runtime/report already checks gemini_client.
+gemini_client = bool(GEMINI_API_KEY)
 
 TECH_SKILLS = [
     "python", "java", "javascript", "typescript", "html", "css", "sql", "mysql", "postgresql",
@@ -882,54 +877,102 @@ def gemini_json(prompt, fallback=None):
     return ai_json(prompt, fallback)
 
 
+def mask_gemini_error(value):
+    text_value = safe_text(value)
+    if GEMINI_API_KEY:
+        text_value = text_value.replace(GEMINI_API_KEY, "****")
+    return text_value
+
+
+def extract_gemini_text(response_json):
+    candidates = response_json.get("candidates") or []
+    for candidate in candidates:
+        content = candidate.get("content") or {}
+        parts = content.get("parts") or []
+        text_parts = []
+        for part in parts:
+            if isinstance(part, dict) and safe_text(part.get("text")):
+                text_parts.append(safe_text(part.get("text")))
+        if text_parts:
+            return "\n".join(text_parts)
+    return ""
+
+
 def ai_json(prompt, fallback=None):
     fallback = dict(fallback or {})
 
-    if not xai_client:
+    if not GEMINI_API_KEY:
         fallback["ai_powered"] = False
         fallback["ai_provider"] = "local_dynamic_fallback"
-        fallback["ai_error"] = "XAI client is not configured. Check XAI_API_KEY and openai package."
+        fallback["ai_error"] = "GEMINI_API_KEY is not configured. Add it in Render Environment variables."
         return fallback
 
     last_error = ""
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are the SQR AI engine. Return valid JSON only. "
-                "Do not use markdown. Do not invent facts that the user did not provide. "
-                "Separate technical skills from soft skills."
-            ),
+    system_instruction = (
+        "You are the SQR AI engine. Return valid JSON only. "
+        "Do not use markdown. Do not invent facts that the user did not provide. "
+        "Separate technical skills from soft skills."
+    )
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        + urllib.parse.quote(GEMINI_MODEL, safe="")
+        + ":generateContent?key="
+        + urllib.parse.quote(GEMINI_API_KEY, safe="")
+    )
+
+    request_payload = {
+        "systemInstruction": {
+            "parts": [{"text": system_instruction}]
         },
-        {"role": "user", "content": safe_text(prompt)},
-    ]
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": safe_text(prompt)}]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.25,
+            "maxOutputTokens": 3200,
+            "responseMimeType": "application/json"
+        }
+    }
 
     for attempt in range(AI_MAX_RETRIES):
         try:
-            raw_text = ""
-
-            # xAI/Grok is OpenAI-compatible through chat.completions.
-            # The previous responses.create call can fail on some xAI accounts/SDK versions,
-            # which made the website silently return Dynamic Fallback.
-            response = xai_client.chat.completions.create(
-                model=XAI_MODEL,
-                messages=messages,
-                temperature=0.25,
-                max_tokens=3200,
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(request_payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
             )
-            raw_text = safe_text(response.choices[0].message.content)
+            with urllib.request.urlopen(req, timeout=AI_TIMEOUT) as response:
+                response_text = response.read().decode("utf-8", errors="ignore")
 
+            response_json = json.loads(response_text or "{}")
+            if response_json.get("error"):
+                raise RuntimeError(json.dumps(response_json.get("error"), ensure_ascii=False))
+
+            raw_text = extract_gemini_text(response_json)
             parsed = extract_json_object(raw_text, fallback)
             if isinstance(parsed, dict) and parsed is not fallback:
                 parsed["ai_powered"] = True
-                parsed["ai_provider"] = "grok"
+                parsed["ai_provider"] = "gemini"
+                parsed["ai_model"] = GEMINI_MODEL
                 return parsed
 
-            last_error = f"Could not parse Grok JSON: {raw_text[:250]}"
+            last_error = f"Could not parse Gemini JSON: {raw_text[:250]}"
             break
 
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="ignore") if hasattr(exc, "read") else ""
+            last_error = mask_gemini_error(body or str(exc))
+            temporary = exc.code in [429, 500, 502, 503, 504]
+            if temporary and attempt < AI_MAX_RETRIES - 1:
+                time.sleep(min(2 + attempt, 5))
+                continue
+            break
         except Exception as exc:
-            last_error = str(exc)
+            last_error = mask_gemini_error(str(exc))
             temporary = any(word in last_error.lower() for word in ["429", "500", "502", "503", "504", "rate", "timeout"])
             if temporary and attempt < AI_MAX_RETRIES - 1:
                 time.sleep(min(2 + attempt, 5))
@@ -937,11 +980,11 @@ def ai_json(prompt, fallback=None):
             break
 
     if last_error:
-        print("GROK AI ERROR:", last_error)
+        print("GEMINI AI ERROR:", last_error)
 
     fallback["ai_powered"] = False
     fallback["ai_provider"] = "local_dynamic_fallback"
-    fallback["ai_error"] = last_error or "Grok returned no usable JSON."
+    fallback["ai_error"] = last_error or "Gemini returned no usable JSON."
     return fallback
 
 
@@ -1551,16 +1594,17 @@ def health():
 def ai_status():
     return jsonify({
         "ai_provider_mode": AI_PROVIDER,
-        "xai_configured": bool(XAI_API_KEY),
-        "openai_sdk_installed": bool(OpenAI),
-        "xai_client_ready": bool(xai_client),
-        "xai_model": XAI_MODEL if XAI_API_KEY else "",
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "gemini_client_ready": bool(gemini_client),
+        "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else "",
         "max_retries": AI_MAX_RETRIES,
         "timeout_seconds": AI_TIMEOUT,
+        "message": "Gemini is ready" if GEMINI_API_KEY else "Set GEMINI_API_KEY in Render Environment variables."
     })
 
 
 @app.route("/api/signup", methods=["POST"])
+
 def signup():
     data = get_json()
     name = safe_text(data.get("name"))
@@ -3495,8 +3539,8 @@ Uploaded or pasted resume text:
     payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
 
     provider = safe_text(payload.get("ai_provider")).lower()
-    payload["ai_powered"] = provider in {"grok", "xai", "grok-3", "grok-3-mini"} or bool(payload.get("ai_powered"))
-    payload["ai_provider"] = "grok" if payload["ai_powered"] else "local_dynamic_fallback"
+    payload["ai_powered"] = provider in {"gemini", "google_gemini", "google-genai", "gemini-2.5-flash", "gemini-2.0-flash", "grok", "xai", "grok-3", "grok-3-mini"} or bool(payload.get("ai_powered"))
+    payload["ai_provider"] = "gemini" if payload["ai_powered"] else "local_dynamic_fallback"
 
     bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
     if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
@@ -3515,47 +3559,38 @@ def generate_ai_enhanced_summary(name, target_role, technical_skills, soft_skill
     }, resume_text)
     return payload.get("enhanced_summary") or payload.get("summary") or local_dynamic_summary(name, target_role, technical_skills, soft_skills, resume_text)
 
+@app.route("/api/debug/gemini", methods=["GET"])
 @app.route("/api/debug/xai", methods=["GET"])
-def debug_xai():
+def debug_gemini():
     try:
-        import os
-        from openai import OpenAI
-
-        key = os.getenv("XAI_API_KEY")
-
-        if not key:
+        if not GEMINI_API_KEY:
             return jsonify({
                 "ok": False,
-                "problem": "XAI_API_KEY is missing from Render environment variables"
+                "problem": "GEMINI_API_KEY is missing from Render environment variables"
             }), 500
 
-        client = OpenAI(
-            api_key=key,
-            base_url="https://api.x.ai/v1"
-        )
-
-        response = client.chat.completions.create(
-            model=XAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Return only valid JSON."},
-                {"role": "user", "content": "{\"test\":\"Say AI works\"}"}
-            ],
-            temperature=0.2
+        payload = ai_json(
+            'Return this exact JSON only: {"test":"Gemini works"}',
+            {"test": "fallback"}
         )
 
         return jsonify({
-            "ok": True,
-            "message": response.choices[0].message.content
+            "ok": bool(payload.get("ai_powered")),
+            "provider": payload.get("ai_provider"),
+            "model": GEMINI_MODEL,
+            "message": payload,
+            "error": payload.get("ai_error", "")
         })
 
     except Exception as e:
-        print("XAI DEBUG ERROR:", repr(e))
+        print("GEMINI DEBUG ERROR:", repr(e))
         return jsonify({
             "ok": False,
-            "error": str(e)
+            "error": mask_gemini_error(str(e))
         }), 500
         
 @app.route("/api/ats/generate", methods=["POST"])
+
 @login_required
 def ats_generate():
     if request.content_type and "multipart/form-data" in request.content_type:
