@@ -1076,7 +1076,7 @@
     const linkedin = result.linkedin || result.linkedin_url || "";
     const github = result.github || result.github_url || "";
     const providerLabel = result.ai_powered
-      ? `AI Generated: ${escapeHTML(result.ai_provider || "grok")}`
+      ? `AI Generated: ${escapeHTML(result.ai_provider || "gemini")}`
       : "Dynamic fallback";
 
     box.innerHTML = `
