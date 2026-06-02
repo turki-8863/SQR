@@ -3116,34 +3116,129 @@ def sqr_slug(value):
     return aliases.get(value, value)
 
 
-def sqr_recommendation_questions():
-    questions = globals().get("SQR_RECOMMENDATION_QUESTION_BANK") or []
-    if questions:
-        return questions
-    fallback = []
-    for key, hints in SPECIALIZATION_HINTS.items():
-        clean_key = sqr_slug(key)
-        label = key.title()
-        fallback.append({
-            "id": f"{clean_key}_interest",
-            "specialization_key": clean_key,
-            "specialization": label,
-            "dimension": "interest",
-            "question": f"How interested are you in {label}?",
-            "keywords": hints,
-            "weight": 5,
-        })
-        fallback.append({
-            "id": f"{clean_key}_skill",
-            "specialization_key": clean_key,
-            "specialization": label,
-            "dimension": "skill",
-            "question": f"How confident are you with skills related to {label}?",
-            "keywords": hints,
-            "weight": 5,
-        })
-    return fallback
 
+SQR_AI_SPECIALIZATION_LIBRARY = {
+    "data_engineering": {
+        "name": "Data Engineering",
+        "description": "Designing data pipelines, ETL workflows, databases, warehouses, and reliable data platforms for analytics and AI.",
+        "keywords": ["data", "sql", "python", "etl", "pipeline", "warehouse", "database", "cloud", "spark", "airflow", "analytics"],
+        "roadmap": ["SQL and Python", "Database design", "ETL and data pipelines", "Cloud data warehouses", "Spark or Airflow projects"],
+    },
+    "cybersecurity": {
+        "name": "Cybersecurity",
+        "description": "Protecting systems, monitoring threats, handling incidents, and improving security posture.",
+        "keywords": ["security", "cyber", "network", "linux", "forensics", "soc", "siem", "incident", "vulnerability"],
+        "roadmap": ["Networking and Linux", "Security fundamentals", "SOC tools and SIEM", "Incident response", "Security portfolio labs"],
+    },
+    "artificial_intelligence": {
+        "name": "Artificial Intelligence",
+        "description": "Building intelligent systems using machine learning, data, automation, NLP, and computer vision.",
+        "keywords": ["ai", "machine learning", "python", "model", "automation", "nlp", "vision", "statistics", "data"],
+        "roadmap": ["Python and math basics", "Machine learning", "Model evaluation", "NLP or computer vision", "AI projects"],
+    },
+    "software_engineering": {
+        "name": "Software Engineering",
+        "description": "Designing, building, testing, and maintaining reliable software systems and applications.",
+        "keywords": ["software", "java", "python", "api", "backend", "testing", "problem solving", "oop", "database"],
+        "roadmap": ["Programming fundamentals", "Data structures", "APIs and databases", "Testing", "Full-stack projects"],
+    },
+    "web_development": {
+        "name": "Web Development",
+        "description": "Creating frontend and backend web applications using modern web technologies.",
+        "keywords": ["html", "css", "javascript", "frontend", "backend", "react", "flask", "node", "ui"],
+        "roadmap": ["HTML CSS JavaScript", "Frontend framework", "Backend API", "Database", "Deployment"],
+    },
+    "cloud_computing": {
+        "name": "Cloud Computing",
+        "description": "Deploying, scaling, and managing applications and infrastructure on cloud platforms.",
+        "keywords": ["cloud", "aws", "azure", "docker", "deployment", "server", "devops", "kubernetes"],
+        "roadmap": ["Linux basics", "Cloud fundamentals", "Docker", "Networking", "Deployment projects"],
+    },
+    "devops_engineering": {
+        "name": "DevOps Engineering",
+        "description": "Automating deployment, monitoring, CI/CD, containers, and production operations.",
+        "keywords": ["devops", "docker", "kubernetes", "ci", "cd", "deployment", "linux", "cloud", "monitoring"],
+        "roadmap": ["Linux and Git", "CI/CD", "Docker", "Cloud deployment", "Monitoring"],
+    },
+    "database_administration": {
+        "name": "Database Administration",
+        "description": "Managing databases, schemas, queries, performance, backups, and data security.",
+        "keywords": ["database", "sql", "mysql", "postgresql", "schema", "queries", "backup", "admin"],
+        "roadmap": ["SQL", "Database design", "Performance tuning", "Backup and recovery", "Security"],
+    },
+    "computer_networks": {
+        "name": "Computer Networks",
+        "description": "Designing and troubleshooting networks, routing, switching, protocols, and infrastructure.",
+        "keywords": ["network", "tcp", "ip", "routing", "switching", "linux", "security", "protocols"],
+        "roadmap": ["Network fundamentals", "Routing and switching", "Linux networking", "Security basics", "Hands-on labs"],
+    },
+    "ui_ux_engineering": {
+        "name": "UI/UX Engineering",
+        "description": "Designing usable interfaces, prototypes, user flows, and frontend experiences.",
+        "keywords": ["ui", "ux", "design", "interface", "figma", "frontend", "user", "prototype"],
+        "roadmap": ["Design principles", "Figma", "User flows", "Frontend basics", "Portfolio case studies"],
+    },
+}
+
+SPECIALIZATION_HINTS.update({info["name"].lower(): info["keywords"] for info in SQR_AI_SPECIALIZATION_LIBRARY.values()})
+SPECIALIZATION_HINTS.update({key: info["keywords"] for key, info in SQR_AI_SPECIALIZATION_LIBRARY.items()})
+
+
+def sqr_all_specialization_library():
+    library = dict(SQR_AI_SPECIALIZATION_LIBRARY)
+    for key, hints in SPECIALIZATION_HINTS.items():
+        slug = sqr_slug(key)
+        if slug not in library:
+            library[slug] = {
+                "name": safe_text(key).replace("_", " ").title(),
+                "description": f"A computer science path focused on {safe_text(key).replace('_', ' ')} skills and related career roles.",
+                "keywords": hints,
+                "roadmap": ["Learn fundamentals", "Build practical projects", "Complete related courses", "Prepare your resume"],
+            }
+    return library
+
+
+def sqr_recommendation_questions():
+    base_questions = list(globals().get("SQR_RECOMMENDATION_QUESTION_BANK") or [])
+    existing_ids = {safe_text(q.get("id")) for q in base_questions if isinstance(q, dict)}
+    for key, info in sqr_all_specialization_library().items():
+        name = info.get("name") or key.replace("_", " ").title()
+        keywords = info.get("keywords") or []
+        skill_text = ", ".join(keywords[:4])
+        generated = [
+            {
+                "id": f"{key}_interest",
+                "specialization_key": key,
+                "specialization": name,
+                "dimension": "interest",
+                "question": f"How interested are you in {name} tasks such as {skill_text}?",
+                "keywords": keywords,
+                "weight": 5,
+            },
+            {
+                "id": f"{key}_skill",
+                "specialization_key": key,
+                "specialization": name,
+                "dimension": "skill",
+                "question": f"How confident are you with skills related to {name}?",
+                "keywords": keywords,
+                "weight": 5,
+            },
+            {
+                "id": f"{key}_career",
+                "specialization_key": key,
+                "specialization": name,
+                "dimension": "career",
+                "question": f"Would you enjoy a future job connected to {name}?",
+                "keywords": keywords,
+                "weight": 5,
+            },
+        ]
+        for q in generated:
+            if q["id"] not in existing_ids:
+                base_questions.append(q)
+                existing_ids.add(q["id"])
+    return base_questions
 
 def sqr_rating(value, default=3):
     text = safe_text(value).lower()
@@ -3215,6 +3310,14 @@ def sqr_score_recommendation_quiz(data):
     return percentages, chosen
 
 
+
+def pct_value(value):
+    try:
+        number = int(round(float(value or 0)))
+    except Exception:
+        number = 0
+    return max(0, min(100, number))
+
 def sqr_spec_key(row):
     return sqr_slug(row_value(row, "key", "slug", "name", "title") or "")
 
@@ -3233,7 +3336,6 @@ def sqr_recommendation_profile_text(data, user=None):
     ]
     if user:
         parts.extend([safe_text(user.get("interests")), safe_text(user.get("skills")), safe_text(user.get("goal"))])
-    # Add keywords from quiz answers so the recommendation still works even when the user only answers the quiz.
     q_by_id = {safe_text(q.get("id")): q for q in sqr_recommendation_questions()}
     for answer in sqr_parse_recommendation_answers(data):
         q = q_by_id.get(safe_text(answer.get("id") or answer.get("question_id")))
@@ -3242,30 +3344,23 @@ def sqr_recommendation_profile_text(data, user=None):
             parts.append(q.get("specialization") or "")
     return " ".join([p for p in parts if p]).lower()
 
-
 @app.route("/api/recommendations", methods=["POST"])
 @student_required
 def recommendations():
     data = get_json()
     user = request.current_user
-    user_id = user.get("id")
-    profile_text = sqr_recommendation_profile_text(data, user)
+    user_id = user.get("id") or user.get("user_id")
     quiz_scores, quiz_answers = sqr_score_recommendation_quiz(data)
+    profile_text = sqr_recommendation_profile_text({"answers": quiz_answers}, user)
 
     specs = [normalize_specialization(row) for row in (query_db("SELECT * FROM specializations ORDER BY specialization_id DESC", fetchall=True) or [])]
-    jobs = [normalize_job(row) for row in (query_db(
-        """
-        SELECT j.*, s.name AS specialization_name
-        FROM jobs j
-        LEFT JOIN specializations s ON s.specialization_id=j.specialization_id
-        ORDER BY j.job_id DESC
-        """,
-        fetchall=True
-    ) or [])]
+    library = sqr_all_specialization_library()
 
     recommended_specs = []
+    system_slugs = set()
     for spec in specs:
         spec_key = sqr_spec_key(spec)
+        system_slugs.add(spec_key)
         target = f"{spec.get('name','')} {spec.get('description','')} {spec.get('skills','')} {spec.get('roadmap','')} {spec.get('career_paths','')}"
         text_score, matches = calculate_match_percentage(profile_text, target)
         quiz_score = safe_int(quiz_scores.get(spec_key), 0)
@@ -3274,12 +3369,7 @@ def recommendations():
         for key, hints in SPECIALIZATION_HINTS.items():
             if sqr_slug(key) == spec_key or key in lower_name:
                 hint_score = min(100, len([h for h in hints if h in profile_text]) * 18)
-        if quiz_answers:
-            final_score = round((quiz_score * 0.72) + (max(text_score, hint_score) * 0.28))
-            reason = "Matched from your recommendation quiz answers and your skill/profile text."
-        else:
-            final_score = max(text_score, hint_score)
-            reason = "Matched from your interests, skills, and profile text."
+        final_score = round((quiz_score * 0.82) + (max(text_score, hint_score) * 0.18)) if quiz_answers else max(text_score, hint_score)
         final_score = max(0, min(100, final_score))
         recommended_specs.append({
             "id": spec.get("id"),
@@ -3291,78 +3381,105 @@ def recommendations():
             "quiz_score": quiz_score,
             "text_score": text_score,
             "matched_skills": matches,
-            "reason": reason,
+            "reason": "Matched from your quiz answers and compared with specializations currently stored in SQR.",
+            "in_system": True,
+            "source": "database",
         })
 
-    recommended_specs.sort(key=lambda item: item["match_percentage"], reverse=True)
-    spec_score_by_id = {safe_int(s.get("specialization_id") or s.get("id")): s.get("match_percentage", 0) for s in recommended_specs}
-    top_spec_names = [s.get("name") for s in recommended_specs[:3] if s.get("name")]
-
-    recommended_jobs = []
-    for job in jobs:
-        target = f"{job.get('title','')} {job.get('description','')} {job.get('skills','')} {job.get('required_skills','')} {job.get('specialization','')}"
-        skill_score, matches = calculate_match_percentage(profile_text, target)
-        related_spec_score = safe_int(spec_score_by_id.get(safe_int(job.get("specialization_id")), 0), 0)
-        if quiz_answers:
-            final_score = round((related_spec_score * 0.55) + (skill_score * 0.45))
-            reason = "Matched separately using the quiz-based specialization score plus job skill keywords."
-        else:
-            final_score = skill_score
-            reason = "Matched separately using your profile text and job skill keywords."
+    for key, info in library.items():
+        if key in system_slugs:
+            continue
+        quiz_score = safe_int(quiz_scores.get(key), 0)
+        target = " ".join([info.get("name", ""), info.get("description", ""), " ".join(info.get("keywords") or [])])
+        text_score, matches = calculate_match_percentage(profile_text, target)
+        final_score = round((quiz_score * 0.88) + (text_score * 0.12)) if quiz_answers else text_score
+        if final_score <= 0 and quiz_answers:
+            final_score = quiz_score
         final_score = max(0, min(100, final_score))
-        recommended_jobs.append({
-            "id": job.get("id"),
-            "job_id": job.get("job_id") or job.get("id"),
-            "specialization_id": job.get("specialization_id"),
-            "title": job.get("title"),
-            "description": job.get("description") or "",
+        recommended_specs.append({
+            "id": None,
+            "specialization_id": f"external-{key}",
+            "name": info.get("name") or key.replace("_", " ").title(),
+            "description": info.get("description") or "",
             "match_percentage": final_score,
             "score": final_score,
-            "matched_skills": matches,
-            "salary": job.get("salary") or job.get("average_salary"),
-            "reason": reason,
+            "quiz_score": quiz_score,
+            "text_score": text_score,
+            "matched_skills": matches or (info.get("keywords") or [])[:5],
+            "reason": "AI-ready suggestion from your quiz answers. It can appear even if this specialization is not stored in the database yet.",
+            "roadmap": info.get("roadmap") or [],
+            "in_system": False,
+            "source": "ai_catalog",
         })
-    recommended_jobs.sort(key=lambda item: item["match_percentage"], reverse=True)
 
-    summary = "Your specialization recommendation and job recommendation are calculated separately from the recommendation quiz."
-    if top_spec_names:
-        summary = f"Best specialization matches: {', '.join(top_spec_names)}. Jobs are ranked separately using those quiz results plus job skills."
-    roadmap = [
-        "Start with the highest quiz-matched specialization.",
-        "Open its beginner courses and complete the linked quizzes to create real progress.",
-        "Compare the separately ranked jobs and note missing skills.",
-        "Use the ATS checker/generator to align your resume with the top job match.",
-    ]
+    recommended_specs.sort(key=lambda item: item.get("match_percentage", 0), reverse=True)
+    deterministic_top = recommended_specs[:6]
 
-    # AI improves only the wording of summary/roadmap. The actual IDs and scores stay deterministic.
+    ai_fallback = {
+        "summary": "Your specialization recommendation is based on the quiz answers only. Jobs are recommended separately on the Jobs page.",
+        "recommended_specializations": deterministic_top,
+        "roadmap": [
+            "Start with the highest quiz-matched specialization.",
+            "Review the suggested skills and roadmap.",
+            "Open the Jobs page to get job recommendations separately.",
+            "Use courses and quizzes to build measurable progress.",
+        ],
+    }
+
     ai_payload = ai_json(
         """
-Return valid JSON only with these keys: summary, roadmap.
-Write a short helpful recommendation explanation for an SQR student.
-Do not change, invent, or recalculate any scores.
-Make the summary specific to the matched specializations and jobs.
+Return valid JSON only with these keys: summary, recommended_specializations, roadmap.
+Recommend computer science specializations for an SQR student using the quiz answers only.
+You may recommend a specialization even if it is not currently in the SQR database.
+Do not recommend jobs. Jobs belong only on the Jobs page.
+For each recommended_specializations item use keys: name, description, reason, match_percentage, roadmap, in_system.
+Use the deterministic candidates and scores as guidance, but you may include one strong external specialization if the quiz indicates it.
 """
-        + f"\nProfile text: {profile_text[:2500]}"
-        + f"\nTop specializations: {json.dumps(recommended_specs[:3], ensure_ascii=False)}"
-        + f"\nTop jobs: {json.dumps(recommended_jobs[:5], ensure_ascii=False)}"
-        + f"\nQuiz answers: {json.dumps(quiz_answers[:20], ensure_ascii=False)}",
-        {"summary": summary, "roadmap": roadmap}
+        + f"\nQuiz answers: {json.dumps(quiz_answers, ensure_ascii=False)}"
+        + f"\nQuiz scores: {json.dumps(quiz_scores, ensure_ascii=False)}"
+        + f"\nCurrent SQR database specializations: {json.dumps([{'name': s.get('name'), 'description': s.get('description'), 'specialization_id': s.get('specialization_id')} for s in specs], ensure_ascii=False)}"
+        + f"\nAvailable external specialization library: {json.dumps(library, ensure_ascii=False)}"
+        + f"\nDeterministic top candidates: {json.dumps(deterministic_top, ensure_ascii=False)}",
+        ai_fallback
     )
-    summary = safe_text(ai_payload.get("summary")) or summary
-    ai_roadmap = ai_payload.get("roadmap")
-    if isinstance(ai_roadmap, list) and ai_roadmap:
-        roadmap = [safe_text(x) for x in ai_roadmap if safe_text(x)][:6] or roadmap
+
+    ai_specs_raw = ai_payload.get("recommended_specializations") if isinstance(ai_payload, dict) else None
+    final_specs = []
+    if isinstance(ai_specs_raw, list) and ai_specs_raw:
+        db_by_name = {safe_text(s.get("name")).lower(): s for s in specs}
+        for idx, item in enumerate(ai_specs_raw[:6]):
+            if not isinstance(item, dict):
+                continue
+            name = safe_text(item.get("name")) or safe_text(deterministic_top[idx].get("name") if idx < len(deterministic_top) else "Specialization")
+            db_match = db_by_name.get(name.lower())
+            score = pct_value(item.get("match_percentage") or item.get("score") or (deterministic_top[idx].get("score") if idx < len(deterministic_top) else 0))
+            final_specs.append({
+                "id": db_match.get("id") if db_match else None,
+                "specialization_id": (db_match.get("specialization_id") or db_match.get("id")) if db_match else f"external-{sqr_slug(name)}",
+                "name": name,
+                "description": safe_text(item.get("description")) or (db_match.get("description") if db_match else ""),
+                "reason": safe_text(item.get("reason")) or "Recommended from your quiz answers.",
+                "match_percentage": score,
+                "score": score,
+                "roadmap": item.get("roadmap") if isinstance(item.get("roadmap"), list) else [],
+                "in_system": bool(db_match) if "in_system" not in item else bool(item.get("in_system")) and bool(db_match),
+                "source": "ai" if ai_payload.get("ai_powered") else "dynamic_quiz",
+            })
+    if not final_specs:
+        final_specs = deterministic_top
 
     result = {
-        "summary": summary,
-        "recommendation_basis": "quiz" if quiz_answers else "profile_text",
+        "summary": safe_text(ai_payload.get("summary")) or ai_fallback["summary"],
+        "recommendation_basis": "quiz",
         "quiz_answers": quiz_answers,
         "quiz_scores": quiz_scores,
-        "recommended_specializations": recommended_specs[:5],
-        "recommended_jobs": recommended_jobs[:8],
-        "roadmap": roadmap,
+        "recommended_specializations": final_specs[:6],
+        "roadmap": ai_payload.get("roadmap") if isinstance(ai_payload.get("roadmap"), list) else ai_fallback["roadmap"],
+        "recommended_jobs": [],
+        "jobs_location": "jobs.html",
         "ai_powered": bool(ai_payload.get("ai_powered")),
         "ai_provider": safe_text(ai_payload.get("ai_provider") or "local_dynamic_fallback"),
+        "ai_error": safe_text(ai_payload.get("ai_error")),
     }
 
     try:
@@ -3372,13 +3489,15 @@ Make the summary specific to the matched specializations and jobs.
                 (user_id, json.dumps(result)),
                 commit=True
             )
-        elif table_exists("recommendations") and recommended_specs:
-            top = recommended_specs[0]
-            query_db(
-                "INSERT INTO recommendations (user_id,specialization_id,match_score,explanation) VALUES (%s,%s,%s,%s)",
-                (user_id, top.get("specialization_id") or top.get("id"), top.get("match_percentage", 0), json.dumps(result)),
-                commit=True
-            )
+        elif table_exists("recommendations") and result["recommended_specializations"]:
+            top = result["recommended_specializations"][0]
+            top_id = top.get("specialization_id") if safe_text(top.get("specialization_id")).isdigit() else None
+            if top_id:
+                query_db(
+                    "INSERT INTO recommendations (user_id,specialization_id,match_score,explanation) VALUES (%s,%s,%s,%s)",
+                    (user_id, top_id, top.get("match_percentage", 0), json.dumps(result)),
+                    commit=True
+                )
     except Exception as exc:
         print("RECOMMENDATION SAVE ERROR:", exc)
 
@@ -6005,13 +6124,13 @@ def sqr_patch_recommendation_questions():
     specialization_key = safe_text(request.args.get("specialization_key")).lower()
     dimension = safe_text(request.args.get("dimension")).lower()
     questions = []
-    for question in SQR_RECOMMENDATION_QUESTION_BANK:
+    for question in sqr_recommendation_questions():
         if specialization_key and safe_text(question.get("specialization_key")).lower() != specialization_key:
             continue
         if dimension and safe_text(question.get("dimension")).lower() != dimension:
             continue
         questions.append(question)
-    return jsonify({"questions": questions, "count": len(questions)})
+    return jsonify({"questions": questions, "count": len(questions), "mode": "quiz_only"})
 
 
 @app.route("/api/catalog/search", methods=["GET"])
@@ -6360,15 +6479,77 @@ def recommendation_analyze_alias():
     return recommendations()
 
 
+
 @app.route("/api/recommendations/jobs", methods=["POST"])
 @student_required
 def recommendation_jobs_alias():
-    payload = recommendations().get_json()
+    data = get_json()
+    user = request.current_user
+    user_id = user.get("id") or user.get("user_id")
+
+    latest_result = {}
+    try:
+        if table_exists("recommendation_results"):
+            latest = query_db(
+                "SELECT recommendation_json FROM recommendation_results WHERE user_id=%s ORDER BY recommendation_id DESC LIMIT 1",
+                (user_id,),
+                fetchone=True
+            ) or {}
+            latest_result = json.loads(latest.get("recommendation_json") or "{}") if latest.get("recommendation_json") else {}
+    except Exception as exc:
+        print("LATEST RECOMMENDATION LOAD ERROR:", exc)
+        latest_result = {}
+
+    quiz_scores = latest_result.get("quiz_scores") or sqr_score_recommendation_quiz(data)[0]
+    recommended_specs = latest_result.get("recommended_specializations") or []
+    profile_text = sqr_recommendation_profile_text({"answers": latest_result.get("quiz_answers") or data.get("answers") or []}, user)
+    profile_text += " " + " ".join(safe_text(s.get("name")) for s in recommended_specs if isinstance(s, dict))
+
+    jobs = [normalize_job(row) for row in (query_db(
+        """
+        SELECT j.*, s.name AS specialization_name
+        FROM jobs j
+        LEFT JOIN specializations s ON s.specialization_id=j.specialization_id
+        ORDER BY j.job_id DESC
+        """,
+        fetchall=True
+    ) or [])]
+
+    spec_name_scores = {safe_text(s.get("name")).lower(): pct_value(s.get("match_percentage") or s.get("score")) for s in recommended_specs if isinstance(s, dict)}
+    recommended_jobs = []
+    for job in jobs:
+        target = f"{job.get('title','')} {job.get('description','')} {job.get('skills','')} {job.get('required_skills','')} {job.get('specialization','')} {job.get('specialization_name','')}"
+        skill_score, matches = calculate_match_percentage(profile_text, target)
+        spec_label = safe_text(job.get("specialization_name") or job.get("specialization")).lower()
+        spec_boost = spec_name_scores.get(spec_label, 0)
+        if spec_boost <= 0:
+            spec_slug = sqr_slug(spec_label)
+            spec_boost = pct_value(quiz_scores.get(spec_slug))
+        final_score = round((skill_score * 0.58) + (spec_boost * 0.42)) if (skill_score or spec_boost) else 0
+        final_score = max(0, min(100, final_score))
+        recommended_jobs.append({
+            "id": job.get("id"),
+            "job_id": job.get("job_id") or job.get("id"),
+            "specialization_id": job.get("specialization_id"),
+            "title": job.get("title"),
+            "description": job.get("description") or "",
+            "match_percentage": final_score,
+            "score": final_score,
+            "matched_skills": matches,
+            "salary": job.get("salary") or job.get("average_salary"),
+            "specialization_name": job.get("specialization_name") or job.get("specialization"),
+            "link": job.get("link") or job.get("job_link"),
+            "reason": "Matched on the Jobs page using your latest specialization quiz result and job skill keywords.",
+        })
+    recommended_jobs.sort(key=lambda item: item.get("match_percentage", 0), reverse=True)
+
     return jsonify({
-        "recommended_jobs": payload.get("recommended_jobs", []),
-        "recommended_specializations": payload.get("recommended_specializations", []),
-        "summary": payload.get("summary", "")
+        "recommended_jobs": recommended_jobs[:8],
+        "summary": "Job recommendations are separate from specialization recommendations and are shown only on the Jobs page.",
+        "recommendation_source": "latest_quiz" if latest_result else "profile_or_current_answers",
+        "recommended_specializations_used": recommended_specs[:3],
     })
+
 
 @app.errorhandler(404)
 def not_found(error):
