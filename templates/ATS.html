@@ -26,12 +26,12 @@
     <section class="ats-layout section-block">
       <article class="card color-card ats-panel">
         <span class="panel-kicker">Checker</span>
-        <h2>Upload resume for ATS check</h2>
+        <h2>Upload resume for AI ATS check</h2>
+        <p class="muted">The checker analyzes only the uploaded resume file. No pasted resume text and no job description are required.</p>
         <form id="atsCheckForm" class="stack-form" enctype="multipart/form-data">
-          
           <label class="required" for="resume_file">Resume file</label>
-          <input id="resume_file" name="resume" type="file" accept=".pdf,.docx,.txt" required>
-          <button type="submit" class="btn btn-primary">Check Resume</button>
+          <input id="resume_file" name="resume" type="file" accept=".pdf,.docx" required>
+          <button type="submit" class="btn btn-primary">Check Uploaded Resume</button>
         </form>
       </article>
 
@@ -41,8 +41,14 @@
         <form id="atsGenerateForm" class="stack-form">
           <label class="required" for="name">Full name</label>
           <input id="name" name="name" required placeholder="Your full name">
-          <label class="required" for="target_job">Target job</label>
-          <input id="target_job" name="target_job" required placeholder="Software Engineer, SOC Analyst...">
+          <label class="required" for="target_job">Target role</label>
+          <input id="target_job" name="target_job" required placeholder="Entry Level Software Engineer, SOC Analyst...">
+          <label for="phone">Phone number</label>
+          <input id="phone" name="phone" type="tel" placeholder="+966 5X XXX XXXX">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" placeholder="your.email@example.com">
+          <label for="location">Location / Address</label>
+          <input id="location" name="location" placeholder="Dammam, Saudi Arabia">
           <label class="required" for="summary">Professional summary</label>
           <textarea id="summary" name="summary" required placeholder="Short summary about your background"></textarea>
           <label class="required" for="technical_skills">Technical Skills</label>
@@ -53,6 +59,8 @@
           <input id="linkedin" name="linkedin" type="url" placeholder="https://www.linkedin.com/in/yourname">
           <label for="github">GitHub</label>
           <input id="github" name="github" type="url" placeholder="https://github.com/yourname">
+          <label for="portfolio">Portfolio</label>
+          <input id="portfolio" name="portfolio" type="url" placeholder="https://yourportfolio.com">
           <label for="education">Education</label>
           <textarea id="education" name="education" placeholder="Degree, college, graduation year"></textarea>
           <label for="experience">Experience</label>
