@@ -8,29 +8,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=60">
-  <script defer src="{{ url_for('static', filename='app.js') }}?v=60"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=90">
+  <script defer src="{{ url_for('static', filename='app.js') }}?v=90"></script>
 </head>
 <body class="page-body recommendation-body colorful-page" data-page="recommendation">
   <main class="page-shell recommendation-shell">
     <div id="message" class="message-holder"></div>
-    <section class="page-hero compact-hero gradient-pink"><div><span class="eyebrow">Recommendation</span><h1>Get specialization and job suggestions from your answers.</h1></div><a href="profile.html" class="btn btn-light">Update Profile</a></section>
+    <section class="page-hero compact-hero gradient-pink"><div><span class="eyebrow">Recommendation</span><h1>Get a specialization recommendation from a quiz.</h1></div><a href="profile.html" class="btn btn-light">Update Profile</a></section>
     <section class="recommendation-layout section-block">
       <article class="card color-card">
         <span class="panel-kicker">Career test</span>
-        <h2>Write your preferences</h2>
-        <form id="recommendationForm" class="stack-form">
-          <label class="required" for="interests">Interests</label>
-          <textarea id="interests" name="interests" required placeholder="Security, AI, web apps, data, networks..."></textarea>
-          <label class="required" for="skills_input">Current skills</label>
-          <textarea id="skills_input" name="skills" required placeholder="Python, SQL, Linux, JavaScript..."></textarea>
-          <label for="work_style">Preferred work style</label>
-          <textarea id="work_style" name="work_style" placeholder="Write how you like to work: investigation, building, analysis, teamwork, problem solving..."></textarea>
-          <label for="goal">Career direction</label>
-          <textarea id="goal" name="goal" placeholder="Optional: what do you want SQR to adapt to?"></textarea>
-          <label for="answers">Extra answers</label>
-          <textarea id="answers" name="answers" placeholder="Write anything else that should affect the recommendation."></textarea>
-          <button type="submit" class="btn btn-primary">Get Recommendation</button>
+        <h2>Specialization quiz</h2>
+        <form id="recommendationForm" class="stack-form" data-recommendation>
+          <p class="muted">Answer the quiz below. You do not need to write interests or skills. SQR AI can recommend a specialization even if it is not already stored in the system.</p>
+          <div id="recommendationQuestionBank" data-recommendation-quiz></div>
+          <button type="submit" class="btn btn-primary">Get Specialization Recommendation</button>
         </form>
       </article>
       

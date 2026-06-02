@@ -8,16 +8,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=60">
-  <script defer src="{{ url_for('static', filename='app.js') }}?v=60"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=90">
+  <script defer src="{{ url_for('static', filename='app.js') }}?v=90"></script>
 </head>
 <body class="page-body jobs-body colorful-page" data-page="jobs">
   <main class="page-shell jobs-shell">
     <div id="message" class="message-holder"></div>
     <section class="page-hero compact-hero gradient-green">
       <div><span class="eyebrow">Jobs</span><h1>Explore careers .</h1></div>
-      <div class="hero-actions"><a href="recommendation.html" class="btn btn-light">Get Recommendation</a><a href="profile.html" class="btn btn-glass">Update Profile</a></div>
+      <div class="hero-actions"><a href="recommendation.html" class="btn btn-light">Specialization Quiz</a><a href="profile.html" class="btn btn-glass">Update Profile</a></div>
     </section>
+
+    <section class="section-block color-panel blue-panel">
+      <div class="section-heading split-heading">
+        <div><span>Job recommendation</span><h2>Recommended jobs based on your latest specialization quiz</h2></div>
+        <button type="button" id="runJobRecommendation" class="btn btn-primary">Refresh Job Recommendation</button>
+      </div>
+      <div id="jobRecommendationBox" data-job-recommendations class="grid cards-3 dynamic-grid"></div>
+    </section>
+
     <section class="section-block color-panel green-panel">
       <div class="section-heading split-heading"><div><span>Career catalog</span></div><input type="search" class="page-search" data-filter-target="jobsBox" placeholder="Search jobs..."></div>
       <div id="jobsBox" class="grid cards-3 dynamic-grid">
