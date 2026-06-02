@@ -5390,3 +5390,22 @@ a[data-action="logout"] {
   .ats-pro-grid { grid-template-columns: 1fr; }
   .ats-resume-preview-head { align-items: flex-start; flex-direction: column; }
 }
+/* Force logout / sign out button to be red */
+.logout-btn,
+#logoutBtn,
+a[href="/logout"],
+button.logout-btn {
+  background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 10px 25px rgba(239, 68, 68, 0.35) !important;
+}
+
+.logout-btn:hover,
+#logoutBtn:hover,
+a[href="/logout"]:hover,
+button.logout-btn:hover {
+  background: linear-gradient(135deg, #dc2626, #991b1b) !important;
+  color: #ffffff !important;
+  transform: translateY(-2px);
+}
