@@ -86,12 +86,19 @@ DB_CONFIG = {
 pool = None
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
 GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
+
+XAI_API_KEY = (os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY") or "").strip()
+XAI_MODEL = (os.getenv("XAI_MODEL") or os.getenv("GROK_MODEL") or "grok-4.3").strip()
+
+OPENAI_API_KEY = (os.getenv("OPENAI_API_KEY") or "").strip()
+OPENAI_MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
+
 AI_PROVIDER = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "45"))
 AI_MAX_RETRIES = max(1, int(os.getenv("AI_MAX_RETRIES", "3")))
 
-# Gemini is called through the official REST endpoint, so no extra SDK is required.
-# This flag is kept because /api/runtime/report already checks gemini_client.
+# Gemini is called through the official REST endpoint. xAI/OpenAI use the OpenAI SDK.
+# Use AI_PROVIDER=gemini, xai, openai, or auto.
 gemini_client = bool(GEMINI_API_KEY)
 
 TECH_SKILLS = [
@@ -1096,8 +1103,9 @@ def gemini_json(prompt, fallback=None):
 
 def mask_gemini_error(value):
     text_value = safe_text(value)
-    if GEMINI_API_KEY:
-        text_value = text_value.replace(GEMINI_API_KEY, "****")
+    for secret in [GEMINI_API_KEY, XAI_API_KEY, OPENAI_API_KEY]:
+        if secret:
+            text_value = text_value.replace(secret, "****")
     return text_value
 
 
@@ -1115,16 +1123,29 @@ def extract_gemini_text(response_json):
     return ""
 
 
-def ai_json(prompt, fallback=None):
+def _ai_fallback(fallback, provider_name, error_message):
     fallback = dict(fallback or {})
+    fallback["ai_powered"] = False
+    fallback["ai_provider"] = "local_dynamic_fallback"
+    fallback["ai_failed_provider"] = provider_name
+    fallback["ai_error"] = mask_gemini_error(error_message or "AI provider returned no usable JSON.")
+    return fallback
 
+
+def _finalize_ai_json(raw_text, fallback, provider_name, model_name):
+    parsed = extract_json_object(raw_text, None)
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"Could not parse {provider_name} JSON: {safe_text(raw_text)[:250]}")
+    parsed["ai_powered"] = True
+    parsed["ai_provider"] = provider_name
+    parsed["ai_model"] = model_name
+    return parsed
+
+
+def _gemini_json_once(prompt, fallback=None):
     if not GEMINI_API_KEY:
-        fallback["ai_powered"] = False
-        fallback["ai_provider"] = "local_dynamic_fallback"
-        fallback["ai_error"] = "GEMINI_API_KEY is not configured. Add it in Render Environment variables."
-        return fallback
+        raise RuntimeError("GEMINI_API_KEY is not configured. Add it in Render Environment variables.")
 
-    last_error = ""
     system_instruction = (
         "You are the SQR AI engine. Return valid JSON only. "
         "Do not use markdown. Do not invent facts that the user did not provide. "
@@ -1136,17 +1157,9 @@ def ai_json(prompt, fallback=None):
         + ":generateContent?key="
         + urllib.parse.quote(GEMINI_API_KEY, safe="")
     )
-
     request_payload = {
-        "systemInstruction": {
-            "parts": [{"text": system_instruction}]
-        },
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": safe_text(prompt)}]
-            }
-        ],
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
+        "contents": [{"role": "user", "parts": [{"text": safe_text(prompt)}]}],
         "generationConfig": {
             "temperature": 0.25,
             "maxOutputTokens": 3200,
@@ -1154,55 +1167,127 @@ def ai_json(prompt, fallback=None):
         }
     }
 
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(request_payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=AI_TIMEOUT) as response:
+        response_text = response.read().decode("utf-8", errors="ignore")
+
+    response_json = json.loads(response_text or "{}")
+    if response_json.get("error"):
+        raise RuntimeError(json.dumps(response_json.get("error"), ensure_ascii=False))
+
+    return _finalize_ai_json(extract_gemini_text(response_json), fallback, "gemini", GEMINI_MODEL)
+
+
+def _openai_compatible_json_once(prompt, fallback=None, provider_name="openai", api_key="", base_url=None, model_name=""):
+    if not api_key:
+        raise RuntimeError(f"{provider_name.upper()} API key is not configured in Render Environment variables.")
+    if OpenAI is None:
+        raise RuntimeError("The openai package is not installed. Add openai to requirements.txt and redeploy.")
+
+    system_instruction = (
+        "You are the SQR AI engine. Return valid JSON only. "
+        "Do not use markdown. Do not invent facts that the user did not provide. "
+        "Separate technical skills from soft skills."
+    )
+    client_kwargs = {"api_key": api_key}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+    client = OpenAI(**client_kwargs)
+
+    kwargs = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": safe_text(prompt)},
+        ],
+        "temperature": 0.25,
+        "max_tokens": 3200,
+        "response_format": {"type": "json_object"},
+    }
+    try:
+        response = client.chat.completions.create(**kwargs)
+    except Exception:
+        kwargs.pop("response_format", None)
+        response = client.chat.completions.create(**kwargs)
+
+    raw_text = response.choices[0].message.content if response and response.choices else ""
+    return _finalize_ai_json(raw_text, fallback, provider_name, model_name)
+
+
+def _call_provider_with_retries(provider_name, prompt, fallback):
+    last_error = ""
     for attempt in range(AI_MAX_RETRIES):
         try:
-            req = urllib.request.Request(
-                endpoint,
-                data=json.dumps(request_payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=AI_TIMEOUT) as response:
-                response_text = response.read().decode("utf-8", errors="ignore")
-
-            response_json = json.loads(response_text or "{}")
-            if response_json.get("error"):
-                raise RuntimeError(json.dumps(response_json.get("error"), ensure_ascii=False))
-
-            raw_text = extract_gemini_text(response_json)
-            parsed = extract_json_object(raw_text, fallback)
-            if isinstance(parsed, dict) and parsed is not fallback:
-                parsed["ai_powered"] = True
-                parsed["ai_provider"] = "gemini"
-                parsed["ai_model"] = GEMINI_MODEL
-                return parsed
-
-            last_error = f"Could not parse Gemini JSON: {raw_text[:250]}"
-            break
-
+            if provider_name == "gemini":
+                return _gemini_json_once(prompt, fallback)
+            if provider_name in {"xai", "grok"}:
+                return _openai_compatible_json_once(
+                    prompt, fallback, provider_name="xai", api_key=XAI_API_KEY,
+                    base_url="https://api.x.ai/v1", model_name=XAI_MODEL
+                )
+            if provider_name == "openai":
+                return _openai_compatible_json_once(
+                    prompt, fallback, provider_name="openai", api_key=OPENAI_API_KEY,
+                    base_url=None, model_name=OPENAI_MODEL
+                )
+            raise RuntimeError(f"Unsupported AI_PROVIDER: {provider_name}. Use gemini, xai, openai, or auto.")
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="ignore") if hasattr(exc, "read") else ""
             last_error = mask_gemini_error(body or str(exc))
             temporary = exc.code in [429, 500, 502, 503, 504]
-            if temporary and attempt < AI_MAX_RETRIES - 1:
-                time.sleep(min(2 + attempt, 5))
-                continue
-            break
         except Exception as exc:
             last_error = mask_gemini_error(str(exc))
             temporary = any(word in last_error.lower() for word in ["429", "500", "502", "503", "504", "rate", "timeout"])
-            if temporary and attempt < AI_MAX_RETRIES - 1:
-                time.sleep(min(2 + attempt, 5))
+
+        if temporary and attempt < AI_MAX_RETRIES - 1:
+            time.sleep(min(2 + attempt, 5))
+            continue
+        break
+
+    print(f"{provider_name.upper()} AI ERROR:", last_error)
+    return _ai_fallback(fallback, provider_name, last_error)
+
+
+def ai_json(prompt, fallback=None):
+    fallback = dict(fallback or {})
+    provider = safe_text(AI_PROVIDER).lower().replace(" ", "_").replace("-", "_") or "gemini"
+
+    if provider in {"xai", "grok", "grok_ai"}:
+        return _call_provider_with_retries("xai", prompt, fallback)
+
+    if provider == "openai":
+        return _call_provider_with_retries("openai", prompt, fallback)
+
+    if provider == "auto":
+        # Try Gemini first, then xAI/OpenAI only if you configured those keys.
+        errors = []
+        for candidate in ["gemini", "xai", "openai"]:
+            if candidate == "gemini" and not GEMINI_API_KEY:
                 continue
-            break
+            if candidate == "xai" and not XAI_API_KEY:
+                continue
+            if candidate == "openai" and not OPENAI_API_KEY:
+                continue
+            result = _call_provider_with_retries(candidate, prompt, fallback)
+            if result.get("ai_powered"):
+                return result
+            errors.append(f"{candidate}: {result.get('ai_error', '')}")
+        return _ai_fallback(fallback, "auto", " | ".join(errors) or "No AI provider key is configured.")
 
-    if last_error:
-        print("GEMINI AI ERROR:", last_error)
-
-    fallback["ai_powered"] = False
-    fallback["ai_provider"] = "local_dynamic_fallback"
-    fallback["ai_error"] = last_error or "Gemini returned no usable JSON."
-    return fallback
+    # Default: Gemini. If Gemini says location is unsupported, it is a Google/hosting-region block, not a bad key.
+    result = _call_provider_with_retries("gemini", prompt, fallback)
+    if not result.get("ai_powered") and "location is not supported" in safe_text(result.get("ai_error")).lower():
+        result["ai_error"] = (
+            "Google Gemini blocked the Render server location/IP. "
+            "The API key is being read, but this host is not allowed by Google AI Studio. "
+            "Use AI_PROVIDER=xai/openai with a matching key, or redeploy the backend in a Gemini-supported host/region."
+        )
+    return result
 
 
 def init_db():
@@ -1812,11 +1897,15 @@ def ai_status():
     return jsonify({
         "ai_provider_mode": AI_PROVIDER,
         "gemini_configured": bool(GEMINI_API_KEY),
+        "xai_configured": bool(XAI_API_KEY),
+        "openai_configured": bool(OPENAI_API_KEY),
         "gemini_client_ready": bool(gemini_client),
         "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else "",
+        "xai_model": XAI_MODEL if XAI_API_KEY else "",
+        "openai_model": OPENAI_MODEL if OPENAI_API_KEY else "",
         "max_retries": AI_MAX_RETRIES,
         "timeout_seconds": AI_TIMEOUT,
-        "message": "Gemini is ready" if GEMINI_API_KEY else "Set GEMINI_API_KEY in Render Environment variables."
+        "message": "AI provider is configured" if (GEMINI_API_KEY or XAI_API_KEY or OPENAI_API_KEY) else "Set an AI API key in Render Environment variables."
     })
 
 
@@ -3973,8 +4062,8 @@ Uploaded or pasted resume text:
     payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
 
     provider = safe_text(payload.get("ai_provider")).lower()
-    payload["ai_powered"] = provider in {"gemini", "google_gemini", "google-genai", "gemini-2.5-flash", "gemini-2.0-flash", "grok", "xai", "grok-3", "grok-3-mini"} or bool(payload.get("ai_powered"))
-    payload["ai_provider"] = "gemini" if payload["ai_powered"] else "local_dynamic_fallback"
+    payload["ai_powered"] = provider in {"gemini", "google_gemini", "google-genai", "xai", "grok", "openai"} or bool(payload.get("ai_powered"))
+    payload["ai_provider"] = provider if payload["ai_powered"] else "local_dynamic_fallback"
 
     bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
     if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
@@ -3993,31 +4082,30 @@ def generate_ai_enhanced_summary(name, target_role, technical_skills, soft_skill
     }, resume_text)
     return payload.get("enhanced_summary") or payload.get("summary") or local_dynamic_summary(name, target_role, technical_skills, soft_skills, resume_text)
 
+@app.route("/api/debug/ai", methods=["GET"])
 @app.route("/api/debug/gemini", methods=["GET"])
 @app.route("/api/debug/xai", methods=["GET"])
 def debug_gemini():
     try:
-        if not GEMINI_API_KEY:
-            return jsonify({
-                "ok": False,
-                "problem": "GEMINI_API_KEY is missing from Render environment variables"
-            }), 500
-
         payload = ai_json(
-            'Return this exact JSON only: {"test":"Gemini works"}',
+            'Return this exact JSON only: {"test":"AI works"}',
             {"test": "fallback"}
         )
 
         return jsonify({
             "ok": bool(payload.get("ai_powered")),
-            "provider": payload.get("ai_provider"),
-            "model": GEMINI_MODEL,
+            "provider_mode": AI_PROVIDER,
+            "provider_used": payload.get("ai_provider"),
+            "model_used": payload.get("ai_model", ""),
+            "gemini_configured": bool(GEMINI_API_KEY),
+            "xai_configured": bool(XAI_API_KEY),
+            "openai_configured": bool(OPENAI_API_KEY),
             "message": payload,
             "error": payload.get("ai_error", "")
         })
 
     except Exception as e:
-        print("GEMINI DEBUG ERROR:", repr(e))
+        print("AI DEBUG ERROR:", repr(e))
         return jsonify({
             "ok": False,
             "error": mask_gemini_error(str(e))
