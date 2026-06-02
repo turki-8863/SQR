@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=60">
+  <script defer src="{{ url_for('static', filename='app.js') }}?v=60"></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -536,27 +536,6 @@
 
   <div class="shell">
     <div id="message" class="message-holder"></div>
-
-    <nav class="top-nav">
-      <div class="nav-brand">
-        <span class="brand-badge">SQR</span>
-        <span class="brand-name">Skill Quest Road</span>
-      </div>
-      <ul class="nav-links">
-        <li><a href="gp.html">Home</a></li>
-        <li><a href="Specialization.html">Specializations</a></li>
-        <li><a href="Courses.html">Courses</a></li>
-        <li><a href="ATS.html">ATS</a></li>
-        <li><a href="jobs.html">Jobs</a></li>
-        <li><a href="recommendation.html">Recommendation</a></li>
-        <li><a href="profile.html">Profile</a></li>
-      </ul>
-      <div class="nav-actions">
-        <a href="signin.html" class="btn btn-ghost">Sign In</a>
-        <a href="signup.html" class="btn btn-primary">Sign Up →</a>
-      </div>
-    </nav>
-
     <main class="hero">
 
       <div class="hero-left">
