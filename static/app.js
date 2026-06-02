@@ -243,24 +243,6 @@
         shell.appendChild(section);
       }
     }
-
-    if (pageName.includes("job") && getParam("id", "job_id")) {
-      if (!first("#jobDetails", "#jobDetail", "[data-job-details]")) {
-        const section = document.createElement("section");
-        section.className = "sqr-section";
-        section.innerHTML = `<div id="jobDetails" data-job-details></div>`;
-        shell.appendChild(section);
-      }
-    }
-
-    if (pageName.includes("job") && !getParam("id", "job_id")) {
-      if (!first("#jobsBox", "#jobsList", "#jobList", "#jobsContainer", "#jobsGrid", "[data-jobs]")) {
-        const section = document.createElement("section");
-        section.className = "sqr-section";
-        section.innerHTML = `<div id="jobsBox" class="sqr-grid" data-jobs></div>`;
-        shell.appendChild(section);
-      }
-    }
   }
 
   function publicSpecializationSelects() {
@@ -431,7 +413,7 @@
       <div class="sqr-auth-links">
         ${
           logged
-            ? `<button type="button" class="btn btn-small logout-btn" id="sqrLogoutBtn">Sign Out</button>`
+            ? `<button type="button" class="btn btn-small" id="sqrLogoutBtn">Sign Out</button>`
             : `<a class="btn btn-small" href="signin.html">Sign In</a><a class="btn btn-small btn-primary" href="signup.html">Sign Up</a>`
         }
       </div>
@@ -575,7 +557,7 @@
           <p class="muted">${escapeHTML(job.required_skills || job.skills || "")}</p>
           <div class="sqr-card-actions">
             ${job.job_link || job.link ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(job.job_link || job.link)}">Open Job</a>` : ""}
-            <a class="btn" href="JobDetails.html?id=${escapeHTML(id)}">Details</a>
+            <a class="btn" href="jobs.html?id=${escapeHTML(id)}">Details</a>
           </div>
         </div>
       </article>
@@ -645,7 +627,7 @@
             <p>${escapeHTML(spec.description || "")}</p>
             <div class="sqr-progress-line">
               <div><strong>${progress}%</strong> progress</div>
-              <div class="progress"><div class="progress-fill" style="width:${progress}%"></div></div>
+              <div class="progress"><span style="width:${progress}%"></span></div>
             </div>
             <div class="sqr-card-actions" id="specializationEnrollArea">
               ${
@@ -782,7 +764,7 @@
 
             <div class="sqr-progress-line">
               <div><strong>${progress}%</strong> course progress</div>
-              <div class="progress"><div class="progress-fill" style="width:${progress}%"></div></div>
+              <div class="progress"><span style="width:${progress}%"></span></div>
             </div>
 
             <div class="sqr-card-actions" id="courseEnrollArea">
@@ -939,41 +921,7 @@
     }
   }
 
-  async function loadJobDetails(forcedId) {
-    const jobId = forcedId || getParam("id", "job_id");
-    const box = first("#jobDetails", "#jobDetail", "[data-job-details]");
-    if (!box || !jobId) return;
-    setLoading(box, "Loading job details...");
-    try {
-      const data = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`);
-      const job = data.job || data;
-      box.innerHTML = `
-        <article class="card sqr-card detail-card">
-          <div class="sqr-card-top">
-            ${job.specialization_name || job.specialization ? `<span class="badge">${escapeHTML(job.specialization_name || job.specialization)}</span>` : ""}
-            ${job.average_salary || job.salary ? `<span class="badge badge-soft">${escapeHTML(job.average_salary || job.salary)}</span>` : ""}
-          </div>
-          <h2>${escapeHTML(job.title || "Job Details")}</h2>
-          <p>${escapeHTML(job.description || "")}</p>
-          ${job.required_skills || job.skills ? `<p><strong>Required skills:</strong> ${escapeHTML(job.required_skills || job.skills)}</p>` : ""}
-          <div class="card-actions">
-            ${job.job_link || job.link ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(job.job_link || job.link)}">Open Job Link</a>` : ""}
-            <a class="btn btn-soft" href="jobs.html">Back to Jobs</a>
-          </div>
-        </article>
-      `;
-    } catch (err) {
-      box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
-    }
-  }
-
   async function loadJobs() {
-    const detailId = getParam("id", "job_id");
-    if (detailId && (pageName.includes("job") || $("#jobDetails"))) {
-      await loadJobDetails(detailId);
-      return;
-    }
-
     const box = first("#jobsBox", "#jobsList", "#jobList", "#jobsContainer", "#jobsGrid", "[data-jobs]");
     if (!box) return;
     setLoading(box);
@@ -992,9 +940,9 @@
   }
 
   async function loadProfile() {
-    const box = first("#profileSummary", "#profileBox", "#profileContainer", "#profileDetails", "[data-profile]");
-    const progressBox = first("#profileProgressBars", "#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
-    if (!box && !progressBox && !$("#profileForm")) return;
+    const box = first("#profileBox", "#profileContainer", "#profileDetails", "[data-profile]");
+    const progressBox = first("#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
+    if (!box && !progressBox) return;
     if (!getToken()) return;
 
     if (box) setLoading(box, "Loading profile...");
@@ -1005,48 +953,39 @@
       const user = profile.user || profile;
       setUser(user);
 
-      const nameInput = $("#profileName");
-      const skillsInput = $("#profileSkills");
-      const interestsInput = $("#profileInterests");
-      const goalInput = $("#profileGoal");
-      if (nameInput && !nameInput.value) nameInput.value = user.name || "";
-      if (skillsInput && !skillsInput.value) skillsInput.value = user.skills || "";
-      if (interestsInput && !interestsInput.value) interestsInput.value = user.interests || "";
-      if (goalInput && !goalInput.value) goalInput.value = user.goal || "";
-      bindProfileForm();
-
       if (box) {
         const quizHistory = asArray(profile, "quiz_history");
         const atsHistory = asArray(profile, "ats_history");
         box.innerHTML = `
-          <article class="card sqr-card profile-info-card">
-            <span class="eyebrow">Profile</span>
-            <h3>${escapeHTML(user.name || "Student")}</h3>
+          <section class="card sqr-card">
+            <h1>${escapeHTML(user.name || "Profile")}</h1>
             <p>${escapeHTML(user.email || "")}</p>
             <p><strong>Role:</strong> ${escapeHTML(user.role || "student")}</p>
-          </article>
-          <article class="card sqr-card profile-info-card">
-            <span class="eyebrow">Skills</span>
-            <h3>Current skills</h3>
-            <p>${escapeHTML(user.skills || "No skills added yet.")}</p>
-          </article>
-          <article class="card sqr-card profile-info-card">
-            <span class="eyebrow">Activity</span>
-            <h3>${quizHistory.length} quiz attempts</h3>
-            <p>${atsHistory.length} ATS resume results saved.</p>
-          </article>
+            ${user.skills ? `<p><strong>Skills:</strong> ${escapeHTML(user.skills)}</p>` : ""}
+            ${user.interests ? `<p><strong>Interests:</strong> ${escapeHTML(user.interests)}</p>` : ""}
+          </section>
+          ${
+            quizHistory.length
+              ? `<section class="card sqr-card"><h2>Quiz History</h2>${quizHistory.slice(0, 8).map((q) => `<p>${escapeHTML(q.quiz_title || "Quiz")} — <strong>${pct(q.score_percentage || q.score)}%</strong></p>`).join("")}</section>`
+              : ""
+          }
+          ${
+            atsHistory.length
+              ? `<section class="card sqr-card"><h2>ATS History</h2>${atsHistory.slice(0, 5).map((a) => `<p>${escapeHTML(a.target_job || "Resume")} — <strong>${pct(a.ats_score || a.score)}%</strong></p>`).join("")}</section>`
+              : ""
+          }
         `;
       }
 
       if (progressBox) await loadProfileProgress(progressBox);
     } catch (err) {
       if (box) box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
-      if (progressBox) progressBox.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
+      if (progressBox) progressBox.innerHTML = "";
     }
   }
 
   async function loadProfileProgress(targetBox) {
-    const box = targetBox || first("#profileProgressBars", "#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
+    const box = targetBox || first("#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
     if (!box) return;
     try {
       const data = await apiFetch("/api/profile/progress");
@@ -1060,7 +999,7 @@
                   <h3>${escapeHTML(row.specialization_name || row.name || "Specialization")}</h3>
                   <strong>${progress}%</strong>
                 </div>
-                <div class="progress"><div class="progress-fill" style="width:${progress}%"></div></div>
+                <div class="progress"><span style="width:${progress}%"></span></div>
                 <p class="muted">
                   ${escapeHTML(row.opened_courses || 0)} opened /
                   ${escapeHTML(row.completed_courses || 0)} completed /
@@ -1073,30 +1012,6 @@
     } catch (err) {
       box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
     }
-  }
-
-  function bindProfileForm() {
-    const form = $("#profileForm");
-    if (!form || form.dataset.sqrBound) return;
-    form.dataset.sqrBound = "1";
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (!getToken()) return requireLogin();
-      try {
-        const payload = {
-          name: valueOf("name", "profileName"),
-          skills: valueOf("skills", "profileSkills"),
-          interests: valueOf("interests", "profileInterests"),
-          goal: valueOf("goal", "profileGoal"),
-        };
-        const data = await apiFetch("/api/profile", { method: "PUT", body: payload });
-        if (data.user) setUser(data.user);
-        message(data.message || "Profile saved.", "success");
-        await loadProfile();
-      } catch (err) {
-        message(err.message || "Could not save profile.", "error");
-      }
-    });
   }
 
   function setupATS() {
@@ -1301,27 +1216,80 @@
     }
   }
 
-  function setupRecommendation() {
+  async function loadRecommendationQuiz() {
+    const form = first("#recommendationForm", "#recommendForm", "form[data-recommendation]");
+    const bank = first("#recommendationQuestionBank", "[data-recommendation-quiz]");
+    if (!form || !bank || bank.dataset.loaded === "1") return;
+    bank.dataset.loaded = "1";
+    bank.innerHTML = `<div class="card sqr-card">Loading quiz questions...</div>`;
+    try {
+      const data = await apiFetch("/api/recommendation/questions");
+      const questions = asArray(data, "questions");
+      const grouped = new Map();
+      questions.forEach((q) => {
+        const key = q.specialization_key || q.specialization || "general";
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(q);
+      });
+      const selected = [];
+      grouped.forEach((items) => {
+        const ordered = [
+          ...items.filter((q) => ["interest", "skill", "career"].includes(String(q.dimension || "").toLowerCase())),
+          ...items,
+        ];
+        ordered.forEach((q) => {
+          if (selected.filter((x) => x.specialization_key === q.specialization_key).length < 3 && !selected.some((x) => x.id === q.id)) selected.push(q);
+        });
+      });
+      const finalQuestions = selected.slice(0, 36);
+      bank.innerHTML = finalQuestions.length ? `
+        <div class="recommendation-quiz-grid">
+          ${finalQuestions.map((q, index) => `
+            <fieldset class="card sqr-card recommendation-question">
+              <legend>${index + 1}. ${escapeHTML(q.question || "Recommendation question")}</legend>
+              <div class="recommendation-scale" role="radiogroup" aria-label="${escapeHTML(q.question || "Question")}">
+                ${[1, 2, 3, 4, 5].map((value) => `
+                  <label class="scale-option">
+                    <input type="radio" name="q_${escapeHTML(q.id)}" value="${value}" data-question-id="${escapeHTML(q.id)}" ${value === 3 ? "checked" : ""} required>
+                    <span>${value}</span>
+                  </label>
+                `).join("")}
+              </div>
+              <p class="muted scale-help">1 = Not interested, 3 = Neutral, 5 = Strong match</p>
+            </fieldset>
+          `).join("")}
+        </div>
+      ` : `<div class="card sqr-card error">No recommendation quiz questions were found.</div>`;
+    } catch (err) {
+      bank.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  async function setupRecommendation() {
     const form = first("#recommendationForm", "#recommendForm", "form[data-recommendation]");
     const box = first("#recommendationResult", "#recommendationOutput", "#recommendResult", "[data-recommendation-output]");
     if (!form) return;
+    await loadRecommendationQuiz();
 
+    if (form.dataset.sqrBound === "1") return;
+    form.dataset.sqrBound = "1";
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (box) { revealBox(box); box.innerHTML = `<div class="card sqr-card">Analyzing your answers...</div>`; }
+      if (box) {
+        revealBox(box);
+        box.innerHTML = `<div class="card sqr-card">Analyzing your quiz answers...</div>`;
+      }
 
-      const formData = Object.fromEntries(new FormData(form).entries());
       const answers = [];
-      $all("[data-question-id]", form).forEach((el) => {
-        answers.push({
-          id: el.dataset.questionId,
-          value: el.value,
-        });
+      $all("[data-question-id]:checked", form).forEach((el) => {
+        answers.push({ id: el.dataset.questionId, value: el.value });
       });
-      if (answers.length) formData.answers = answers;
 
       try {
-        const result = await apiFetch("/api/recommendations", { method: "POST", body: formData });
+        const result = await apiFetch("/api/recommendations", {
+          method: "POST",
+          body: { answers, quiz_answers: answers, recommendation_mode: "quiz_only" },
+        });
         renderRecommendation(result, box);
       } catch (err) {
         if (box) box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
@@ -1336,43 +1304,90 @@
     revealBox(target);
 
     const specs = asArray(result, "recommended_specializations", "specializations");
-    const jobs = asArray(result, "recommended_jobs", "jobs");
     const roadmap = asArray(result, "roadmap");
 
     target.innerHTML = `
       <section class="sqr-section">
-        <div class="sqr-card-top"><span class="badge">${result.ai_powered ? `AI assisted: ${escapeHTML(result.ai_provider || "AI")}` : "Dynamic matching"}</span></div>
+        <div class="sqr-card-top">
+          <span class="badge">${result.ai_powered ? `AI specialization quiz: ${escapeHTML(result.ai_provider || "AI")}` : "Quiz-based specialization matching"}</span>
+          <span class="badge badge-soft">Jobs moved to Jobs page</span>
+        </div>
         <h2>Recommended Specializations</h2>
+        <p class="muted">${escapeHTML(result.summary || "These recommendations are based on your quiz answers only.")}</p>
         ${
           specs.length
-            ? `<div class="sqr-grid">${specs.slice(0, 6).map((spec) => `
-                <article class="card sqr-card">
-                  <div class="sqr-card-body">
-                    <div class="sqr-score-ring small" style="--score:${pct(spec.match_percentage || spec.score)}">
-                      <strong>${pct(spec.match_percentage || spec.score)}%</strong>
+            ? `<div class="sqr-grid">${specs.slice(0, 6).map((spec) => {
+                const score = pct(spec.match_percentage || spec.score);
+                const specId = spec.specialization_id || spec.id || "";
+                const inSystem = spec.in_system !== false && specId && !String(specId).startsWith("external-");
+                return `
+                  <article class="card sqr-card">
+                    <div class="sqr-card-body">
+                      <div class="sqr-card-top">
+                        <span class="badge ${inSystem ? "badge-success" : "badge-warning"}">${inSystem ? "In SQR" : "AI suggested"}</span>
+                        <span class="badge badge-soft">${score}% match</span>
+                      </div>
+                      <div class="sqr-score-ring small" style="--score:${score}">
+                        <strong>${score}%</strong>
+                      </div>
+                      <h3>${escapeHTML(spec.name || "Specialization")}</h3>
+                      <p>${escapeHTML(spec.reason || spec.description || "")}</p>
+                      ${Array.isArray(spec.roadmap) && spec.roadmap.length ? `<ol>${spec.roadmap.slice(0, 4).map((step) => `<li>${escapeHTML(step)}</li>`).join("")}</ol>` : ""}
+                      <div class="sqr-card-actions">
+                        ${inSystem ? `<a class="btn btn-primary" href="Specialization.html?id=${escapeHTML(specId)}">View in SQR</a>` : `<span class="btn btn-soft">Not in system yet</span>`}
+                      </div>
                     </div>
-                    <h3>${escapeHTML(spec.name || "Specialization")}</h3>
-                    <p>${escapeHTML(spec.reason || spec.description || "")}</p>
-                    <a class="btn btn-primary" href="Specialization.html?id=${escapeHTML(spec.specialization_id || spec.id)}">View</a>
-                  </div>
-                </article>
-              `).join("")}</div>`
-            : `<div class="card sqr-card">No recommendations yet.</div>`
+                  </article>
+                `;
+              }).join("")}</div>`
+            : `<div class="card sqr-card">No specialization recommendations yet.</div>`
         }
-      </section>
-
-      <section class="sqr-section">
-        <h2>Recommended Jobs</h2>
-        ${jobs.length ? `<div class="sqr-grid">${jobs.slice(0, 6).map(jobCard).join("")}</div>` : `<div class="card sqr-card">No job recommendations yet.</div>`}
       </section>
 
       ${
         roadmap.length
-          ? `<section class="card sqr-card"><h2>Roadmap</h2><ol>${roadmap.map((step) => `<li>${escapeHTML(step)}</li>`).join("")}</ol></section>`
+          ? `<section class="card sqr-card"><h2>Specialization Roadmap</h2><ol>${roadmap.map((step) => `<li>${escapeHTML(step)}</li>`).join("")}</ol></section>`
           : ""
       }
+
+      <section class="card sqr-card">
+        <h2>Job recommendations</h2>
+        <p>Job recommendations are separated from this page. Open the Jobs page to see jobs ranked using your latest quiz result.</p>
+        <a class="btn btn-primary" href="jobs.html">Open Jobs Page</a>
+      </section>
     `;
   }
+
+  async function loadJobRecommendations() {
+    const box = first("#jobRecommendationBox", "#recommendedJobsBox", "[data-job-recommendations]");
+    if (!box) return;
+    if (!isLoggedIn()) {
+      box.innerHTML = `<div class="card sqr-card">Sign in and complete the specialization quiz to see job recommendations.</div>`;
+      return;
+    }
+    setLoading(box, "Loading job recommendations...");
+    try {
+      const result = await apiFetch("/api/recommendations/jobs", { method: "POST", body: {} });
+      const jobs = asArray(result, "recommended_jobs", "jobs");
+      box.innerHTML = jobs.length
+        ? `<div class="sqr-grid">${jobs.slice(0, 6).map(jobCard).join("")}</div>`
+        : `<div class="card sqr-card">No job recommendations yet. Complete the specialization quiz first.</div>`;
+    } catch (err) {
+      box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  function setupJobRecommendation() {
+    const btn = first("#runJobRecommendation", "[data-run-job-recommendation]");
+    if (btn && btn.dataset.sqrBound !== "1") {
+      btn.dataset.sqrBound = "1";
+      btn.addEventListener("click", loadJobRecommendations);
+    }
+    if (first("#jobRecommendationBox", "#recommendedJobsBox", "[data-job-recommendations]")) {
+      loadJobRecommendations();
+    }
+  }
+
 
   async function populateAdminSelects() {
     try {
@@ -1629,6 +1644,7 @@
     ]);
 
     setupRecommendation();
+    setupJobRecommendation();
     setupATS();
     await loadAdmin();
   }
@@ -1648,8 +1664,9 @@
     loadCourses,
     loadCourseDetails,
     loadJobs,
-    loadJobDetails,
     setupRecommendation,
+    setupJobRecommendation,
+    loadJobRecommendations,
     setupATS,
     loadAdmin,
     loadHomeDashboard,
@@ -2175,7 +2192,6 @@
   window.loadCourses = loadCourses;
   window.loadCourseDetails = loadCourseDetails;
   window.loadJobs = loadJobs;
-  window.loadJobDetails = loadJobDetails;
   window.setupRecommendation = setupRecommendation;
   window.setupATS = setupATS;
   window.loadAdmin = loadAdmin;
