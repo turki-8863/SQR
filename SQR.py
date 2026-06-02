@@ -29,8 +29,18 @@ except Exception:
 
 try:
     from docx import Document
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
 except Exception:
     Document = None
+    Pt = None
+    Inches = None
+    RGBColor = None
+    WD_ALIGN_PARAGRAPH = None
+    OxmlElement = None
+    qn = None
 
 try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
@@ -750,23 +760,103 @@ def extract_json_object(text_value, fallback=None):
 
 
 
+
 def _resume_line_kind(line):
     value = safe_text(line)
-    upper = value.upper()
+    upper = value.upper().strip()
     heading_words = {
-        "PROFESSIONAL SUMMARY", "SUMMARY", "TECHNICAL SKILLS", "SOFT SKILLS",
-        "LINKEDIN", "GITHUB", "LINKS", "PROJECTS", "EXPERIENCE", "EDUCATION",
-        "CERTIFICATIONS", "CERTIFICATES", "CONTACT"
+        "OBJECTIVE", "PROFESSIONAL SUMMARY", "SUMMARY", "ENHANCED SUMMARY",
+        "TECHNICAL SKILLS", "SOFT SKILLS", "SKILLS", "LINKEDIN", "GITHUB", "LINKS",
+        "PROJECTS", "EXPERIENCE", "WORK EXPERIENCE", "INTERNSHIP", "INTERNSHIPS",
+        "EDUCATION", "CERTIFICATION", "CERTIFICATIONS", "CERTIFICATES", "CONTACT"
     }
     if upper in heading_words:
         return "heading"
-    if value.startswith(("- ", "• ", "* ")):
+    if value.startswith(("- ", "• ", "* ", "•")):
         return "bullet"
     return "normal"
 
 
+def _resume_export_heading(line):
+    """Normalize common resume headings while keeping the user's sections ATS-readable."""
+    upper = safe_text(line).upper().strip().rstrip(":")
+    heading_map = {
+        "SUMMARY": "OBJECTIVE",
+        "PROFESSIONAL SUMMARY": "OBJECTIVE",
+        "ENHANCED SUMMARY": "OBJECTIVE",
+        "CERTIFICATIONS": "CERTIFICATION",
+        "CERTIFICATES": "CERTIFICATION",
+        "WORK EXPERIENCE": "INTERNSHIP",
+        "INTERNSHIPS": "INTERNSHIP",
+        "EXPERIENCE": "INTERNSHIP",
+    }
+    return heading_map.get(upper, upper)
+
+
+def _looks_like_contact_line(line):
+    value = safe_text(line)
+    lower = value.lower()
+    if "|" in value and any(token in lower for token in ["@", "phone", "linkedin", "github", "portfolio", "http", "+"]):
+        return True
+    if re.search(r"\b(phone|email|location|address|linkedin|github|portfolio)\b", lower):
+        return True
+    return False
+
+
+def _compact_resume_export_lines(text):
+    lines = [safe_text(x).strip() for x in safe_text(text).replace("\r\n", "\n").split("\n")]
+    compact = []
+    last_blank = False
+    for line in lines:
+        if not line:
+            if compact and not last_blank:
+                compact.append("")
+            last_blank = True
+            continue
+        compact.append(line)
+        last_blank = False
+    while compact and not compact[0]:
+        compact.pop(0)
+    while compact and not compact[-1]:
+        compact.pop()
+    return compact
+
+
+def _split_resume_header(lines):
+    name = lines[0] if lines else "FULL NAME"
+    role = ""
+    contact = ""
+    cursor = 1
+    while cursor < len(lines) and not lines[cursor]:
+        cursor += 1
+    if cursor < len(lines) and _resume_line_kind(lines[cursor]) != "heading" and not _looks_like_contact_line(lines[cursor]):
+        role = lines[cursor]
+        cursor += 1
+    while cursor < len(lines) and not lines[cursor]:
+        cursor += 1
+    if cursor < len(lines) and _looks_like_contact_line(lines[cursor]):
+        contact = lines[cursor]
+        cursor += 1
+    while cursor < len(lines) and not lines[cursor]:
+        cursor += 1
+    return name, role, contact, lines[cursor:]
+
+
+def _build_contact_line_from_data(data):
+    data = data or {}
+    pieces = [
+        safe_text(data.get("phone") or data.get("phone_number") or data.get("mobile")),
+        safe_text(data.get("location") or data.get("address") or data.get("city")),
+        safe_text(data.get("email") or data.get("email_address")),
+        sqr_clean_link(data.get("linkedin") or data.get("linkedin_url")),
+        sqr_clean_link(data.get("portfolio") or data.get("portfolio_url") or data.get("github") or data.get("github_url")),
+    ]
+    pieces = [p for p in pieces if p]
+    return " | ".join(pieces)
+
+
 def build_resume_pdf(text):
-    """Build a clean professional ATS resume PDF from plain text."""
+    """Build a one-page style resume PDF matching the clean SQR ATS template."""
     if not SimpleDocTemplate or not Paragraph or not Spacer or not A4 or not getSampleStyleSheet:
         return None
 
@@ -780,96 +870,223 @@ def build_resume_pdf(text):
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=42,
-        leftMargin=42,
-        topMargin=42,
-        bottomMargin=38,
+        rightMargin=58,
+        leftMargin=58,
+        topMargin=56,
+        bottomMargin=46,
         title="SQR Resume",
     )
     styles = getSampleStyleSheet()
+    dark = colors.HexColor("#27303d") if colors else None
+    line_color = colors.HexColor("#6b7280") if colors else None
+
     normal = ParagraphStyle(
-        "SQRNormal",
+        "SQRResumeNormal",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=10.2,
-        leading=14.2,
-        textColor=colors.HexColor("#1f2937") if colors else None,
-        spaceAfter=5,
+        fontSize=10.3,
+        leading=13.8,
+        textColor=dark,
+        spaceAfter=3,
     )
     name_style = ParagraphStyle(
-        "SQRName",
+        "SQRResumeName",
         parent=styles["Title"],
         fontName="Helvetica-Bold",
-        fontSize=19,
-        leading=22,
+        fontSize=24,
+        leading=28,
         alignment=TA_CENTER,
-        textColor=colors.HexColor("#0f172a") if colors else None,
-        spaceAfter=3,
+        textColor=dark,
+        spaceAfter=5,
     )
     role_style = ParagraphStyle(
-        "SQRRole",
+        "SQRResumeRole",
         parent=styles["BodyText"],
         fontName="Helvetica-Bold",
-        fontSize=11,
+        fontSize=11.2,
         leading=14,
         alignment=TA_CENTER,
-        textColor=colors.HexColor("#2563eb") if colors else None,
-        spaceAfter=12,
+        textColor=dark,
+        spaceAfter=20,
+    )
+    contact_style = ParagraphStyle(
+        "SQRResumeContact",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9.6,
+        leading=13,
+        alignment=TA_CENTER,
+        textColor=dark,
+        spaceBefore=6,
+        spaceAfter=6,
     )
     heading = ParagraphStyle(
-        "SQRHeading",
+        "SQRResumeHeading",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
-        fontSize=11.4,
-        leading=14,
-        textColor=colors.HexColor("#0f172a") if colors else None,
-        borderWidth=0,
-        borderPadding=0,
-        spaceBefore=9,
-        spaceAfter=4,
-    )
-    bullet = ParagraphStyle(
-        "SQRBullet",
-        parent=normal,
-        leftIndent=14,
-        firstLineIndent=-8,
-        bulletIndent=0,
+        fontSize=11.2,
+        leading=13.5,
+        textColor=dark,
+        spaceBefore=12,
         spaceAfter=3,
     )
+    bullet = ParagraphStyle(
+        "SQRResumeBullet",
+        parent=normal,
+        leftIndent=9,
+        firstLineIndent=-7,
+        spaceAfter=2,
+    )
 
-    story = []
-    lines = [safe_text(x) for x in safe_text(text).splitlines()]
-    lines = [x for x in lines if x is not None]
-
-    first_nonempty = next((i for i, line in enumerate(lines) if line.strip()), None)
-    if first_nonempty is None:
+    lines = _compact_resume_export_lines(text)
+    if not lines:
         return None
 
-    story.append(Paragraph(esc(lines[first_nonempty].strip()), name_style))
-    cursor = first_nonempty + 1
-    while cursor < len(lines) and not lines[cursor].strip():
-        cursor += 1
-    if cursor < len(lines) and _resume_line_kind(lines[cursor]) == "normal" and len(lines[cursor].split()) <= 10:
-        story.append(Paragraph(esc(lines[cursor].strip()), role_style))
-        cursor += 1
+    name, role, contact, body_lines = _split_resume_header(lines)
+    story = [Paragraph(esc(name.upper()), name_style)]
+    if role:
+        story.append(Paragraph(esc(role.upper()), role_style))
+    if contact:
+        if HRFlowable:
+            story.append(HRFlowable(width="100%", thickness=0.7, color=line_color, spaceBefore=0, spaceAfter=6))
+        story.append(Paragraph(esc(contact), contact_style))
+        if HRFlowable:
+            story.append(HRFlowable(width="100%", thickness=0.7, color=line_color, spaceBefore=0, spaceAfter=11))
 
-    for raw in lines[cursor:]:
+    for raw in body_lines:
         line = raw.strip()
         if not line:
-            story.append(Spacer(1, 4))
+            story.append(Spacer(1, 3))
             continue
         kind = _resume_line_kind(line)
         if kind == "heading":
-            story.append(Paragraph(esc(line.upper()), heading))
+            story.append(Paragraph(esc(_resume_export_heading(line)), heading))
             if HRFlowable:
-                story.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#cbd5e1"), spaceBefore=0, spaceAfter=5))
+                story.append(HRFlowable(width="100%", thickness=0.65, color=line_color, spaceBefore=0, spaceAfter=6))
         elif kind == "bullet":
             cleaned = re.sub(r"^[•\-*]\s*", "", line)
-            story.append(Paragraph("- " + esc(cleaned), bullet))
+            story.append(Paragraph("• " + esc(cleaned), bullet))
         else:
             story.append(Paragraph(esc(line), normal))
 
     doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+def _docx_paragraph_border(paragraph, top=False, bottom=False, color="6b7280", size="8"):
+    if not OxmlElement or not qn:
+        return
+    p = paragraph._p
+    pPr = p.get_or_add_pPr()
+    pBdr = pPr.find(qn("w:pBdr"))
+    if pBdr is None:
+        pBdr = OxmlElement("w:pBdr")
+        pPr.append(pBdr)
+    for edge, enabled in (("top", top), ("bottom", bottom)):
+        if not enabled:
+            continue
+        tag = "w:" + edge
+        element = pBdr.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            pBdr.append(element)
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), size)
+        element.set(qn("w:space"), "6")
+        element.set(qn("w:color"), color)
+
+
+def _set_docx_run(run, size=10.5, bold=False, color="27303d", all_caps=False):
+    run.bold = bool(bold)
+    if Pt:
+        run.font.size = Pt(size)
+    if RGBColor:
+        run.font.color.rgb = RGBColor.from_string(color)
+    if all_caps:
+        run.text = safe_text(run.text).upper()
+
+
+def build_resume_docx(text):
+    """Build a DOCX resume using the same clean visual system as the PDF export."""
+    if not Document:
+        return None
+
+    doc = Document()
+    section = doc.sections[0]
+    if Inches:
+        section.top_margin = Inches(0.7)
+        section.bottom_margin = Inches(0.55)
+        section.left_margin = Inches(0.78)
+        section.right_margin = Inches(0.78)
+
+    styles = doc.styles
+    styles["Normal"].font.name = "Arial"
+    if Pt:
+        styles["Normal"].font.size = Pt(10.5)
+    if RGBColor:
+        styles["Normal"].font.color.rgb = RGBColor.from_string("27303d")
+
+    lines = _compact_resume_export_lines(text)
+    if not lines:
+        return None
+    name, role, contact, body_lines = _split_resume_header(lines)
+
+    p = doc.add_paragraph()
+    if WD_ALIGN_PARAGRAPH:
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(2) if Pt else None
+    run = p.add_run(name.upper())
+    _set_docx_run(run, size=24, bold=True, all_caps=True)
+
+    if role:
+        p = doc.add_paragraph()
+        if WD_ALIGN_PARAGRAPH:
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(14) if Pt else None
+        run = p.add_run(role.upper())
+        _set_docx_run(run, size=11.5, bold=True, all_caps=True)
+
+    if contact:
+        p = doc.add_paragraph()
+        if WD_ALIGN_PARAGRAPH:
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _docx_paragraph_border(p, top=True, bottom=True)
+        p.paragraph_format.space_before = Pt(1) if Pt else None
+        p.paragraph_format.space_after = Pt(14) if Pt else None
+        run = p.add_run(contact)
+        _set_docx_run(run, size=9.5, bold=False)
+
+    for raw in body_lines:
+        line = raw.strip()
+        if not line:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(1) if Pt else None
+            continue
+        kind = _resume_line_kind(line)
+        if kind == "heading":
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(7) if Pt else None
+            p.paragraph_format.space_after = Pt(2) if Pt else None
+            run = p.add_run(_resume_export_heading(line))
+            _set_docx_run(run, size=11.2, bold=True, all_caps=True)
+            _docx_paragraph_border(p, bottom=True)
+        elif kind == "bullet":
+            cleaned = re.sub(r"^[•\-*]\s*", "", line)
+            p = doc.add_paragraph(style=None)
+            p.paragraph_format.left_indent = Inches(0.12) if Inches else None
+            p.paragraph_format.first_line_indent = Inches(-0.1) if Inches else None
+            p.paragraph_format.space_after = Pt(1) if Pt else None
+            run = p.add_run("• " + cleaned)
+            _set_docx_run(run, size=10.2)
+        else:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(2) if Pt else None
+            run = p.add_run(line)
+            _set_docx_run(run, size=10.3)
+
+    buffer = BytesIO()
+    doc.save(buffer)
     buffer.seek(0)
     return buffer
 
@@ -3177,45 +3394,108 @@ def recommendations_analyze():
 @app.route("/api/ats/check", methods=["POST"])
 @student_required
 def ats_check():
-    target_job = safe_text(request.form.get("target_job") or request.form.get("job_description"))
-    resume_file = request.files.get("resume_file") or request.files.get("resume")
-    if not target_job:
-        return jsonify({"error": "Target job or job description is required"}), 400
+    # The checker now analyzes only the uploaded resume file. No pasted resume text and no job description are required.
+    resume_file = request.files.get("resume_file") or request.files.get("resume") or request.files.get("file")
     if not resume_file:
-        return jsonify({"error": "Please upload a PDF, DOCX, or TXT resume"}), 400
+        return jsonify({"error": "Please upload a PDF or DOCX resume"}), 400
+
+    filename = secure_filename(resume_file.filename or "").lower()
+    if not filename.endswith((".pdf", ".docx")):
+        return jsonify({"error": "ATS checker accepts uploaded PDF or DOCX resumes only"}), 400
+
     resume_text = extract_resume_text(resume_file)
     if not resume_text.strip():
-        return jsonify({"error": "Could not read resume text from this file"}), 400
-    score, matched = calculate_match_percentage(resume_text, target_job)
-    target_skills = [skill for skill in TECH_SKILLS if skill in target_job.lower()]
-    missing = [skill for skill in target_skills if skill not in resume_text.lower()]
-    section_scores = {
-        "keywords": score,
-        "structure": 85 if re.search(r"education|experience|projects|skills", resume_text, re.I) else 55,
-        "clarity": 80 if len(resume_text.split()) > 120 else 60,
-    }
-    ats_score = round((section_scores["keywords"] * 0.5) + (section_scores["structure"] * 0.3) + (section_scores["clarity"] * 0.2))
+        return jsonify({"error": "Could not read resume text from this uploaded file"}), 400
+
+    resume_lower = resume_text.lower()
+    words = resume_text.split()
+    detected_keywords = sorted({skill for skill in TECH_SKILLS if skill.lower() in resume_lower})[:25]
+    required_sections = ["summary", "objective", "education", "skills", "experience", "project", "certification"]
+    found_sections = [section for section in required_sections if re.search(r"\b" + re.escape(section) + r"s?\b", resume_lower)]
+    missing_sections = [section.title() for section in ["summary/objective", "education", "skills", "projects or experience"] if not re.search(section.replace("/", "|"), resume_lower)]
+    has_email = bool(re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", resume_text, re.I))
+    has_phone = bool(re.search(r"(\+?\d[\d\s().-]{7,}\d)", resume_text))
+    has_link = bool(re.search(r"linkedin|github|portfolio|https?://", resume_lower))
+
+    structure_score = min(100, 45 + (len(found_sections) * 8) + (10 if has_email else 0) + (10 if has_phone else 0) + (5 if has_link else 0))
+    keyword_score = min(100, 35 + len(detected_keywords) * 4)
+    clarity_score = 88 if 180 <= len(words) <= 750 else (72 if len(words) >= 100 else 58)
+    ats_score = round((structure_score * 0.4) + (keyword_score * 0.35) + (clarity_score * 0.25))
+
     fallback = {
         "ats_score": ats_score,
         "score": ats_score,
-        "summary": "ATS analysis completed using resume text, target job keywords, and structure checks.",
-        "matched_keywords": matched,
-        "missing_keywords": missing[:20],
-        "strengths": ["Resume file was readable", "Relevant keywords were detected"] if matched else ["Resume file was readable"],
-        "weaknesses": ["Add more target-job keywords"] if missing else [],
-        "improvements": ["Add measurable achievements", "Add missing role-specific keywords", "Keep sections clear: Summary, Skills, Projects, Education"],
-        "section_scores": section_scores,
+        "summary": "ATS resume check completed from the uploaded resume only. Configure GEMINI_API_KEY to receive a fully AI-written critique.",
+        "detected_keywords": detected_keywords,
+        "matched_keywords": detected_keywords,
+        "missing_keywords": missing_sections,
+        "strengths": [
+            "Resume file was readable",
+            "Contact information detected" if (has_email or has_phone) else "Resume content was extracted successfully",
+            "Relevant technical keywords detected" if detected_keywords else "Ready for keyword improvement",
+        ],
+        "weaknesses": missing_sections or ["Add more measurable results and role-specific wording"],
+        "improvements": [
+            "Add phone number and email in the header if either is missing.",
+            "Use clear sections such as Objective, Education, Internship/Experience, Skills, Certification, and Projects.",
+            "Add measurable project or internship results such as accuracy, users, time saved, or tools used.",
+            "Keep bullets concise and start them with action verbs.",
+        ],
+        "section_scores": {
+            "structure": structure_score,
+            "keywords": keyword_score,
+            "clarity": clarity_score,
+        },
+        "source": "uploaded_resume_only",
+        "ai_powered": False,
+        "ai_provider": "local_dynamic_fallback",
     }
-    prompt = f"Return JSON ATS result with ats_score, summary, matched_keywords, missing_keywords, strengths, weaknesses, improvements, section_scores. Target job: {target_job}. Resume: {resume_text[:5000]}"
+
+    prompt = f"""
+You are an expert ATS resume reviewer inside the SQR website.
+Analyze ONLY the uploaded resume text below. Do not use any job description, target role, or external user data.
+Return valid JSON only with these exact keys:
+ats_score, score, summary, detected_keywords, matched_keywords, missing_keywords, strengths, weaknesses, improvements, section_scores, source.
+Rules:
+- Base the review only on the uploaded resume text.
+- Do not invent education, experience, projects, certificates, dates, grades, names, phone numbers, or emails.
+- Score the resume for ATS readability, section structure, contact information, skill keywords, clarity, action verbs, and measurable achievements.
+- missing_keywords should list missing resume elements or missing skill areas found from the resume itself, not from a job description.
+- improvements must be specific, practical, and based on the uploaded resume.
+- source must be "uploaded_resume_only".
+
+Uploaded resume text:
+{safe_text(resume_text)[:9000]}
+"""
     result = ai_json(prompt, fallback)
-    ats_score = safe_int(result.get("ats_score") or result.get("score"), ats_score)
+    if not isinstance(result, dict):
+        result = fallback
+
+    result["source"] = "uploaded_resume_only"
+    result["ats_score"] = safe_int(result.get("ats_score") or result.get("score"), ats_score)
+    result["score"] = result["ats_score"]
+    if "detected_keywords" not in result:
+        result["detected_keywords"] = result.get("matched_keywords") or detected_keywords
+    if "matched_keywords" not in result:
+        result["matched_keywords"] = result.get("detected_keywords") or detected_keywords
+    if "missing_keywords" not in result:
+        result["missing_keywords"] = missing_sections
+
     suggestions = safe_text(result.get("summary")) or json.dumps(result.get("improvements", []))
     query_db(
         """
         INSERT INTO ats_results (user_id,resume_text,target_job,ats_score,matched_keywords,missing_keywords,suggestions)
         VALUES (%s,%s,%s,%s,%s,%s,%s)
         """,
-        (request.current_user["id"], resume_text[:60000], target_job[:150], ats_score, json.dumps(result.get("matched_keywords", [])), json.dumps(result.get("missing_keywords", [])), suggestions),
+        (
+            request.current_user["id"],
+            resume_text[:60000],
+            "Uploaded resume only",
+            result["ats_score"],
+            json.dumps(result.get("matched_keywords", []), ensure_ascii=False),
+            json.dumps(result.get("missing_keywords", []), ensure_ascii=False),
+            suggestions,
+        ),
         commit=True
     )
     return jsonify(result)
@@ -3380,6 +3660,17 @@ def build_dynamic_resume_payload(data, resume_text):
     original_summary = safe_text(data.get("summary") or data.get("original_summary"))
     linkedin = sqr_clean_link(data.get("linkedin") or data.get("linkedin_url"))
     github = sqr_clean_link(data.get("github") or data.get("github_url"))
+    phone = safe_text(data.get("phone") or data.get("phone_number") or data.get("mobile"))
+    email = safe_text(data.get("email") or data.get("email_address"))
+    location = safe_text(data.get("location") or data.get("address") or data.get("city"))
+    portfolio = sqr_clean_link(data.get("portfolio") or data.get("portfolio_url"))
+    contact_line = _build_contact_line_from_data({
+        "phone": phone,
+        "location": location,
+        "email": email,
+        "linkedin": linkedin,
+        "portfolio": portfolio or github,
+    })
 
     technical_list, soft_list = sqr_split_resume_skills(technical_skills_text, soft_skills_text, resume_text)
 
@@ -3399,10 +3690,8 @@ def build_dynamic_resume_payload(data, resume_text):
     sections = []
     sections.append(name.upper())
     sections.append(target_role)
-    if linkedin:
-        sections.extend(["", "LINKEDIN", linkedin])
-    if github:
-        sections.extend(["", "GITHUB", github])
+    if contact_line:
+        sections.append(contact_line)
     sections.extend(["", "PROFESSIONAL SUMMARY", summary])
     sections.extend(["", "TECHNICAL SKILLS", ", ".join(technical_list) if technical_list else "Add role-specific tools, languages, platforms, and frameworks."])
     sections.extend(["", "SOFT SKILLS", ", ".join(soft_list)])
@@ -3421,8 +3710,14 @@ def build_dynamic_resume_payload(data, resume_text):
         "enhanced_summary": summary,
         "technical_skills": technical_list,
         "soft_skills": soft_list,
+        "phone": phone,
+        "email": email,
+        "location": location,
+        "address": location,
         "linkedin": linkedin,
         "github": github,
+        "portfolio": portfolio,
+        "contact_line": contact_line,
         "projects": projects,
         "experience": experience,
         "education": education,
@@ -3436,6 +3731,8 @@ def build_dynamic_resume_payload(data, resume_text):
         ],
         "missing_information": [
             item for item, value in {
+                "phone": phone,
+                "email": email,
                 "linkedin": linkedin,
                 "github": github,
                 "projects": projects,
@@ -3457,12 +3754,16 @@ def generate_ai_resume_payload(data, resume_text):
     original_summary = safe_text(data.get("summary") or data.get("original_summary"))
     linkedin = fallback.get("linkedin", "")
     github = fallback.get("github", "")
+    phone = fallback.get("phone", "")
+    email = fallback.get("email", "")
+    location = fallback.get("location", "")
+    portfolio = fallback.get("portfolio", "")
 
     prompt = f"""
 You are an expert resume writer inside the SQR website. Rewrite and improve the user's resume details like a real AI assistant.
 
 Return valid JSON only with these exact keys:
-headline, summary, enhanced_summary, technical_skills, soft_skills, linkedin, github, projects, experience, education, certifications, full_resume, improvements, missing_information.
+headline, summary, enhanced_summary, technical_skills, soft_skills, phone, email, location, linkedin, github, portfolio, projects, experience, education, certifications, full_resume, improvements, missing_information.
 
 Rules:
 - Use only the information provided in the form and uploaded/pasted resume text.
@@ -3473,16 +3774,20 @@ Rules:
 - Separate technical_skills from soft_skills.
 - technical_skills must include only programming languages, tools, frameworks, databases, platforms, methods, and technologies.
 - soft_skills must include only personal/workplace strengths such as communication, teamwork, problem solving, leadership, time management, and continuous learning.
-- Put LinkedIn only in linkedin and GitHub only in github if provided.
+- Put phone only in phone, email only in email, LinkedIn only in linkedin, GitHub only in github, and portfolio only in portfolio if provided.
 - Do not put soft skills inside technical_skills.
 - Improve wording, action verbs, clarity, and ATS keyword alignment for the target role.
 - If information is missing, list it in missing_information instead of inventing it.
-- full_resume must be clean ATS-readable plain text with these headings when data exists: LINKEDIN, GITHUB, PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
+- full_resume must start with: NAME, target role, then one contact row formatted as Phone | Location | Email | LinkedIn | Portfolio/Github when those fields exist. After that, use clean ATS-readable headings when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
 - If a section has no user data, do not invent bullet points for it.
 
 Target role: {target_role}
+Phone: {phone}
+Email: {email}
+Location: {location}
 LinkedIn: {linkedin}
 GitHub: {github}
+Portfolio: {portfolio}
 User's original summary: {original_summary}
 User form data JSON:
 {json.dumps(data, ensure_ascii=False)}
@@ -3513,8 +3818,20 @@ Uploaded or pasted resume text:
     payload["technical_skills"] = technical_clean or fallback.get("technical_skills", [])
     payload["soft_skills"] = soft_clean or fallback.get("soft_skills", [])
 
+    payload["phone"] = safe_text(payload.get("phone") or fallback.get("phone"))
+    payload["email"] = safe_text(payload.get("email") or fallback.get("email"))
+    payload["location"] = safe_text(payload.get("location") or payload.get("address") or fallback.get("location"))
+    payload["address"] = payload["location"]
     payload["linkedin"] = sqr_clean_link(payload.get("linkedin") or fallback.get("linkedin"))
     payload["github"] = sqr_clean_link(payload.get("github") or fallback.get("github"))
+    payload["portfolio"] = sqr_clean_link(payload.get("portfolio") or fallback.get("portfolio"))
+    payload["contact_line"] = _build_contact_line_from_data({
+        "phone": payload["phone"],
+        "location": payload["location"],
+        "email": payload["email"],
+        "linkedin": payload["linkedin"],
+        "portfolio": payload["portfolio"] or payload["github"],
+    })
     payload["summary"] = safe_text(payload.get("summary") or payload.get("enhanced_summary") or fallback["summary"])
     payload["enhanced_summary"] = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback["summary"])
     payload["headline"] = safe_text(payload.get("headline") or fallback.get("headline") or target_role)
@@ -3523,10 +3840,8 @@ Uploaded or pasted resume text:
         safe_text(data.get("name") or "Candidate").upper(),
         payload["headline"],
     ]
-    if payload.get("linkedin"):
-        sections.extend(["", "LINKEDIN", payload["linkedin"]])
-    if payload.get("github"):
-        sections.extend(["", "GITHUB", payload["github"]])
+    if payload.get("contact_line"):
+        sections.append(payload["contact_line"])
     sections.extend([
         "", "PROFESSIONAL SUMMARY", payload["enhanced_summary"],
         "", "TECHNICAL SKILLS", ", ".join(payload.get("technical_skills") or fallback.get("technical_skills") or []),
@@ -3632,19 +3947,10 @@ def export_docx():
     text = safe_text(data.get("resume") or data.get("text"))
     if not text:
         return jsonify({"error": "Resume text is required"}), 400
-    doc = Document()
-    for line in text.splitlines():
-        value = line.strip()
-        if not value:
-            doc.add_paragraph("")
-        elif value.isupper() and len(value) < 35:
-            doc.add_heading(value, level=2)
-        else:
-            doc.add_paragraph(value)
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return send_file(buffer, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", as_attachment=True, download_name="sqr_resume.docx")
+    docx_file = build_resume_docx(text)
+    if not docx_file:
+        return jsonify({"error": "DOCX export could not be generated"}), 500
+    return send_file(docx_file, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", as_attachment=True, download_name="sqr_resume.docx")
 
 
 @app.route("/api/admin/stats")
