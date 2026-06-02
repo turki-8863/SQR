@@ -243,6 +243,24 @@
         shell.appendChild(section);
       }
     }
+
+    if (pageName.includes("job") && getParam("id", "job_id")) {
+      if (!first("#jobDetails", "#jobDetail", "[data-job-details]")) {
+        const section = document.createElement("section");
+        section.className = "sqr-section";
+        section.innerHTML = `<div id="jobDetails" data-job-details></div>`;
+        shell.appendChild(section);
+      }
+    }
+
+    if (pageName.includes("job") && !getParam("id", "job_id")) {
+      if (!first("#jobsBox", "#jobsList", "#jobList", "#jobsContainer", "#jobsGrid", "[data-jobs]")) {
+        const section = document.createElement("section");
+        section.className = "sqr-section";
+        section.innerHTML = `<div id="jobsBox" class="sqr-grid" data-jobs></div>`;
+        shell.appendChild(section);
+      }
+    }
   }
 
   function publicSpecializationSelects() {
@@ -413,7 +431,7 @@
       <div class="sqr-auth-links">
         ${
           logged
-            ? `<button type="button" class="btn btn-small" id="sqrLogoutBtn">Sign Out</button>`
+            ? `<button type="button" class="btn btn-small logout-btn" id="sqrLogoutBtn">Sign Out</button>`
             : `<a class="btn btn-small" href="signin.html">Sign In</a><a class="btn btn-small btn-primary" href="signup.html">Sign Up</a>`
         }
       </div>
@@ -557,7 +575,7 @@
           <p class="muted">${escapeHTML(job.required_skills || job.skills || "")}</p>
           <div class="sqr-card-actions">
             ${job.job_link || job.link ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(job.job_link || job.link)}">Open Job</a>` : ""}
-            <a class="btn" href="jobs.html?id=${escapeHTML(id)}">Details</a>
+            <a class="btn" href="JobDetails.html?id=${escapeHTML(id)}">Details</a>
           </div>
         </div>
       </article>
@@ -627,7 +645,7 @@
             <p>${escapeHTML(spec.description || "")}</p>
             <div class="sqr-progress-line">
               <div><strong>${progress}%</strong> progress</div>
-              <div class="progress"><span style="width:${progress}%"></span></div>
+              <div class="progress"><div class="progress-fill" style="width:${progress}%"></div></div>
             </div>
             <div class="sqr-card-actions" id="specializationEnrollArea">
               ${
@@ -764,7 +782,7 @@
 
             <div class="sqr-progress-line">
               <div><strong>${progress}%</strong> course progress</div>
-              <div class="progress"><span style="width:${progress}%"></span></div>
+              <div class="progress"><div class="progress-fill" style="width:${progress}%"></div></div>
             </div>
 
             <div class="sqr-card-actions" id="courseEnrollArea">
@@ -921,8 +939,42 @@
     }
   }
 
+  async function loadJobDetails(forcedId) {
+    const jobId = forcedId || getParam("id", "job_id");
+    const box = first("#jobDetails", "#jobDetail", "[data-job-details]");
+    if (!box || !jobId) return;
+    setLoading(box, "Loading job details...");
+    try {
+      const data = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+      const job = data.job || data;
+      box.innerHTML = `
+        <article class="card sqr-card detail-card">
+          <div class="sqr-card-top">
+            ${job.specialization_name || job.specialization ? `<span class="badge">${escapeHTML(job.specialization_name || job.specialization)}</span>` : ""}
+            ${job.average_salary || job.salary ? `<span class="badge badge-soft">${escapeHTML(job.average_salary || job.salary)}</span>` : ""}
+          </div>
+          <h2>${escapeHTML(job.title || "Job Details")}</h2>
+          <p>${escapeHTML(job.description || "")}</p>
+          ${job.required_skills || job.skills ? `<p><strong>Required skills:</strong> ${escapeHTML(job.required_skills || job.skills)}</p>` : ""}
+          <div class="card-actions">
+            ${job.job_link || job.link ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(job.job_link || job.link)}">Open Job Link</a>` : ""}
+            <a class="btn btn-soft" href="jobs.html">Back to Jobs</a>
+          </div>
+        </article>
+      `;
+    } catch (err) {
+      box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
+    }
+  }
+
   async function loadJobs() {
-    const box = first("#jobsList", "#jobList", "#jobsContainer", "#jobsGrid", "[data-jobs]");
+    const detailId = getParam("id", "job_id");
+    if (detailId && (pageName.includes("job") || $("#jobDetails"))) {
+      await loadJobDetails(detailId);
+      return;
+    }
+
+    const box = first("#jobsBox", "#jobsList", "#jobList", "#jobsContainer", "#jobsGrid", "[data-jobs]");
     if (!box) return;
     setLoading(box);
     try {
@@ -940,9 +992,9 @@
   }
 
   async function loadProfile() {
-    const box = first("#profileBox", "#profileContainer", "#profileDetails", "[data-profile]");
-    const progressBox = first("#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
-    if (!box && !progressBox) return;
+    const box = first("#profileSummary", "#profileBox", "#profileContainer", "#profileDetails", "[data-profile]");
+    const progressBox = first("#profileProgressBars", "#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
+    if (!box && !progressBox && !$("#profileForm")) return;
     if (!getToken()) return;
 
     if (box) setLoading(box, "Loading profile...");
@@ -953,39 +1005,48 @@
       const user = profile.user || profile;
       setUser(user);
 
+      const nameInput = $("#profileName");
+      const skillsInput = $("#profileSkills");
+      const interestsInput = $("#profileInterests");
+      const goalInput = $("#profileGoal");
+      if (nameInput && !nameInput.value) nameInput.value = user.name || "";
+      if (skillsInput && !skillsInput.value) skillsInput.value = user.skills || "";
+      if (interestsInput && !interestsInput.value) interestsInput.value = user.interests || "";
+      if (goalInput && !goalInput.value) goalInput.value = user.goal || "";
+      bindProfileForm();
+
       if (box) {
         const quizHistory = asArray(profile, "quiz_history");
         const atsHistory = asArray(profile, "ats_history");
         box.innerHTML = `
-          <section class="card sqr-card">
-            <h1>${escapeHTML(user.name || "Profile")}</h1>
+          <article class="card sqr-card profile-info-card">
+            <span class="eyebrow">Profile</span>
+            <h3>${escapeHTML(user.name || "Student")}</h3>
             <p>${escapeHTML(user.email || "")}</p>
             <p><strong>Role:</strong> ${escapeHTML(user.role || "student")}</p>
-            ${user.skills ? `<p><strong>Skills:</strong> ${escapeHTML(user.skills)}</p>` : ""}
-            ${user.interests ? `<p><strong>Interests:</strong> ${escapeHTML(user.interests)}</p>` : ""}
-          </section>
-          ${
-            quizHistory.length
-              ? `<section class="card sqr-card"><h2>Quiz History</h2>${quizHistory.slice(0, 8).map((q) => `<p>${escapeHTML(q.quiz_title || "Quiz")} — <strong>${pct(q.score_percentage || q.score)}%</strong></p>`).join("")}</section>`
-              : ""
-          }
-          ${
-            atsHistory.length
-              ? `<section class="card sqr-card"><h2>ATS History</h2>${atsHistory.slice(0, 5).map((a) => `<p>${escapeHTML(a.target_job || "Resume")} — <strong>${pct(a.ats_score || a.score)}%</strong></p>`).join("")}</section>`
-              : ""
-          }
+          </article>
+          <article class="card sqr-card profile-info-card">
+            <span class="eyebrow">Skills</span>
+            <h3>Current skills</h3>
+            <p>${escapeHTML(user.skills || "No skills added yet.")}</p>
+          </article>
+          <article class="card sqr-card profile-info-card">
+            <span class="eyebrow">Activity</span>
+            <h3>${quizHistory.length} quiz attempts</h3>
+            <p>${atsHistory.length} ATS resume results saved.</p>
+          </article>
         `;
       }
 
       if (progressBox) await loadProfileProgress(progressBox);
     } catch (err) {
       if (box) box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
-      if (progressBox) progressBox.innerHTML = "";
+      if (progressBox) progressBox.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
     }
   }
 
   async function loadProfileProgress(targetBox) {
-    const box = targetBox || first("#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
+    const box = targetBox || first("#profileProgressBars", "#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
     if (!box) return;
     try {
       const data = await apiFetch("/api/profile/progress");
@@ -999,7 +1060,7 @@
                   <h3>${escapeHTML(row.specialization_name || row.name || "Specialization")}</h3>
                   <strong>${progress}%</strong>
                 </div>
-                <div class="progress"><span style="width:${progress}%"></span></div>
+                <div class="progress"><div class="progress-fill" style="width:${progress}%"></div></div>
                 <p class="muted">
                   ${escapeHTML(row.opened_courses || 0)} opened /
                   ${escapeHTML(row.completed_courses || 0)} completed /
@@ -1012,6 +1073,30 @@
     } catch (err) {
       box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
     }
+  }
+
+  function bindProfileForm() {
+    const form = $("#profileForm");
+    if (!form || form.dataset.sqrBound) return;
+    form.dataset.sqrBound = "1";
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!getToken()) return requireLogin();
+      try {
+        const payload = {
+          name: valueOf("name", "profileName"),
+          skills: valueOf("skills", "profileSkills"),
+          interests: valueOf("interests", "profileInterests"),
+          goal: valueOf("goal", "profileGoal"),
+        };
+        const data = await apiFetch("/api/profile", { method: "PUT", body: payload });
+        if (data.user) setUser(data.user);
+        message(data.message || "Profile saved.", "success");
+        await loadProfile();
+      } catch (err) {
+        message(err.message || "Could not save profile.", "error");
+      }
+    });
   }
 
   function setupATS() {
@@ -1563,6 +1648,7 @@
     loadCourses,
     loadCourseDetails,
     loadJobs,
+    loadJobDetails,
     setupRecommendation,
     setupATS,
     loadAdmin,
@@ -2089,6 +2175,7 @@
   window.loadCourses = loadCourses;
   window.loadCourseDetails = loadCourseDetails;
   window.loadJobs = loadJobs;
+  window.loadJobDetails = loadJobDetails;
   window.setupRecommendation = setupRecommendation;
   window.setupATS = setupATS;
   window.loadAdmin = loadAdmin;
