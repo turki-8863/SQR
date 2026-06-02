@@ -1075,6 +1075,10 @@
     const softSkills = joinText(result.soft_skills) || "Not provided";
     const linkedin = result.linkedin || result.linkedin_url || "";
     const github = result.github || result.github_url || "";
+    const portfolio = result.portfolio || result.portfolio_url || "";
+    const phone = result.phone || result.phone_number || "";
+    const email = result.email || result.email_address || "";
+    const location = result.location || result.address || "";
     const providerLabel = result.ai_powered
       ? `AI Generated: ${escapeHTML(result.ai_provider || "gemini")}`
       : "Dynamic fallback";
@@ -1095,12 +1099,16 @@
 
         <div class="ats-pro-grid">
           <article>
-            <h3>Technical Skills</h3>
-            <p>${escapeHTML(technicalSkills)}</p>
+            <h3>Phone</h3>
+            <p>${escapeHTML(phone || "Not provided")}</p>
           </article>
           <article>
-            <h3>Soft Skills</h3>
-            <p>${escapeHTML(softSkills)}</p>
+            <h3>Email</h3>
+            <p>${escapeHTML(email || "Not provided")}</p>
+          </article>
+          <article>
+            <h3>Location</h3>
+            <p>${escapeHTML(location || "Not provided")}</p>
           </article>
           <article>
             <h3>LinkedIn</h3>
@@ -1109,6 +1117,18 @@
           <article>
             <h3>GitHub</h3>
             <p>${linkHTML(github, "Open GitHub")}</p>
+          </article>
+          <article>
+            <h3>Portfolio</h3>
+            <p>${linkHTML(portfolio, "Open Portfolio")}</p>
+          </article>
+          <article>
+            <h3>Technical Skills</h3>
+            <p>${escapeHTML(technicalSkills)}</p>
+          </article>
+          <article>
+            <h3>Soft Skills</h3>
+            <p>${escapeHTML(softSkills)}</p>
           </article>
         </div>
 
@@ -1153,14 +1173,15 @@
           <strong>${score}%</strong>
           <span>ATS Score</span>
         </div>
-        <h2>Summary</h2>
+        <h2>AI Resume Check</h2>
         <p>${escapeHTML(result.summary || "")}</p>
+        <p class="muted">Source: uploaded resume only</p>
 
-        <h2>Matched Keywords</h2>
-        <p>${escapeHTML(joinText(result.matched_keywords))}</p>
+        <h2>Detected Keywords</h2>
+        <p>${escapeHTML(joinText(result.detected_keywords || result.matched_keywords))}</p>
 
-        <h2>Missing Keywords</h2>
-        <p>${escapeHTML(joinText(result.missing_keywords))}</p>
+        <h2>Missing Resume Elements</h2>
+        <p>${escapeHTML(joinText(result.missing_keywords || result.weaknesses))}</p>
 
         <h2>Improvements</h2>
         <ul>${asArray(result.improvements || result.suggestions || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>
