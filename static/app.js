@@ -378,8 +378,41 @@
     }
   }
 
+  function cleanupStaticNavbars() {
+    const selectors = [
+      "header:not(.sqr-navbar)",
+      "nav.top-nav",
+      ".top-nav:not(.sqr-navbar)",
+      ".navbar:not(.sqr-navbar)",
+      ".landing-navbar",
+      ".landing-nav",
+      ".home-navbar",
+      ".home-nav",
+      ".main-navbar",
+      ".main-nav",
+      ".site-navbar",
+      ".site-nav",
+      ".guest-navbar",
+      ".guest-nav",
+      ".hero-navbar",
+      ".hero-nav",
+      ".nav-card",
+      ".nav-wrapper",
+      ".glass-navbar"
+    ];
+
+    selectors.forEach((selector) => {
+      $all(selector).forEach((el) => {
+        if (!el.classList.contains("sqr-navbar") && !el.closest(".sqr-navbar")) {
+          el.remove();
+        }
+      });
+    });
+  }
+
   function navbar() {
-    if ($(".sqr-navbar")) return;
+    cleanupStaticNavbars();
+    $all(".sqr-navbar").forEach((el) => el.remove());
 
     const user = getUser();
     const logged = isLoggedIn();
@@ -400,6 +433,7 @@
       ? [["admin.html", "Admin"], ["profile.html", "Profile"]]
       : [...studentLinks, ...(admin ? [["admin.html", "Admin"]] : [])];
 
+    const current = location.pathname.split("/").pop() || "gp.html";
     const nav = document.createElement("header");
     nav.className = "sqr-navbar";
     nav.innerHTML = `
@@ -407,13 +441,13 @@
         <span class="sqr-logo-text">SQR</span>
         <small>Skill Quest Road</small>
       </a>
-      <nav class="sqr-nav-links">
-        ${links.map(([href, label]) => `<a href="${href}">${label}</a>`).join("")}
+      <nav class="sqr-nav-links" aria-label="Main navigation">
+        ${links.map(([href, label]) => `<a href="${href}" class="${href === current ? "active" : ""}">${label}</a>`).join("")}
       </nav>
       <div class="sqr-auth-links">
         ${
           logged
-            ? `<button type="button" class="btn btn-small" id="sqrLogoutBtn">Sign Out</button>`
+            ? `<button type="button" class="btn btn-small logout-btn" id="sqrLogoutBtn">Sign Out</button>`
             : `<a class="btn btn-small" href="signin.html">Sign In</a><a class="btn btn-small btn-primary" href="signup.html">Sign Up</a>`
         }
       </div>
@@ -940,8 +974,8 @@
   }
 
   async function loadProfile() {
-    const box = first("#profileBox", "#profileContainer", "#profileDetails", "[data-profile]");
-    const progressBox = first("#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
+    const box = first("#profileSummary", "#profileBox", "#profileContainer", "#profileDetails", "[data-profile]");
+    const progressBox = first("#profileProgressBars", "#profileProgress", "#progressList", "#progressContainer", "[data-progress]");
     if (!box && !progressBox) return;
     if (!getToken()) return;
 
@@ -953,35 +987,61 @@
       const user = profile.user || profile;
       setUser(user);
 
+      const nameInput = first("#profileName", "input[name='name']");
+      const skillsInput = first("#profileSkills", "textarea[name='skills']", "input[name='skills']");
+      const interestsInput = first("#profileInterests", "textarea[name='interests']", "input[name='interests']");
+      const goalInput = first("#profileGoal", "textarea[name='goal']", "input[name='goal']");
+      if (nameInput) nameInput.value = user.name || "";
+      if (skillsInput) skillsInput.value = user.skills || "";
+      if (interestsInput) interestsInput.value = user.interests || "";
+      if (goalInput) goalInput.value = user.goal || "";
+
       if (box) {
         const quizHistory = asArray(profile, "quiz_history");
         const atsHistory = asArray(profile, "ats_history");
         box.innerHTML = `
-          <section class="card sqr-card">
-            <h1>${escapeHTML(user.name || "Profile")}</h1>
+          <article class="card sqr-card profile-info-card">
+            <span class="eyebrow">Profile</span>
+            <h2>${escapeHTML(user.name || "Student")}</h2>
             <p>${escapeHTML(user.email || "")}</p>
             <p><strong>Role:</strong> ${escapeHTML(user.role || "student")}</p>
-            ${user.skills ? `<p><strong>Skills:</strong> ${escapeHTML(user.skills)}</p>` : ""}
-            ${user.interests ? `<p><strong>Interests:</strong> ${escapeHTML(user.interests)}</p>` : ""}
-          </section>
-          ${
-            quizHistory.length
-              ? `<section class="card sqr-card"><h2>Quiz History</h2>${quizHistory.slice(0, 8).map((q) => `<p>${escapeHTML(q.quiz_title || "Quiz")} — <strong>${pct(q.score_percentage || q.score)}%</strong></p>`).join("")}</section>`
-              : ""
-          }
-          ${
-            atsHistory.length
-              ? `<section class="card sqr-card"><h2>ATS History</h2>${atsHistory.slice(0, 5).map((a) => `<p>${escapeHTML(a.target_job || "Resume")} — <strong>${pct(a.ats_score || a.score)}%</strong></p>`).join("")}</section>`
-              : ""
-          }
+          </article>
+          <article class="card sqr-card profile-info-card">
+            <span class="eyebrow">Skills</span>
+            <p>${escapeHTML(user.skills || "No skills added yet.")}</p>
+          </article>
+          <article class="card sqr-card profile-info-card">
+            <span class="eyebrow">Goal</span>
+            <p>${escapeHTML(user.goal || user.interests || "No goal added yet.")}</p>
+          </article>
+          ${quizHistory.length ? `<article class="card sqr-card"><h2>Quiz History</h2>${quizHistory.slice(0, 6).map((q) => `<p>${escapeHTML(q.quiz_title || "Quiz")} — <strong>${pct(q.score_percentage || q.score)}%</strong></p>`).join("")}</article>` : ""}
+          ${atsHistory.length ? `<article class="card sqr-card"><h2>ATS History</h2>${atsHistory.slice(0, 4).map((a) => `<p>${escapeHTML(a.target_job || "Resume")} — <strong>${pct(a.ats_score || a.score)}%</strong></p>`).join("")}</article>` : ""}
         `;
       }
 
       if (progressBox) await loadProfileProgress(progressBox);
     } catch (err) {
       if (box) box.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
-      if (progressBox) progressBox.innerHTML = "";
+      if (progressBox) progressBox.innerHTML = `<div class="card sqr-card error">${escapeHTML(err.message)}</div>`;
     }
+  }
+
+  function setupProfileForm() {
+    const form = first("#profileForm", "form[data-profile-form]");
+    if (!form || form.dataset.sqrBound) return;
+    form.dataset.sqrBound = "1";
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const payload = Object.fromEntries(new FormData(form).entries());
+        const result = await apiFetch("/api/profile", { method: "PUT", body: payload });
+        setUser(result.user || result);
+        message("Profile saved successfully.", "success");
+        await loadProfile();
+      } catch (err) {
+        message(err.message, "error");
+      }
+    });
   }
 
   async function loadProfileProgress(targetBox) {
@@ -1628,6 +1688,7 @@
 
     setupSignup();
     setupSignin();
+    setupProfileForm();
 
     if (pageName.includes("profile")) requireLogin();
     if (pageName.includes("admin")) requireAdmin();
@@ -1657,6 +1718,7 @@
     blockAdminFromStudentPages,
     setupSignup,
     setupSignin,
+    setupProfileForm,
     loadProfile,
     loadProfileProgress,
     loadSpecializations,
