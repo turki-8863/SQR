@@ -1495,7 +1495,7 @@ th {
 .sqr-gap-360 { gap: 64px; }
 .sqr-radius-360 { border-radius: 32px; }
 
-/* SQR v4 page polish: restored full-page layout, navbar fallback, and modern panels */
+
 .hidden-helper {
   display: none !important;
 }
@@ -1958,7 +1958,7 @@ th {
 
 
 
-/* SQR dynamic colorful patch - keeps existing classes and adds stronger colors */
+
 
 :root {
   --bg-0: #050816;
@@ -3438,9 +3438,7 @@ textarea::placeholder {
 
 
 
-/* =========================
-   SQR FULL COLORED DYNAMIC THEME PATCH
-   ========================= */
+
 :root {
   --bg: #090b1a;
   --bg-2: #10172f;
@@ -3780,7 +3778,7 @@ body > footer {
 .required-star { color: #fb7185; font-weight: 900; }
 
 
-/* SQR long colorful patched theme layer */
+
 :root {
   --sqr-bg-0: #020617;
   --sqr-bg-1: #08111f;
@@ -4451,7 +4449,7 @@ select:focus { border-color: rgba(34, 211, 238, 0.72); box-shadow: 0 0 0 4px rgb
     justify-content: center;
   }
 }
-/* Hide specialization descriptions on the list cards only */
+
 body[data-page="specializations"]:not(.details-mode) .specializations-list-section .card p,
 body[data-page="specializations"]:not(.details-mode) .specializations-list-section .feature-card p,
 body[data-page="specializations"]:not(.details-mode) #specializationsBox p,
@@ -4459,13 +4457,13 @@ body[data-page="specializations"]:not(.details-mode) #specializationGrid p {
   display: none !important;
 }
 
-/* Keep spacing clean after hiding description */
+
 body[data-page="specializations"]:not(.details-mode) .specializations-list-section .card-body,
 body[data-page="specializations"]:not(.details-mode) .specializations-list-section .card-content {
   gap: 12px;
 }
 
-/* Make sure description appears again in View Details page */
+
 body[data-page="specializations"].details-mode .specialization-details-section p,
 body[data-page="specializations"].details-mode #specializationDetails p,
 body[data-page="specializations"].details-mode #specializationDetailsBox p {
@@ -4541,11 +4539,7 @@ p {
 .dark-card {
   background: linear-gradient(145deg, #0f172a, #1e293b) !important;
 }
-/* ============================================================
-   SQR PRESENTATION DARK OVERRIDE
-   Keeps the original CSS above. This section is appended last
-   so white cards/loading boxes/filter panels become dark.
-   ============================================================ */
+
 
 :root {
   --bg: #030712;
@@ -4599,7 +4593,7 @@ body::before {
   z-index: -1;
 }
 
-/* main shells */
+
 .container,
 main.container,
 .page,
@@ -4612,7 +4606,7 @@ main.container,
   color: #e5e7eb !important;
 }
 
-/* navigation */
+
 .sqr-navbar,
 .top-nav,
 .navbar,
@@ -4653,7 +4647,7 @@ main.container,
   background: rgba(56, 189, 248, 0.14) !important;
 }
 
-/* page headers and hero panels */
+
 .sqr-page-title,
 .page-title,
 .hero > div,
@@ -4673,7 +4667,7 @@ main.container,
   color: #e5e7eb !important;
 }
 
-/* cards, filters, loading boxes */
+
 .card,
 form,
 .feature-card,
@@ -4744,7 +4738,7 @@ form,
   color: #bbf7d0 !important;
 }
 
-/* typography */
+
 h1,
 h2,
 h3,
@@ -4796,7 +4790,7 @@ label,
   border: 1px solid rgba(148, 163, 184, 0.20) !important;
 }
 
-/* forms */
+
 input,
 textarea,
 select,
@@ -4829,7 +4823,7 @@ select:focus,
   outline: none !important;
 }
 
-/* buttons */
+
 .btn-primary,
 .signup-link,
 input[type="submit"],
@@ -4863,7 +4857,7 @@ button[type="submit"] {
   border: 1px solid rgba(248, 113, 113, 0.28) !important;
 }
 
-/* course/specialization cards */
+
 .feature-card {
   overflow: hidden;
 }
@@ -4885,7 +4879,7 @@ button[type="submit"] {
   box-shadow: 0 26px 75px rgba(56, 189, 248, 0.12), 0 24px 70px rgba(0,0,0,0.36) !important;
 }
 
-/* progress and score */
+
 .progress,
 .progress-bar {
   background: rgba(51, 65, 85, 0.96) !important;
@@ -4915,7 +4909,7 @@ button[type="submit"] {
   color: #86efac !important;
 }
 
-/* tables */
+
 table {
   background: rgba(15, 23, 42, 0.96) !important;
   color: #e5e7eb !important;
@@ -4931,7 +4925,7 @@ th {
   border-bottom: 1px solid rgba(148, 163, 184, 0.18) !important;
 }
 
-/* ATS output and generated text */
+
 .generated-resume-card pre,
 pre,
 code {
@@ -4940,7 +4934,7 @@ code {
   color: #e5e7eb !important;
 }
 
-/* common white leftovers */
+
 [class*="white"],
 [class*="light"],
 .bg-white,
@@ -4954,13 +4948,13 @@ hr,
   border-color: rgba(148, 163, 184, 0.20) !important;
 }
 
-/* keep required star visible */
+
 .required::after,
 .required-star {
   color: #fb7185 !important;
 }
 
-/* mobile */
+
 @media (max-width: 950px) {
   .sqr-navbar.open .sqr-nav-links,
   .sqr-navbar.open .sqr-nav-actions {
@@ -4971,12 +4965,12 @@ hr,
 }
 
 
-/* SQR hotfix: remove duplicate bottom navbar on dashboard */
+
 .bottom-dashboard-nav {
   display: none !important;
 }
 
-/* SQR hotfix: make logout button clearly red */
+
 .logout-btn,
 .btn-danger.logout-btn,
 button.logout-btn,
@@ -4986,7 +4980,7 @@ a.logout-btn {
   border: 1px solid rgba(254, 202, 202, 0.55) !important;
 }
 
-/* SQR hotfix: stop list containers from becoming huge empty panels */
+
 #specializationsBox,
 #specializationGrid,
 #coursesBox {
@@ -5005,7 +4999,7 @@ a.logout-btn {
   min-height: 220px !important;
 }
 
-/* SQR final catalog sizing fix: stop course/specialization cards from stretching full page height/width */
+
 .sqr-grid,
 #specializationsBox,
 #specializationGrid,
@@ -5162,7 +5156,7 @@ body[data-page="specializations"]:not(.details-mode) #specializationGrid .sqr-ca
   }
 }
 
-/* Admin CRUD compatibility patch */
+
 .admin-modal.hidden { display: none; }
 .admin-modal {
   position: fixed;
@@ -5250,7 +5244,7 @@ body[data-page="specializations"]:not(.details-mode) #specializationGrid .sqr-ca
 }
 
 
-/* ===== SQR ATS professional hotfix: colorful buttons, CV preview, links ===== */
+
 #atsResult .btn,
 #generatedResume .btn,
 .ats-action-row .btn,
@@ -5407,4 +5401,549 @@ a[data-action="logout"] {
   background: linear-gradient(135deg, #dc2626, #991b1b) !important;
   color: #ffffff !important;
   transform: translateY(-2px);
+}
+
+:root {
+  --bg: #080d1f;
+  --card: #111827;
+  --text: #f8fafc;
+  --muted: #a7b4c8;
+  --line: rgba(148, 163, 184, 0.22);
+  --soft: rgba(15, 23, 42, 0.72);
+  --primary: #3b82f6;
+  --primary-2: #7c3aed;
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  --shadow-soft: 0 16px 42px rgba(0, 0, 0, 0.28);
+  --radius: 24px;
+  --sqr-bg: #080d1f;
+  --sqr-card: #111827;
+  --sqr-text: #f8fafc;
+  --sqr-muted: #a7b4c8;
+  --sqr-border: rgba(148, 163, 184, 0.22);
+  --sqr-primary: #3b82f6;
+  --sqr-primary-2: #7c3aed;
+  --sqr-danger: #ef4444;
+  --sqr-success: #22c55e;
+  --sqr-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+}
+
+html {
+  background: #080d1f !important;
+}
+
+body {
+  color: #f8fafc !important;
+  background:
+    radial-gradient(circle at 10% -10%, rgba(59, 130, 246, 0.24), transparent 34%),
+    radial-gradient(circle at 90% 0%, rgba(124, 58, 237, 0.22), transparent 32%),
+    linear-gradient(135deg, #071225 0%, #0b1024 46%, #11112e 100%) !important;
+  min-height: 100vh !important;
+}
+
+.sqr-navbar,
+.top-nav {
+  position: sticky !important;
+  top: 14px !important;
+  z-index: 1000 !important;
+  width: min(1220px, calc(100% - 28px)) !important;
+  margin: 14px auto 0 !important;
+  min-height: 76px !important;
+  padding: 12px 18px !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  border-radius: 24px !important;
+  background: rgba(3, 7, 18, 0.88) !important;
+  backdrop-filter: blur(22px) !important;
+  -webkit-backdrop-filter: blur(22px) !important;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.42) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 18px !important;
+}
+
+.sqr-brand,
+.brand {
+  color: #ffffff !important;
+  display: inline-grid !important;
+  line-height: 1 !important;
+  min-width: 150px !important;
+  text-decoration: none !important;
+}
+
+.sqr-brand span,
+.sqr-logo-text,
+.brand span {
+  font-size: 1.7rem !important;
+  font-weight: 950 !important;
+  letter-spacing: -0.06em !important;
+  color: #ffffff !important;
+  text-shadow: 0 0 22px rgba(59, 130, 246, 0.32) !important;
+}
+
+.sqr-brand small,
+.brand small {
+  margin-top: 6px !important;
+  color: #a7b4c8 !important;
+  font-size: 0.76rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.sqr-nav-links,
+.nav-links {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 1 !important;
+  gap: 8px !important;
+}
+
+.sqr-nav-links a,
+.nav-links a {
+  padding: 11px 13px !important;
+  border-radius: 14px !important;
+  color: #d7deea !important;
+  font-size: 0.94rem !important;
+  font-weight: 850 !important;
+  transition: 0.2s ease !important;
+  text-decoration: none !important;
+}
+
+.sqr-nav-links a:hover,
+.sqr-nav-links a.active,
+.nav-links a:hover,
+.nav-links a.active {
+  color: #ffffff !important;
+  background: rgba(59, 130, 246, 0.16) !important;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.2) !important;
+}
+
+.sqr-auth-links,
+.sqr-nav-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  margin-left: auto !important;
+  flex: 0 0 auto !important;
+}
+
+.btn,
+button,
+input[type="submit"] {
+  border-radius: 999px !important;
+  min-height: 44px !important;
+  padding: 11px 18px !important;
+  font-weight: 900 !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  transition: 0.2s ease !important;
+}
+
+.btn:hover,
+button:hover,
+input[type="submit"]:hover {
+  transform: translateY(-1px) !important;
+}
+
+.btn-small {
+  min-height: 42px !important;
+  padding: 10px 17px !important;
+  font-size: 0.86rem !important;
+}
+
+.btn-primary,
+.signup-link,
+.btn-signup,
+input[type="submit"],
+button[type="submit"] {
+  background: linear-gradient(135deg, #3b82f6, #7c3aed) !important;
+  color: #ffffff !important;
+  border-color: rgba(96, 165, 250, 0.28) !important;
+  box-shadow: 0 14px 32px rgba(59, 130, 246, 0.22) !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+.btn-soft,
+.signin-link,
+.btn-login {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+#sqrLogoutBtn,
+#sqrLogoutBtn.btn,
+#sqrLogoutBtn.btn-small,
+#sqrLogoutBtn.btn.btn-small,
+.logout-btn,
+.sqr-auth-links #sqrLogoutBtn,
+.sqr-navbar .sqr-auth-links #sqrLogoutBtn,
+.sqr-navbar .sqr-auth-links button#sqrLogoutBtn,
+.sqr-navbar .sqr-auth-links button#sqrLogoutBtn.btn,
+.sqr-navbar .sqr-auth-links button#sqrLogoutBtn.btn.btn-small,
+button#sqrLogoutBtn[type="button"] {
+  background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  border: 1px solid rgba(252, 165, 165, 0.28) !important;
+  border-radius: 999px !important;
+  min-height: 46px !important;
+  min-width: 118px !important;
+  padding: 12px 24px !important;
+  font-weight: 950 !important;
+  letter-spacing: -0.01em !important;
+  box-shadow: 0 14px 32px rgba(239, 68, 68, 0.32) !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+#sqrLogoutBtn:hover,
+#sqrLogoutBtn.btn:hover,
+#sqrLogoutBtn.btn-small:hover,
+#sqrLogoutBtn.btn.btn-small:hover,
+.logout-btn:hover,
+.sqr-auth-links #sqrLogoutBtn:hover,
+.sqr-navbar .sqr-auth-links #sqrLogoutBtn:hover,
+.sqr-navbar .sqr-auth-links button#sqrLogoutBtn:hover,
+.sqr-navbar .sqr-auth-links button#sqrLogoutBtn.btn:hover,
+.sqr-navbar .sqr-auth-links button#sqrLogoutBtn.btn.btn-small:hover {
+  background: linear-gradient(135deg, #dc2626, #7f1d1d) !important;
+  background-color: #b91c1c !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 18px 38px rgba(239, 68, 68, 0.42) !important;
+}
+
+.sqr-shell,
+.container,
+.main-shell,
+main.container,
+.page,
+.recommendation-page {
+  width: min(1180px, calc(100% - 32px)) !important;
+  margin: 28px auto 70px !important;
+}
+
+.sqr-page-title,
+.page-title,
+.hero > div,
+.rec-hero-main,
+.rec-hero-side,
+.detail-hero,
+.profile-hero-card,
+.card,
+form,
+.feature-card,
+.rec-card,
+.progress-card,
+.loading-card,
+.empty-state,
+.error-card,
+.result-panel,
+.generated-resume-card,
+.video-card,
+.admin-form-card,
+.admin-stat-grid article,
+.stat-card,
+.profile-mini-stats article,
+.rec-result-main,
+.rec-score-card,
+.rec-mini-card,
+.ats-score-card,
+.ats-result-card,
+.ats-summary-card,
+.ats-resume-preview,
+.auth-card,
+.auth-info-card,
+.admin-panel,
+.admin-modal-box,
+.color-panel,
+.blue-panel,
+.amber-panel,
+.cyan-panel {
+  background: rgba(15, 23, 42, 0.82) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.28) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+}
+
+.sqr-page-title,
+.page-title,
+.hero > div,
+.rec-hero-main,
+.rec-hero-side,
+.detail-hero,
+.profile-hero-card {
+  border-radius: 30px !important;
+  padding: 32px !important;
+}
+
+.card,
+form,
+.feature-card,
+.rec-card,
+.progress-card,
+.loading-card,
+.empty-state,
+.error-card,
+.result-panel,
+.generated-resume-card,
+.video-card,
+.admin-form-card {
+  border-radius: 24px !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+label,
+legend,
+.card-body h3,
+.progress-card h3,
+.rec-mini-card h3,
+.section-heading h2 {
+  color: #f8fafc !important;
+}
+
+p,
+span,
+small,
+td,
+li,
+.card-body p,
+.progress-meta,
+.small-muted,
+.section-heading p,
+.sqr-page-title p,
+.page-title p,
+.hero p,
+.rec-hero p,
+.detail-hero p,
+.profile-hero-card p {
+  color: #a7b4c8 !important;
+}
+
+.eyebrow,
+.badge,
+.status-pill,
+.level-pill {
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+.eyebrow {
+  background: rgba(59, 130, 246, 0.14) !important;
+  color: #93c5fd !important;
+}
+
+input,
+textarea,
+select,
+.form-control,
+.rec-field textarea,
+.rec-field input,
+.rec-field select {
+  background: rgba(8, 13, 31, 0.72) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.26) !important;
+  border-radius: 17px !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+.form-control:focus,
+.rec-field textarea:focus,
+.rec-field input:focus {
+  border-color: rgba(96, 165, 250, 0.85) !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18) !important;
+}
+
+textarea {
+  min-height: 120px !important;
+}
+
+table {
+  background: rgba(15, 23, 42, 0.86) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+}
+
+th {
+  background: rgba(30, 41, 59, 0.92) !important;
+  color: #e2e8f0 !important;
+}
+
+td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14) !important;
+}
+
+.progress,
+.progress-bar {
+  background: rgba(30, 41, 59, 0.92) !important;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #3b82f6, #7c3aed) !important;
+}
+
+.level-beginner {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #86efac !important;
+}
+
+.level-intermediate {
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #fde68a !important;
+}
+
+.level-advanced {
+  background: rgba(239, 68, 68, 0.18) !important;
+  color: #fca5a5 !important;
+}
+
+.message,
+#message,
+#msg,
+#alert {
+  color: #dbeafe !important;
+  background: rgba(30, 41, 59, 0.9) !important;
+  border: 1px solid rgba(96, 165, 250, 0.22) !important;
+}
+
+.message.success,
+#message.success {
+  background: rgba(22, 163, 74, 0.16) !important;
+  color: #bbf7d0 !important;
+  border-color: rgba(34, 197, 94, 0.28) !important;
+}
+
+.message.error,
+#message.error,
+.error-card {
+  background: rgba(153, 27, 27, 0.18) !important;
+  color: #fecaca !important;
+  border-color: rgba(239, 68, 68, 0.28) !important;
+}
+
+.feature-card,
+.interactive-card,
+.card[data-open-url] {
+  cursor: pointer !important;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.feature-card:hover,
+.interactive-card:hover,
+.card[data-open-url]:hover {
+  transform: translateY(-4px) !important;
+  border-color: rgba(96, 165, 250, 0.34) !important;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.36) !important;
+}
+
+.bottom-dashboard-nav,
+.bottom-nav,
+.fixed-bottom-nav {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.auth-page,
+.admin-page,
+.ats-page,
+.catalog-page,
+.colorful-page {
+  background:
+    radial-gradient(circle at 12% 2%, rgba(59, 130, 246, 0.22), transparent 34%),
+    radial-gradient(circle at 88% 0%, rgba(124, 58, 237, 0.2), transparent 32%),
+    linear-gradient(135deg, #071225 0%, #0b1024 46%, #11112e 100%) !important;
+}
+
+.score-circle-inner {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+.generated-resume-card pre,
+pre,
+code {
+  background: rgba(8, 13, 31, 0.86) !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+}
+
+@media (max-width: 950px) {
+  .sqr-navbar,
+  .top-nav {
+    top: 10px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .sqr-nav-links,
+  .nav-links {
+    order: 3 !important;
+    flex-basis: 100% !important;
+    justify-content: flex-start !important;
+    overflow-x: auto !important;
+    padding-top: 8px !important;
+  }
+
+  .sqr-auth-links,
+  .sqr-nav-actions {
+    margin-left: auto !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .sqr-navbar,
+  .top-nav {
+    width: calc(100% - 20px) !important;
+    border-radius: 20px !important;
+    padding: 12px !important;
+  }
+
+  .sqr-brand,
+  .brand {
+    min-width: 115px !important;
+  }
+
+  .sqr-brand span,
+  .sqr-logo-text,
+  .brand span {
+    font-size: 1.35rem !important;
+  }
+
+  .sqr-nav-links a,
+  .nav-links a {
+    padding: 9px 10px !important;
+    font-size: 0.86rem !important;
+  }
+
+  #sqrLogoutBtn,
+  #sqrLogoutBtn.btn,
+  #sqrLogoutBtn.btn-small,
+  #sqrLogoutBtn.btn.btn-small,
+  .logout-btn {
+    min-width: auto !important;
+    padding: 10px 16px !important;
+    min-height: 42px !important;
+  }
 }
