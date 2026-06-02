@@ -5390,20 +5390,20 @@ a[data-action="logout"] {
   .ats-pro-grid { grid-template-columns: 1fr; }
   .ats-resume-preview-head { align-items: flex-start; flex-direction: column; }
 }
-.logout-btn,
-#logoutBtn,
-a[href="/logout"],
-button.logout-btn {
+#sqrLogoutBtn,
+.logout-btn {
   background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
   color: #ffffff !important;
   border: none !important;
+  border-radius: 999px !important;
+  padding: 14px 26px !important;
+  font-weight: 800 !important;
   box-shadow: 0 10px 25px rgba(239, 68, 68, 0.35) !important;
+  cursor: pointer !important;
 }
 
-.logout-btn:hover,
-#logoutBtn:hover,
-a[href="/logout"]:hover,
-button.logout-btn:hover {
+#sqrLogoutBtn:hover,
+.logout-btn:hover {
   background: linear-gradient(135deg, #dc2626, #991b1b) !important;
   color: #ffffff !important;
   transform: translateY(-2px);
