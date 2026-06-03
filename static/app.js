@@ -1263,10 +1263,26 @@
     }
   }
 
+
+  function ensureATSLanguageField(form) {
+    if (!form || form.querySelector('[name="languages"], #languages, #resumeLanguages')) return;
+    const wrapper = document.createElement("div");
+    wrapper.className = "ats-language-field form-group sqr-form-field";
+    wrapper.innerHTML = `
+      <label for="resumeLanguages">Languages</label>
+      <input id="resumeLanguages" name="languages" type="text" placeholder="Example: Arabic (Native), English (Professional)">
+      <small class="muted">Spoken languages only, not programming languages.</small>
+    `;
+    const submit = form.querySelector('button[type="submit"], input[type="submit"]');
+    if (submit && submit.parentElement) submit.parentElement.insertBefore(wrapper, submit);
+    else form.appendChild(wrapper);
+  }
+
   function setupATS() {
     const generateForm = first("#atsGenerateForm", "#atsGeneratorForm", "form[data-ats='generate']");
     const checkForm = first("#atsCheckForm", "#atsCheckerForm", "form[data-ats='check']");
     const output = first("#atsOutput", "#atsResult", "#resumeResult", "#generatedResume", "[data-ats-output]");
+    if (generateForm) ensureATSLanguageField(generateForm);
 
     if (generateForm) {
       generateForm.addEventListener("submit", async (event) => {
@@ -1322,6 +1338,7 @@
     const fullResume = result.full_resume || result.resume || "";
     const technicalSkills = joinText(result.technical_skills) || "Not provided";
     const softSkills = joinText(result.soft_skills) || "Not provided";
+    const languages = joinText(result.languages || result.spoken_languages || result.language) || "Not provided";
     const linkedin = result.linkedin || result.linkedin_url || "";
     const github = result.github || result.github_url || "";
     const portfolio = result.portfolio || result.portfolio_url || "";
@@ -1378,6 +1395,10 @@
           <article>
             <h3>Soft Skills</h3>
             <p>${escapeHTML(softSkills)}</p>
+          </article>
+          <article>
+            <h3>Languages</h3>
+            <p>${escapeHTML(languages)}</p>
           </article>
         </div>
 
