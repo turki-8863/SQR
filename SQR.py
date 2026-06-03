@@ -3489,33 +3489,79 @@ def sqr_parse_recommendation_answers(data):
     return answers
 
 
+def sqr_canonical_spec_key(value):
+    """Normalize specialization aliases so AI, Artificial Intelligence, and ML score the same path."""
+    slug = sqr_slug(value)
+    aliases = {
+        "ai": "artificial_intelligence",
+        "a_i": "artificial_intelligence",
+        "artificial_intelligence_and_machine_learning": "artificial_intelligence",
+        "ai_and_machine_learning": "artificial_intelligence",
+        "machine_learning": "artificial_intelligence",
+        "ml": "artificial_intelligence",
+        "cyber_security": "cybersecurity",
+        "cyber": "cybersecurity",
+        "data_engineer": "data_engineering",
+        "data_engineering": "data_engineering",
+        "software_development": "software_engineering",
+        "programming": "software_engineering",
+        "web": "web_development",
+        "web_developer": "web_development",
+        "cloud": "cloud_computing",
+        "devops": "devops_engineering",
+        "networking": "computer_networks",
+        "networks": "computer_networks",
+        "database": "database_administration",
+        "databases": "database_administration",
+        "ui_ux": "ui_ux_engineering",
+    }
+    return aliases.get(slug, slug)
+
+
 def sqr_score_recommendation_quiz(data):
+    """Score the recommendation quiz from real choices instead of neutral defaults.
+
+    Old behavior treated a neutral 3 as 60%, so every path looked recommended.
+    This version treats 3 as neutral, 4/5 as positive, and 1/2 as negative.
+    That makes percentages change based on the student's answers.
+    """
     answers = sqr_parse_recommendation_answers(data)
     questions = sqr_recommendation_questions()
     by_id = {safe_text(q.get("id")): q for q in questions}
-    scores = {}
+    weighted_scores = {}
     max_scores = {}
     chosen = []
+
+    # 3 should not create a recommendation. 4/5 are positive, 1/2 reduce confidence.
+    rating_points = {1: -100, 2: -45, 3: 0, 4: 75, 5: 100}
+
     for answer in answers:
         qid = safe_text(answer.get("id") or answer.get("question_id") or answer.get("name"))
         value = sqr_rating(answer.get("value") or answer.get("answer") or answer.get("score"), 3)
         q = by_id.get(qid)
         if not q:
             continue
-        spec_key = sqr_slug(q.get("specialization_key") or q.get("specialization"))
+
+        spec_key = sqr_canonical_spec_key(q.get("specialization_key") or q.get("specialization"))
         weight = safe_int(q.get("weight"), 5) or 5
-        scores[spec_key] = scores.get(spec_key, 0) + (value * weight)
-        max_scores[spec_key] = max_scores.get(spec_key, 0) + (5 * weight)
+        points = rating_points.get(value, 0)
+
+        weighted_scores[spec_key] = weighted_scores.get(spec_key, 0) + (points * weight)
+        max_scores[spec_key] = max_scores.get(spec_key, 0) + (100 * weight)
         chosen.append({
             "question_id": qid,
             "specialization_key": spec_key,
+            "specialization": q.get("specialization"),
             "question": q.get("question"),
             "value": value,
             "dimension": q.get("dimension"),
+            "keywords": q.get("keywords") or [],
         })
+
     percentages = {}
-    for key, score in scores.items():
-        percentages[key] = round((score / max(max_scores.get(key, 1), 1)) * 100)
+    for key, score in weighted_scores.items():
+        percentages[key] = max(0, min(100, round((score / max(max_scores.get(key, 1), 1)) * 100)))
+
     return percentages, chosen
 
 
@@ -3559,8 +3605,10 @@ def recommendations():
     data = get_json()
     user = request.current_user
     user_id = user.get("id") or user.get("user_id")
+
     quiz_scores, quiz_answers = sqr_score_recommendation_quiz(data)
     profile_text = sqr_recommendation_profile_text({"answers": quiz_answers}, user)
+    meaningful_answers = [a for a in quiz_answers if safe_int(a.get("value"), 3) != 3]
 
     specs = [normalize_specialization(row) for row in (query_db("SELECT * FROM specializations ORDER BY specialization_id DESC", fetchall=True) or [])]
     library = sqr_all_specialization_library()
@@ -3568,18 +3616,24 @@ def recommendations():
     recommended_specs = []
     system_slugs = set()
     for spec in specs:
-        spec_key = sqr_spec_key(spec)
-        system_slugs.add(spec_key)
+        spec_key = sqr_canonical_spec_key(spec.get("name") or spec.get("specialization_key") or spec.get("slug"))
+        raw_slug = sqr_slug(spec.get("name"))
+        system_slugs.update({spec_key, raw_slug})
+
         target = f"{spec.get('name','')} {spec.get('description','')} {spec.get('skills','')} {spec.get('roadmap','')} {spec.get('career_paths','')}"
         text_score, matches = calculate_match_percentage(profile_text, target)
-        quiz_score = safe_int(quiz_scores.get(spec_key), 0)
+        quiz_score = pct_value(quiz_scores.get(spec_key) or quiz_scores.get(raw_slug))
+
         lower_name = safe_text(spec.get("name")).lower()
         hint_score = 0
         for key, hints in SPECIALIZATION_HINTS.items():
-            if sqr_slug(key) == spec_key or key in lower_name:
-                hint_score = min(100, len([h for h in hints if h in profile_text]) * 18)
-        final_score = round((quiz_score * 0.82) + (max(text_score, hint_score) * 0.18)) if quiz_answers else max(text_score, hint_score)
+            if sqr_canonical_spec_key(key) == spec_key or key in lower_name:
+                hint_score = min(100, len([h for h in hints if h in profile_text]) * 12)
+
+        tie_breaker = max(text_score, hint_score)
+        final_score = round((quiz_score * 0.90) + (tie_breaker * 0.10)) if quiz_answers else tie_breaker
         final_score = max(0, min(100, final_score))
+
         recommended_specs.append({
             "id": spec.get("id"),
             "specialization_id": spec.get("specialization_id") or spec.get("id"),
@@ -3590,24 +3644,26 @@ def recommendations():
             "quiz_score": quiz_score,
             "text_score": text_score,
             "matched_skills": matches,
-            "reason": "Matched from your quiz answers and compared with specializations currently stored in SQR.",
+            "reason": "Matched from your strongest quiz answers and compared with specializations currently stored in SQR.",
             "in_system": True,
             "source": "database",
         })
 
     for key, info in library.items():
-        if key in system_slugs:
+        canonical_key = sqr_canonical_spec_key(key)
+        canonical_name = sqr_canonical_spec_key(info.get("name"))
+        if canonical_key in system_slugs or canonical_name in system_slugs:
             continue
-        quiz_score = safe_int(quiz_scores.get(key), 0)
+
+        quiz_score = pct_value(quiz_scores.get(canonical_key) or quiz_scores.get(key))
         target = " ".join([info.get("name", ""), info.get("description", ""), " ".join(info.get("keywords") or [])])
         text_score, matches = calculate_match_percentage(profile_text, target)
-        final_score = round((quiz_score * 0.88) + (text_score * 0.12)) if quiz_answers else text_score
-        if final_score <= 0 and quiz_answers:
-            final_score = quiz_score
+        final_score = round((quiz_score * 0.92) + (text_score * 0.08)) if quiz_answers else text_score
         final_score = max(0, min(100, final_score))
+
         recommended_specs.append({
             "id": None,
-            "specialization_id": f"external-{key}",
+            "specialization_id": f"external-{canonical_key}",
             "name": info.get("name") or key.replace("_", " ").title(),
             "description": info.get("description") or "",
             "match_percentage": final_score,
@@ -3615,74 +3671,91 @@ def recommendations():
             "quiz_score": quiz_score,
             "text_score": text_score,
             "matched_skills": matches or (info.get("keywords") or [])[:5],
-            "reason": "AI-ready suggestion from your quiz answers. It can appear even if this specialization is not stored in the database yet.",
+            "reason": "Suggested from your quiz answers even though this specialization is not stored in the database yet.",
             "roadmap": info.get("roadmap") or [],
             "in_system": False,
             "source": "ai_catalog",
         })
 
-    recommended_specs.sort(key=lambda item: item.get("match_percentage", 0), reverse=True)
-    deterministic_top = recommended_specs[:6]
+    # Keep only meaningful results first. This prevents the same six neutral recommendations every time.
+    recommended_specs.sort(key=lambda item: (item.get("match_percentage", 0), item.get("quiz_score", 0), safe_text(item.get("name"))), reverse=True)
+    meaningful_specs = [item for item in recommended_specs if item.get("match_percentage", 0) >= 15 or item.get("quiz_score", 0) > 0]
 
-    ai_fallback = {
-        "summary": "Your specialization recommendation is based on the quiz answers only. Jobs are recommended separately on the Jobs page.",
-        "recommended_specializations": deterministic_top,
-        "roadmap": [
-            "Start with the highest quiz-matched specialization.",
-            "Review the suggested skills and roadmap.",
-            "Open the Jobs page to get job recommendations separately.",
-            "Use courses and quizzes to build measurable progress.",
-        ],
-    }
+    if meaningful_answers:
+        deterministic_top = meaningful_specs[:3] or recommended_specs[:3]
+    else:
+        deterministic_top = []
+
+    if not deterministic_top:
+        ai_fallback = {
+            "summary": "Answer the specialization quiz with stronger choices first. Neutral answers do not create a recommendation.",
+            "recommended_specializations": [],
+            "roadmap": [
+                "Choose 4 or 5 for topics you like or feel confident in.",
+                "Choose 1 or 2 for topics you do not prefer.",
+                "Submit again to get personalized specialization matches.",
+            ],
+            "ai_powered": False,
+            "ai_provider": "dynamic_quiz",
+        }
+    else:
+        ai_fallback = {
+            "summary": "Your specialization recommendation is based on your strongest quiz answers. Jobs are recommended separately on the Jobs page.",
+            "recommended_specializations": deterministic_top,
+            "roadmap": [
+                "Start with the highest quiz-matched specialization.",
+                "Review its skills and roadmap.",
+                "Open related SQR courses and complete their quizzes.",
+                "Use the Jobs page for job recommendations based on this quiz result.",
+            ],
+            "ai_powered": False,
+            "ai_provider": "dynamic_quiz",
+        }
 
     ai_payload = ai_json(
         """
 Return valid JSON only with these keys: summary, recommended_specializations, roadmap.
-Recommend computer science specializations for an SQR student using the quiz answers only.
-You may recommend a specialization even if it is not currently in the SQR database.
-Do not recommend jobs. Jobs belong only on the Jobs page.
-For each recommended_specializations item use keys: name, description, reason, match_percentage, roadmap, in_system.
-Use the deterministic candidates and scores as guidance, but you may include one strong external specialization if the quiz indicates it.
+You are the SQR AI specialization recommendation engine.
+Important rules:
+- Do NOT add new specializations unless one of the candidate names clearly supports it.
+- Do NOT change match_percentage values.
+- Do NOT return the same generic six paths every time.
+- Use the student's non-neutral quiz answers only.
+- Jobs must not be recommended here. Jobs belong only on the Jobs page.
+- For recommended_specializations, keep the same candidate names and scores, but improve the reason and roadmap wording.
 """
-        + f"\nQuiz answers: {json.dumps(quiz_answers, ensure_ascii=False)}"
-        + f"\nQuiz scores: {json.dumps(quiz_scores, ensure_ascii=False)}"
-        + f"\nCurrent SQR database specializations: {json.dumps([{'name': s.get('name'), 'description': s.get('description'), 'specialization_id': s.get('specialization_id')} for s in specs], ensure_ascii=False)}"
-        + f"\nAvailable external specialization library: {json.dumps(library, ensure_ascii=False)}"
-        + f"\nDeterministic top candidates: {json.dumps(deterministic_top, ensure_ascii=False)}",
+        + "\nNon-neutral quiz answers: " + json.dumps(meaningful_answers, ensure_ascii=False)
+        + "\nQuiz scores: " + json.dumps(quiz_scores, ensure_ascii=False)
+        + "\nCandidate specializations to polish only: " + json.dumps(deterministic_top, ensure_ascii=False),
         ai_fallback
     )
 
-    ai_specs_raw = ai_payload.get("recommended_specializations") if isinstance(ai_payload, dict) else None
+    # Keep deterministic candidates/scores as source of truth. Use AI only to polish text.
+    ai_by_name = {}
+    if isinstance(ai_payload, dict) and isinstance(ai_payload.get("recommended_specializations"), list):
+        for item in ai_payload.get("recommended_specializations") or []:
+            if isinstance(item, dict):
+                ai_by_name[safe_text(item.get("name")).lower()] = item
+
     final_specs = []
-    if isinstance(ai_specs_raw, list) and ai_specs_raw:
-        db_by_name = {safe_text(s.get("name")).lower(): s for s in specs}
-        for idx, item in enumerate(ai_specs_raw[:6]):
-            if not isinstance(item, dict):
-                continue
-            name = safe_text(item.get("name")) or safe_text(deterministic_top[idx].get("name") if idx < len(deterministic_top) else "Specialization")
-            db_match = db_by_name.get(name.lower())
-            score = pct_value(item.get("match_percentage") or item.get("score") or (deterministic_top[idx].get("score") if idx < len(deterministic_top) else 0))
-            final_specs.append({
-                "id": db_match.get("id") if db_match else None,
-                "specialization_id": (db_match.get("specialization_id") or db_match.get("id")) if db_match else f"external-{sqr_slug(name)}",
-                "name": name,
-                "description": safe_text(item.get("description")) or (db_match.get("description") if db_match else ""),
-                "reason": safe_text(item.get("reason")) or "Recommended from your quiz answers.",
-                "match_percentage": score,
-                "score": score,
-                "roadmap": item.get("roadmap") if isinstance(item.get("roadmap"), list) else [],
-                "in_system": bool(db_match) if "in_system" not in item else bool(item.get("in_system")) and bool(db_match),
-                "source": "ai" if ai_payload.get("ai_powered") else "dynamic_quiz",
-            })
-    if not final_specs:
-        final_specs = deterministic_top
+    for item in deterministic_top:
+        polished = ai_by_name.get(safe_text(item.get("name")).lower()) or {}
+        final_specs.append({
+            **item,
+            "reason": safe_text(polished.get("reason")) or item.get("reason"),
+            "description": safe_text(polished.get("description")) or item.get("description"),
+            "roadmap": polished.get("roadmap") if isinstance(polished.get("roadmap"), list) and polished.get("roadmap") else item.get("roadmap", []),
+            "source": "ai_polished_quiz" if ai_payload.get("ai_powered") else item.get("source", "dynamic_quiz"),
+        })
 
     result = {
         "summary": safe_text(ai_payload.get("summary")) or ai_fallback["summary"],
-        "recommendation_basis": "quiz",
+        "recommendation_basis": "quiz_non_neutral_answers",
+        "answered_count": len(quiz_answers),
+        "meaningful_answer_count": len(meaningful_answers),
         "quiz_answers": quiz_answers,
         "quiz_scores": quiz_scores,
-        "recommended_specializations": final_specs[:6],
+        "recommended_specializations": final_specs,
         "roadmap": ai_payload.get("roadmap") if isinstance(ai_payload.get("roadmap"), list) else ai_fallback["roadmap"],
         "recommended_jobs": [],
         "jobs_location": "jobs.html",
