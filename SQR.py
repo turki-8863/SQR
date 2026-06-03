@@ -97,6 +97,13 @@ AI_PROVIDER = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "45"))
 AI_MAX_RETRIES = max(1, int(os.getenv("AI_MAX_RETRIES", "3")))
 
+# Keep Gemini free-tier requests small. Your Render logs showed an input-token per-minute limit,
+# so these limits prevent sending the same long resume text twice in the prompt.
+AI_INPUT_CHAR_LIMIT = max(1200, int(os.getenv("AI_INPUT_CHAR_LIMIT", "5000")))
+AI_FIELD_CHAR_LIMIT = max(250, int(os.getenv("AI_FIELD_CHAR_LIMIT", "1200")))
+AI_MAX_OUTPUT_TOKENS = max(600, int(os.getenv("AI_MAX_OUTPUT_TOKENS", "1400")))
+AI_RETRY_SLEEP_CAP = max(0, int(os.getenv("AI_RETRY_SLEEP_CAP", "6")))
+
 # Gemini is called through the official REST endpoint. xAI/OpenAI use the OpenAI SDK.
 # Use AI_PROVIDER=gemini, xai, openai, or auto.
 gemini_client = bool(GEMINI_API_KEY)
@@ -174,6 +181,69 @@ def get_json():
 
 def safe_text(value):
     return str(value or "").strip()
+
+
+def limit_text(value, max_chars=None):
+    """Limit text sent to AI providers so free-tier input token quotas are not exceeded."""
+    max_chars = safe_int(max_chars, AI_INPUT_CHAR_LIMIT)
+    text_value = safe_text(value)
+    if not text_value:
+        return ""
+    text_value = re.sub(r"\n{3,}", "\n\n", text_value)
+    text_value = re.sub(r"[ \t]{2,}", " ", text_value)
+    if len(text_value) <= max_chars:
+        return text_value
+    return text_value[:max_chars].rstrip() + "\n...[trimmed for AI quota]"
+
+
+def compact_ai_form_data(data, max_field_chars=None):
+    """Remove huge resume/file fields and trim each form field before adding it to an AI prompt."""
+    max_field_chars = safe_int(max_field_chars, AI_FIELD_CHAR_LIMIT)
+    blocked = {
+        "resume", "resume_text", "uploaded_resume", "file", "resume_file",
+        "generated_resume", "full_resume", "result_json"
+    }
+    clean = {}
+    for key, value in (data or {}).items():
+        key_text = safe_text(key)
+        if not key_text or key_text.lower() in blocked:
+            continue
+        if isinstance(value, (dict, list)):
+            value_text = json.dumps(value, ensure_ascii=False)
+        else:
+            value_text = safe_text(value)
+        clean[key_text] = limit_text(value_text, max_field_chars)
+    return clean
+
+
+def extract_retry_delay_seconds(error_text):
+    value = safe_text(error_text)
+    patterns = [
+        r'"retryDelay"\s*:\s*"(\d+)s"',
+        r"'retryDelay'\s*:\s*'(\d+)s'",
+        r"retryDelay[^0-9]{0,20}(\d+)s",
+        r"retry after\s+(\d+)\s*seconds?",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, value, re.I)
+        if match:
+            return safe_int(match.group(1), 0)
+    return 0
+
+
+def is_ai_quota_error(error_text):
+    value = safe_text(error_text).lower()
+    return any(token in value for token in [
+        "resource_exhausted",
+        "quota",
+        "free_tier",
+        "per minute",
+        "rate limit",
+        "too many requests",
+        "generatecontentinputtokenspermodelperminute",
+        "generate_content_free_tier_input_token_count",
+        "429",
+    ])
 
 
 def safe_int(value, default=0):
@@ -1125,10 +1195,28 @@ def extract_gemini_text(response_json):
 
 def _ai_fallback(fallback, provider_name, error_message):
     fallback = dict(fallback or {})
+    clean_error = mask_gemini_error(error_message or "AI provider returned no usable JSON.")
+    retry_after = extract_retry_delay_seconds(clean_error)
+    quota_limited = is_ai_quota_error(clean_error)
+
     fallback["ai_powered"] = False
     fallback["ai_provider"] = "local_dynamic_fallback"
     fallback["ai_failed_provider"] = provider_name
-    fallback["ai_error"] = mask_gemini_error(error_message or "AI provider returned no usable JSON.")
+    fallback["ai_error"] = clean_error[:1800]
+    fallback["ai_quota_limited"] = bool(quota_limited)
+    fallback["retry_after_seconds"] = retry_after
+
+    if quota_limited:
+        wait_text = f" about {retry_after} seconds" if retry_after else " a little"
+        fallback["message"] = (
+            f"{provider_name} quota/rate limit was reached. Please wait{wait_text} and try again. "
+            "SQR returned the local dynamic resume result for now."
+        )
+    else:
+        fallback["message"] = (
+            f"{provider_name} AI could not finish the request. "
+            "SQR returned the local dynamic resume result for now."
+        )
     return fallback
 
 
@@ -1157,12 +1245,13 @@ def _gemini_json_once(prompt, fallback=None):
         + ":generateContent?key="
         + urllib.parse.quote(GEMINI_API_KEY, safe="")
     )
+    compact_prompt = limit_text(prompt, AI_INPUT_CHAR_LIMIT + 2200)
     request_payload = {
         "systemInstruction": {"parts": [{"text": system_instruction}]},
-        "contents": [{"role": "user", "parts": [{"text": safe_text(prompt)}]}],
+        "contents": [{"role": "user", "parts": [{"text": compact_prompt}]}],
         "generationConfig": {
             "temperature": 0.25,
-            "maxOutputTokens": 3200,
+            "maxOutputTokens": AI_MAX_OUTPUT_TOKENS,
             "responseMimeType": "application/json"
         }
     }
@@ -1203,10 +1292,10 @@ def _openai_compatible_json_once(prompt, fallback=None, provider_name="openai", 
         "model": model_name,
         "messages": [
             {"role": "system", "content": system_instruction},
-            {"role": "user", "content": safe_text(prompt)},
+            {"role": "user", "content": limit_text(prompt, AI_INPUT_CHAR_LIMIT + 2200)},
         ],
         "temperature": 0.25,
-        "max_tokens": 3200,
+        "max_tokens": AI_MAX_OUTPUT_TOKENS,
         "response_format": {"type": "json_object"},
     }
     try:
@@ -1244,12 +1333,17 @@ def _call_provider_with_retries(provider_name, prompt, fallback):
             last_error = mask_gemini_error(str(exc))
             temporary = any(word in last_error.lower() for word in ["429", "500", "502", "503", "504", "rate", "timeout"])
 
+        # Gemini's free tier can return RetryInfo like retryDelay: "59s".
+        # Do not send repeated requests during that minute; return a clean fallback immediately.
+        if is_ai_quota_error(last_error):
+            break
+
         if temporary and attempt < AI_MAX_RETRIES - 1:
-            time.sleep(min(2 + attempt, 5))
+            time.sleep(min(2 + attempt, AI_RETRY_SLEEP_CAP))
             continue
         break
 
-    print(f"{provider_name.upper()} AI ERROR:", last_error)
+    print(f"{provider_name.upper()} AI ERROR:", last_error[:1800])
     return _ai_fallback(fallback, provider_name, last_error)
 
 
@@ -1905,6 +1999,9 @@ def ai_status():
         "openai_model": OPENAI_MODEL if OPENAI_API_KEY else "",
         "max_retries": AI_MAX_RETRIES,
         "timeout_seconds": AI_TIMEOUT,
+        "input_char_limit": AI_INPUT_CHAR_LIMIT,
+        "field_char_limit": AI_FIELD_CHAR_LIMIT,
+        "max_output_tokens": AI_MAX_OUTPUT_TOKENS,
         "message": "AI provider is configured" if (GEMINI_API_KEY or XAI_API_KEY or OPENAI_API_KEY) else "Set an AI API key in Render Environment variables."
     })
 
@@ -3967,41 +4064,30 @@ def generate_ai_resume_payload(data, resume_text):
     location = fallback.get("location", "")
     portfolio = fallback.get("portfolio", "")
 
+    ai_data = compact_ai_form_data(data)
+    resume_preview = limit_text(resume_text, AI_INPUT_CHAR_LIMIT)
     prompt = f"""
-You are an expert resume writer inside the SQR website. Rewrite and improve the user's resume details like a real AI assistant.
-
-Return valid JSON only with these exact keys:
+You are the SQR ATS resume writer. Return JSON only with these keys:
 headline, summary, enhanced_summary, technical_skills, soft_skills, phone, email, location, linkedin, github, portfolio, projects, experience, education, certifications, full_resume, improvements, missing_information.
 
 Rules:
-- Use only the information provided in the form and uploaded/pasted resume text.
-- Do not invent companies, dates, GPA, certificates, degrees, projects, jobs, links, or years.
-- Do not use fixed generic text.
-- Do not say "ATS-friendly career readiness".
-- enhanced_summary must be 3 to 5 specific sentences based on the user's actual summary, skills, target job, projects, education, and resume text.
-- Separate technical_skills from soft_skills.
-- technical_skills must include only programming languages, tools, frameworks, databases, platforms, methods, and technologies.
-- soft_skills must include only personal/workplace strengths such as communication, teamwork, problem solving, leadership, time management, and continuous learning.
-- Put phone only in phone, email only in email, LinkedIn only in linkedin, GitHub only in github, and portfolio only in portfolio if provided.
-- Do not put soft skills inside technical_skills.
-- Improve wording, action verbs, clarity, and ATS keyword alignment for the target role.
+- Use only the provided form data and resume text. Do not invent companies, dates, GPA, certificates, degrees, projects, jobs, links, or years.
+- Do not use fixed generic text and never write "ATS-friendly career readiness".
+- enhanced_summary must be 3 to 5 specific sentences for the target role.
+- Separate technical_skills and soft_skills correctly.
+- Keep contact fields separate: phone, email, location, linkedin, github, portfolio.
+- full_resume must start with NAME, target role, then one contact row. Use headings only when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
 - If information is missing, list it in missing_information instead of inventing it.
-- full_resume must start with: NAME, target role, then one contact row formatted as Phone | Location | Email | LinkedIn | Portfolio/Github when those fields exist. After that, use clean ATS-readable headings when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
-- If a section has no user data, do not invent bullet points for it.
 
 Target role: {target_role}
-Phone: {phone}
-Email: {email}
-Location: {location}
-LinkedIn: {linkedin}
-GitHub: {github}
-Portfolio: {portfolio}
-User's original summary: {original_summary}
-User form data JSON:
-{json.dumps(data, ensure_ascii=False)}
+Contact: {phone} | {location} | {email} | {linkedin} | {github or portfolio}
+Original summary: {limit_text(original_summary, 900)}
 
-Uploaded or pasted resume text:
-{safe_text(resume_text)[:9000]}
+Form data:
+{json.dumps(ai_data, ensure_ascii=False)}
+
+Resume text:
+{resume_preview}
 """
 
     payload = ai_json(prompt, fallback)
@@ -4126,8 +4212,11 @@ def ats_generate():
     payload = generate_ai_resume_payload(data, resume_text)
     payload.update({
         "success": True,
+        "ok": True,
         "resume_text_found": bool(safe_text(resume_text)),
         "target_role": safe_text(data.get("target_role") or data.get("role") or data.get("target_job")),
+        "ai_used": bool(payload.get("ai_powered")),
+        "ai_status": "AI generated" if payload.get("ai_powered") else ("Gemini quota limited" if payload.get("ai_quota_limited") else "Local dynamic fallback"),
     })
     return jsonify(payload)
 
