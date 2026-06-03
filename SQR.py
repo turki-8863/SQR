@@ -850,7 +850,7 @@ def _resume_line_kind(line):
         "OBJECTIVE", "PROFESSIONAL SUMMARY", "SUMMARY", "ENHANCED SUMMARY",
         "TECHNICAL SKILLS", "SOFT SKILLS", "SKILLS", "LINKEDIN", "GITHUB", "LINKS",
         "PROJECTS", "EXPERIENCE", "WORK EXPERIENCE", "INTERNSHIP", "INTERNSHIPS",
-        "EDUCATION", "CERTIFICATION", "CERTIFICATIONS", "CERTIFICATES", "CONTACT"
+        "EDUCATION", "LANGUAGES", "CERTIFICATION", "CERTIFICATIONS", "CERTIFICATES", "CONTACT"
     }
     if upper in heading_words:
         return "heading"
@@ -4074,6 +4074,41 @@ def sqr_split_resume_skills(technical_text="", soft_text="", resume_text=""):
     return final_technical[:14], final_soft[:10]
 
 
+
+def sqr_detect_languages(data, resume_text=""):
+    """Return human languages for the resume, never programming languages."""
+    data = data or {}
+    direct = safe_text(
+        data.get("languages") or data.get("language") or data.get("known_languages") or data.get("spoken_languages")
+    )
+    if direct:
+        return ", ".join(sqr_compact_list(direct, 8))
+
+    text = safe_text(resume_text)
+    if not text:
+        return ""
+
+    # Try to read a resume LANGUAGES section if the uploaded resume already has one.
+    match = re.search(
+        r"(?im)^\s*(languages?|spoken languages?)\s*[:\-]?\s*(.+?)(?=\n\s*(technical skills|skills|projects|experience|education|certifications?|summary|objective)\b|\Z)",
+        text,
+        flags=re.S,
+    )
+    if match:
+        section = re.sub(r"[•\-*]", ",", match.group(2))
+        return ", ".join(sqr_compact_list(section, 8))
+
+    known = [
+        "Arabic", "English", "French", "Spanish", "German", "Italian", "Chinese", "Mandarin",
+        "Japanese", "Korean", "Hindi", "Urdu", "Turkish", "Portuguese", "Russian"
+    ]
+    found = []
+    for lang in known:
+        if re.search(rf"\b{re.escape(lang)}\b", text, flags=re.I):
+            found.append(lang)
+    # Remove duplicates like Chinese + Mandarin only if both are written by the user keep both OK.
+    return ", ".join(sqr_compact_list(", ".join(found), 8))
+
 def build_dynamic_resume_payload(data, resume_text):
     data = data or {}
     name = safe_text(data.get("name")) or "Candidate"
@@ -4084,6 +4119,7 @@ def build_dynamic_resume_payload(data, resume_text):
     experience = safe_text(data.get("experience"))
     projects = safe_text(data.get("projects"))
     certifications = safe_text(data.get("certifications") or data.get("certificates"))
+    languages = sqr_detect_languages(data, resume_text)
     original_summary = safe_text(data.get("summary") or data.get("original_summary"))
     linkedin = sqr_clean_link(data.get("linkedin") or data.get("linkedin_url"))
     github = sqr_clean_link(data.get("github") or data.get("github_url"))
@@ -4128,6 +4164,8 @@ def build_dynamic_resume_payload(data, resume_text):
         sections.extend(["", "EXPERIENCE", experience])
     if education:
         sections.extend(["", "EDUCATION", education])
+    if languages:
+        sections.extend(["", "LANGUAGES", languages])
     if certifications:
         sections.extend(["", "CERTIFICATIONS", certifications])
 
@@ -4148,6 +4186,7 @@ def build_dynamic_resume_payload(data, resume_text):
         "projects": projects,
         "experience": experience,
         "education": education,
+        "languages": languages,
         "certifications": certifications,
         "full_resume": "\n".join(sections).strip(),
         "improvements": [
@@ -4247,7 +4286,7 @@ def sqr_build_resume_from_payload(data, payload, fallback, target_role):
         sections.extend(["", "TECHNICAL SKILLS", ", ".join(technical)])
     if soft:
         sections.extend(["", "SOFT SKILLS", ", ".join(soft)])
-    for label, key in (("PROJECTS", "projects"), ("EXPERIENCE", "experience"), ("EDUCATION", "education"), ("CERTIFICATIONS", "certifications")):
+    for label, key in (("PROJECTS", "projects"), ("EXPERIENCE", "experience"), ("EDUCATION", "education"), ("LANGUAGES", "languages"), ("CERTIFICATIONS", "certifications")):
         value = sqr_resume_clean_scalar(payload.get(key) or fallback.get(key))
         if value:
             sections.extend(["", label, value])
@@ -4274,7 +4313,7 @@ You are a professional ATS resume writer for the SQR website.
 Return ONLY valid JSON. No markdown and no explanation outside JSON.
 
 Required JSON keys:
-headline, summary, enhanced_summary, technical_skills, soft_skills, phone, email, location, linkedin, github, portfolio, projects, experience, education, certifications, full_resume, improvements, missing_information.
+headline, summary, enhanced_summary, technical_skills, soft_skills, phone, email, location, linkedin, github, portfolio, projects, experience, education, languages, certifications, full_resume, improvements, missing_information.
 
 Very important writing rules:
 - Write a NEW resume summary. Do not copy the local template and do not write generic filler.
@@ -4286,7 +4325,8 @@ Very important writing rules:
 - Do not invent companies, dates, GPA, certificates, degrees, projects, jobs, phone numbers, emails, links, or years.
 - technical_skills must contain tools, programming languages, platforms, frameworks, databases, or technical areas only.
 - soft_skills must contain personal/work skills only.
-- full_resume must start with NAME, target role, then one contact row. Use section headings only when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
+- languages must contain only human spoken languages such as Arabic or English. Do not put programming languages there.
+- full_resume must start with NAME, target role, then one contact row. Use section headings only when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, LANGUAGES, CERTIFICATIONS.
 - If information is missing, list it in missing_information instead of inventing it.
 
 Target role: {target_role}
@@ -4342,6 +4382,10 @@ Uploaded/resume text:
         "linkedin": payload["linkedin"],
         "portfolio": payload["portfolio"] or payload["github"],
     })
+    languages_value = payload.get("languages") or fallback.get("languages") or sqr_detect_languages(data, resume_text)
+    if isinstance(languages_value, list):
+        languages_value = ", ".join([safe_text(x) for x in languages_value if safe_text(x)])
+    payload["languages"] = sqr_resume_clean_scalar(languages_value)
 
     payload["summary"] = sqr_clean_ai_sentence_text(payload.get("summary") or payload.get("enhanced_summary") or "")
     payload["enhanced_summary"] = sqr_clean_ai_sentence_text(payload.get("enhanced_summary") or payload.get("summary") or "")
