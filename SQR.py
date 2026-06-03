@@ -90,6 +90,10 @@ GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
 XAI_API_KEY = (os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY") or "").strip()
 XAI_MODEL = (os.getenv("XAI_MODEL") or os.getenv("GROK_MODEL") or "grok-4.3").strip()
 
+# Groq is different from Grok/xAI. Groq uses GROQ_API_KEY and the OpenAI-compatible endpoint.
+GROQ_API_KEY = (os.getenv("GROQ_API_KEY") or "").strip()
+GROQ_MODEL = (os.getenv("GROQ_MODEL") or "llama-3.1-8b-instant").strip()
+
 OPENAI_API_KEY = (os.getenv("OPENAI_API_KEY") or "").strip()
 OPENAI_MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 
@@ -104,8 +108,8 @@ AI_FIELD_CHAR_LIMIT = max(250, int(os.getenv("AI_FIELD_CHAR_LIMIT", "1200")))
 AI_MAX_OUTPUT_TOKENS = max(600, int(os.getenv("AI_MAX_OUTPUT_TOKENS", "1400")))
 AI_RETRY_SLEEP_CAP = max(0, int(os.getenv("AI_RETRY_SLEEP_CAP", "6")))
 
-# Gemini is called through the official REST endpoint. xAI/OpenAI use the OpenAI SDK.
-# Use AI_PROVIDER=gemini, xai, openai, or auto.
+# Gemini is called through the official REST endpoint. Groq/xAI/OpenAI use the OpenAI SDK.
+# Use AI_PROVIDER=gemini, groq, xai, openai, or auto.
 gemini_client = bool(GEMINI_API_KEY)
 
 TECH_SKILLS = [
@@ -1173,7 +1177,7 @@ def gemini_json(prompt, fallback=None):
 
 def mask_gemini_error(value):
     text_value = safe_text(value)
-    for secret in [GEMINI_API_KEY, XAI_API_KEY, OPENAI_API_KEY]:
+    for secret in [GEMINI_API_KEY, GROQ_API_KEY, XAI_API_KEY, OPENAI_API_KEY]:
         if secret:
             text_value = text_value.replace(secret, "****")
     return text_value
@@ -1314,6 +1318,11 @@ def _call_provider_with_retries(provider_name, prompt, fallback):
         try:
             if provider_name == "gemini":
                 return _gemini_json_once(prompt, fallback)
+            if provider_name == "groq":
+                return _openai_compatible_json_once(
+                    prompt, fallback, provider_name="groq", api_key=GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1", model_name=GROQ_MODEL
+                )
             if provider_name in {"xai", "grok"}:
                 return _openai_compatible_json_once(
                     prompt, fallback, provider_name="xai", api_key=XAI_API_KEY,
@@ -1324,7 +1333,7 @@ def _call_provider_with_retries(provider_name, prompt, fallback):
                     prompt, fallback, provider_name="openai", api_key=OPENAI_API_KEY,
                     base_url=None, model_name=OPENAI_MODEL
                 )
-            raise RuntimeError(f"Unsupported AI_PROVIDER: {provider_name}. Use gemini, xai, openai, or auto.")
+            raise RuntimeError(f"Unsupported AI_PROVIDER: {provider_name}. Use gemini, groq, xai, openai, or auto.")
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="ignore") if hasattr(exc, "read") else ""
             last_error = mask_gemini_error(body or str(exc))
@@ -1351,6 +1360,10 @@ def ai_json(prompt, fallback=None):
     fallback = dict(fallback or {})
     provider = safe_text(AI_PROVIDER).lower().replace(" ", "_").replace("-", "_") or "gemini"
 
+    # Groq (groq.com) is not Grok/xAI. Use GROQ_API_KEY for Groq.
+    if provider in {"groq", "groq_ai", "groqcloud", "groq_cloud"}:
+        return _call_provider_with_retries("groq", prompt, fallback)
+
     if provider in {"xai", "grok", "grok_ai"}:
         return _call_provider_with_retries("xai", prompt, fallback)
 
@@ -1360,8 +1373,10 @@ def ai_json(prompt, fallback=None):
     if provider == "auto":
         # Try Gemini first, then xAI/OpenAI only if you configured those keys.
         errors = []
-        for candidate in ["gemini", "xai", "openai"]:
+        for candidate in ["gemini", "groq", "xai", "openai"]:
             if candidate == "gemini" and not GEMINI_API_KEY:
+                continue
+            if candidate == "groq" and not GROQ_API_KEY:
                 continue
             if candidate == "xai" and not XAI_API_KEY:
                 continue
@@ -1379,7 +1394,7 @@ def ai_json(prompt, fallback=None):
         result["ai_error"] = (
             "Google Gemini blocked the Render server location/IP. "
             "The API key is being read, but this host is not allowed by Google AI Studio. "
-            "Use AI_PROVIDER=xai/openai with a matching key, or redeploy the backend in a Gemini-supported host/region."
+            "Use AI_PROVIDER=groq/xai/openai with a matching key, or redeploy the backend in a Gemini-supported host/region."
         )
     return result
 
@@ -1991,10 +2006,12 @@ def ai_status():
     return jsonify({
         "ai_provider_mode": AI_PROVIDER,
         "gemini_configured": bool(GEMINI_API_KEY),
+        "groq_configured": bool(GROQ_API_KEY),
         "xai_configured": bool(XAI_API_KEY),
         "openai_configured": bool(OPENAI_API_KEY),
         "gemini_client_ready": bool(gemini_client),
         "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else "",
+        "groq_model": GROQ_MODEL if GROQ_API_KEY else "",
         "xai_model": XAI_MODEL if XAI_API_KEY else "",
         "openai_model": OPENAI_MODEL if OPENAI_API_KEY else "",
         "max_retries": AI_MAX_RETRIES,
@@ -2002,7 +2019,7 @@ def ai_status():
         "input_char_limit": AI_INPUT_CHAR_LIMIT,
         "field_char_limit": AI_FIELD_CHAR_LIMIT,
         "max_output_tokens": AI_MAX_OUTPUT_TOKENS,
-        "message": "AI provider is configured" if (GEMINI_API_KEY or XAI_API_KEY or OPENAI_API_KEY) else "Set an AI API key in Render Environment variables."
+        "message": "AI provider is configured" if (GEMINI_API_KEY or GROQ_API_KEY or XAI_API_KEY or OPENAI_API_KEY) else "Set an AI API key in Render Environment variables."
     })
 
 
@@ -4171,6 +4188,7 @@ def generate_ai_enhanced_summary(name, target_role, technical_skills, soft_skill
 @app.route("/api/debug/ai", methods=["GET"])
 @app.route("/api/debug/gemini", methods=["GET"])
 @app.route("/api/debug/xai", methods=["GET"])
+@app.route("/api/debug/groq", methods=["GET"])
 def debug_gemini():
     try:
         payload = ai_json(
@@ -4184,6 +4202,7 @@ def debug_gemini():
             "provider_used": payload.get("ai_provider"),
             "model_used": payload.get("ai_model", ""),
             "gemini_configured": bool(GEMINI_API_KEY),
+            "groq_configured": bool(GROQ_API_KEY),
             "xai_configured": bool(XAI_API_KEY),
             "openai_configured": bool(OPENAI_API_KEY),
             "message": payload,
