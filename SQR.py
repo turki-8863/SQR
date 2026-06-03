@@ -1239,9 +1239,10 @@ def _gemini_json_once(prompt, fallback=None):
         raise RuntimeError("GEMINI_API_KEY is not configured. Add it in Render Environment variables.")
 
     system_instruction = (
-        "You are the SQR AI engine. Return valid JSON only. "
+        "You are the SQR AI engine and an expert ATS resume writer. Return valid JSON only. "
         "Do not use markdown. Do not invent facts that the user did not provide. "
-        "Separate technical skills from soft skills."
+        "Write polished professional resume language, avoid generic templates, "
+        "and separate technical skills from soft skills."
     )
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -1283,9 +1284,10 @@ def _openai_compatible_json_once(prompt, fallback=None, provider_name="openai", 
         raise RuntimeError("The openai package is not installed. Add openai to requirements.txt and redeploy.")
 
     system_instruction = (
-        "You are the SQR AI engine. Return valid JSON only. "
+        "You are the SQR AI engine and an expert ATS resume writer. Return valid JSON only. "
         "Do not use markdown. Do not invent facts that the user did not provide. "
-        "Separate technical skills from soft skills."
+        "Write polished professional resume language, avoid generic templates, "
+        "and separate technical skills from soft skills."
     )
     client_kwargs = {"api_key": api_key}
     if base_url:
@@ -3826,36 +3828,60 @@ Uploaded resume text:
 
 
 def sqr_compact_list(text, limit=10):
+    """Split comma/newline skill strings and remove fake one-letter answers like y/n."""
     parts = re.split(r"[,\n;|]+", safe_text(text))
     clean_parts = []
+    blocked = {"y", "yes", "n", "no", "none", "null", "na", "n/a", "-"}
     for part in parts:
         item = safe_text(part)
-        if item and item.lower() not in [x.lower() for x in clean_parts]:
+        item = re.sub(r"\s+", " ", item).strip(" .,-•*")
+        low = item.lower()
+        if not item or low in blocked:
+            continue
+        if len(item) == 1 and low not in {"c", "r"}:
+            continue
+        if low not in [x.lower() for x in clean_parts]:
             clean_parts.append(item)
     return clean_parts[:limit]
 
 
 def sqr_local_enhanced_summary(target_role, original_summary, technical_skills, soft_skills, education, experience, projects, certifications):
+    """Local backup only. It is polished and data-aware, but it is not labeled as AI."""
     role = safe_text(target_role) or "technology role"
-    tech = sqr_compact_list(technical_skills, 6)
-    soft = sqr_compact_list(soft_skills, 3)
-    tech_text = ", ".join(tech) if tech else "relevant technical tools"
-    soft_text = ", ".join(soft) if soft else "communication and problem solving"
+    tech = sqr_compact_list(technical_skills, 8)
+    soft = sqr_compact_list(soft_skills, 4)
     education_text = safe_text(education)
-    base = f"{role} professional with skills in {tech_text} and strengths in {soft_text}."
-    if projects:
-        base += " Experienced in building practical projects and presenting technical work clearly."
-    elif experience:
-        base += " Experienced in applying technical knowledge in practical environments."
+    project_text = safe_text(projects)
+    experience_text = safe_text(experience)
+    original_text = safe_text(original_summary)
+
+    sentences = []
+    if tech:
+        sentences.append(f"Aspiring {role} with a foundation in {', '.join(tech[:5])}.")
     else:
-        base += " Prepared to apply academic knowledge, projects, and continuous learning to real technical work."
+        sentences.append(f"Aspiring {role} with a computer science background and a focus on practical technical growth.")
+
+    if project_text:
+        sentences.append("Experienced in applying academic knowledge through practical projects, technical problem solving, and clear documentation.")
+    elif experience_text:
+        sentences.append("Experienced in applying technical knowledge in practical environments and learning from real project requirements.")
+    else:
+        sentences.append("Prepared to apply academic knowledge, continuous learning, and hands-on practice to real technical work.")
+
+    if soft:
+        sentences.append(f"Known for {', '.join(soft[:3])}, with the ability to communicate technical work clearly.")
+    else:
+        sentences.append("Brings communication, teamwork, and problem-solving strengths to technical tasks.")
+
     if education_text:
-        base += f" Education background includes {education_text[:140]}."
-    if original_summary:
-        base += " " + safe_text(original_summary)[:180]
+        sentences.append(f"Education background includes {education_text[:140].rstrip()}.")
+    if original_text:
+        sentences.append(original_text[:180].rstrip())
+
+    base = " ".join(sentences)
     base = re.sub(r"\b(candidate|ATS-friendly career readiness)\b", "", base, flags=re.I)
     base = re.sub(r"\s+", " ", base).strip()
-    return base[:650]
+    return base[:750]
 
 
 def extract_resume_text_from_upload(file):
@@ -4068,6 +4094,54 @@ def build_dynamic_resume_payload(data, resume_text):
     }
 
 
+
+def sqr_clean_ai_sentence_text(value):
+    text_value = safe_text(value)
+    text_value = re.sub(r"\s+", " ", text_value).strip()
+    text_value = re.sub(r"\bskills in\s+[a-z]\b", "skills in relevant technical tools", text_value, flags=re.I)
+    text_value = re.sub(r"\bstrengths in\s+[a-z]\b", "strengths in communication and problem solving", text_value, flags=re.I)
+    text_value = re.sub(r"\bai professional\b", "AI-focused technology student", text_value, flags=re.I)
+    text_value = re.sub(r"\bi'm\b", "I am", text_value, flags=re.I)
+    return text_value.strip()
+
+
+def sqr_summary_is_weak(value):
+    text_value = safe_text(value)
+    low = text_value.lower()
+    words = re.findall(r"[A-Za-z][A-Za-z+.#-]*", text_value)
+    if len(words) < 28:
+        return True
+    weak_patterns = [
+        "skills in y", "strengths in y", "ats-friendly career readiness", "fixed text",
+        "lorem ipsum", "professional with skills in relevant technical tools",
+        "prepared to apply academic knowledge, projects, and continuous learning"
+    ]
+    if any(pattern in low for pattern in weak_patterns):
+        return True
+    return False
+
+
+def sqr_build_resume_from_payload(data, payload, fallback, target_role):
+    name = safe_text(data.get("name") or fallback.get("name") or "Candidate").upper()
+    sections = [name, safe_text(payload.get("headline") or target_role or fallback.get("headline") or "Technology Role")]
+    if payload.get("contact_line"):
+        sections.append(payload["contact_line"])
+    summary = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback.get("enhanced_summary") or fallback.get("summary"))
+    if summary:
+        sections.extend(["", "PROFESSIONAL SUMMARY", summary])
+    technical = payload.get("technical_skills") or fallback.get("technical_skills") or []
+    soft = payload.get("soft_skills") or fallback.get("soft_skills") or []
+    if technical:
+        sections.extend(["", "TECHNICAL SKILLS", ", ".join(technical)])
+    if soft:
+        sections.extend(["", "SOFT SKILLS", ", ".join(soft)])
+    for label, key in (("PROJECTS", "projects"), ("EXPERIENCE", "experience"), ("EDUCATION", "education"), ("CERTIFICATIONS", "certifications")):
+        value = safe_text(payload.get(key) or fallback.get(key))
+        if value:
+            sections.extend(["", label, value])
+    return "\n".join([x for x in sections if x is not None]).strip()
+
+
 def generate_ai_resume_payload(data, resume_text):
     data = data or {}
     fallback = build_dynamic_resume_payload(data, resume_text)
@@ -4083,34 +4157,44 @@ def generate_ai_resume_payload(data, resume_text):
 
     ai_data = compact_ai_form_data(data)
     resume_preview = limit_text(resume_text, AI_INPUT_CHAR_LIMIT)
-    prompt = f"""
-You are the SQR ATS resume writer. Return JSON only with these keys:
+    prompt = f'''
+You are a professional ATS resume writer for the SQR website.
+Return ONLY valid JSON. No markdown and no explanation outside JSON.
+
+Required JSON keys:
 headline, summary, enhanced_summary, technical_skills, soft_skills, phone, email, location, linkedin, github, portfolio, projects, experience, education, certifications, full_resume, improvements, missing_information.
 
-Rules:
-- Use only the provided form data and resume text. Do not invent companies, dates, GPA, certificates, degrees, projects, jobs, links, or years.
-- Do not use fixed generic text and never write "ATS-friendly career readiness".
-- enhanced_summary must be 3 to 5 specific sentences for the target role.
-- Separate technical_skills and soft_skills correctly.
-- Keep contact fields separate: phone, email, location, linkedin, github, portfolio.
-- full_resume must start with NAME, target role, then one contact row. Use headings only when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
+Very important writing rules:
+- Write a NEW resume summary. Do not copy the local template and do not write generic filler.
+- Never write "skills in y", "strengths in y", "fixed text", or "ATS-friendly career readiness".
+- Do not use first person phrases like "I'm" or "I am" in the resume summary.
+- enhanced_summary must be 3 to 4 polished ATS sentences, specific to the available data.
+- Use professional capitalization, for example "AI" not "ai", "SQL" not "sql".
+- If the user only provided limited information, write a clean entry-level/student summary using only that information.
+- Do not invent companies, dates, GPA, certificates, degrees, projects, jobs, phone numbers, emails, links, or years.
+- technical_skills must contain tools, programming languages, platforms, frameworks, databases, or technical areas only.
+- soft_skills must contain personal/work skills only.
+- full_resume must start with NAME, target role, then one contact row. Use section headings only when data exists: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, SOFT SKILLS, PROJECTS, EXPERIENCE, EDUCATION, CERTIFICATIONS.
 - If information is missing, list it in missing_information instead of inventing it.
 
 Target role: {target_role}
 Contact: {phone} | {location} | {email} | {linkedin} | {github or portfolio}
-Original summary: {limit_text(original_summary, 900)}
+Original summary from user: {limit_text(original_summary, 700)}
 
-Form data:
+Form data JSON:
 {json.dumps(ai_data, ensure_ascii=False)}
 
-Resume text:
+Uploaded/resume text:
 {resume_preview}
-"""
+'''
 
-    payload = ai_json(prompt, fallback)
-    if not isinstance(payload, dict):
-        payload = fallback
+    ai_result = ai_json(prompt, fallback)
+    payload = ai_result if isinstance(ai_result, dict) else dict(fallback)
+    ai_powered_original = bool(payload.get("ai_powered")) and safe_text(payload.get("ai_provider")).lower() not in {"", "local_dynamic_fallback"}
+    ai_provider_original = safe_text(payload.get("ai_provider"))
+    ai_model_original = safe_text(payload.get("ai_model"))
 
+    # Keep fallback values for contact and raw sections, but do not let weak/empty AI summary pretend to be good AI.
     for key, value in fallback.items():
         if key not in payload or payload.get(key) in [None, "", []]:
             payload[key] = value
@@ -4120,12 +4204,15 @@ Resume text:
         if isinstance(value, str):
             payload[key] = sqr_compact_list(value, 20)
         elif isinstance(value, list):
-            payload[key] = [safe_text(x) for x in value if safe_text(x)][:20]
+            payload[key] = [safe_text(x) for x in value if safe_text(x) and safe_text(x).lower() not in {"y", "yes", "n", "no"}][:20]
         else:
             payload[key] = fallback.get(key, [])
 
-    # Clean any skill mixing after AI returns.
-    technical_clean, soft_clean = sqr_split_resume_skills(", ".join(payload.get("technical_skills") or []), ", ".join(payload.get("soft_skills") or []), resume_text)
+    technical_clean, soft_clean = sqr_split_resume_skills(
+        ", ".join(payload.get("technical_skills") or []),
+        ", ".join(payload.get("soft_skills") or []),
+        resume_text
+    )
     payload["technical_skills"] = technical_clean or fallback.get("technical_skills", [])
     payload["soft_skills"] = soft_clean or fallback.get("soft_skills", [])
 
@@ -4143,38 +4230,51 @@ Resume text:
         "linkedin": payload["linkedin"],
         "portfolio": payload["portfolio"] or payload["github"],
     })
-    payload["summary"] = safe_text(payload.get("summary") or payload.get("enhanced_summary") or fallback["summary"])
-    payload["enhanced_summary"] = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback["summary"])
+
+    payload["summary"] = sqr_clean_ai_sentence_text(payload.get("summary") or payload.get("enhanced_summary") or "")
+    payload["enhanced_summary"] = sqr_clean_ai_sentence_text(payload.get("enhanced_summary") or payload.get("summary") or "")
+
+    if sqr_summary_is_weak(payload.get("enhanced_summary")):
+        # If Groq returned JSON but left summary empty/weak, show an honest local backup and do not label it as AI.
+        better_local = local_dynamic_summary(
+            safe_text(data.get("name") or fallback.get("name")),
+            target_role,
+            ", ".join(payload.get("technical_skills") or fallback.get("technical_skills") or []),
+            ", ".join(payload.get("soft_skills") or fallback.get("soft_skills") or []),
+            resume_text or json.dumps(ai_data, ensure_ascii=False)
+        )
+        payload["summary"] = better_local
+        payload["enhanced_summary"] = better_local
+        payload["ai_powered"] = False
+        payload["ai_provider"] = "local_dynamic_fallback"
+        payload["ai_failed_provider"] = ai_provider_original or "groq"
+        payload["message"] = "Groq returned weak or incomplete resume text, so SQR used a cleaned local resume summary instead."
+    else:
+        payload["ai_powered"] = ai_powered_original
+        payload["ai_provider"] = ai_provider_original if ai_powered_original else "local_dynamic_fallback"
+        if ai_model_original:
+            payload["ai_model"] = ai_model_original
+
     payload["headline"] = safe_text(payload.get("headline") or fallback.get("headline") or target_role)
+    payload["full_resume"] = sqr_build_resume_from_payload(data, payload, fallback, target_role)
 
-    sections = [
-        safe_text(data.get("name") or "Candidate").upper(),
-        payload["headline"],
-    ]
-    if payload.get("contact_line"):
-        sections.append(payload["contact_line"])
-    sections.extend([
-        "", "PROFESSIONAL SUMMARY", payload["enhanced_summary"],
-        "", "TECHNICAL SKILLS", ", ".join(payload.get("technical_skills") or fallback.get("technical_skills") or []),
-        "", "SOFT SKILLS", ", ".join(payload.get("soft_skills") or fallback.get("soft_skills") or []),
-    ])
-    for label, key in (("PROJECTS", "projects"), ("EXPERIENCE", "experience"), ("EDUCATION", "education"), ("CERTIFICATIONS", "certifications")):
-        value = safe_text(payload.get(key) or fallback.get(key))
-        if value:
-            sections.extend(["", label, value])
-    payload["full_resume"] = "\n".join([x for x in sections if x is not None]).strip()
-
-    provider = safe_text(payload.get("ai_provider")).lower()
-    payload["ai_powered"] = provider in {"gemini", "google_gemini", "google-genai", "xai", "grok", "openai"} or bool(payload.get("ai_powered"))
-    payload["ai_provider"] = provider if payload["ai_powered"] else "local_dynamic_fallback"
-
-    bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum"]
+    bad_phrases = ["ATS-friendly career readiness", "fixed text", "lorem ipsum", "skills in y", "strengths in y"]
     if any(bad.lower() in json.dumps(payload, ensure_ascii=False).lower() for bad in bad_phrases):
         fallback["ai_provider"] = "local_dynamic_fallback"
         fallback["ai_powered"] = False
+        fallback["enhanced_summary"] = local_dynamic_summary(
+            safe_text(data.get("name") or fallback.get("name")),
+            target_role,
+            ", ".join(fallback.get("technical_skills") or []),
+            ", ".join(fallback.get("soft_skills") or []),
+            resume_text
+        )
+        fallback["summary"] = fallback["enhanced_summary"]
+        fallback["full_resume"] = sqr_build_resume_from_payload(data, fallback, fallback, target_role)
         return fallback
 
     return payload
+
 
 def generate_ai_enhanced_summary(name, target_role, technical_skills, soft_skills, resume_text):
     payload = generate_ai_resume_payload({
