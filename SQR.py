@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import ast
 import datetime
 import time
 import urllib.request
@@ -911,7 +912,10 @@ def _split_resume_header(lines):
     while cursor < len(lines) and not lines[cursor]:
         cursor += 1
     if cursor < len(lines) and _resume_line_kind(lines[cursor]) != "heading" and not _looks_like_contact_line(lines[cursor]):
-        role = lines[cursor]
+        possible_role = safe_text(lines[cursor])
+        # Do not print the candidate name twice when the AI/fallback mistakenly copied it as the headline.
+        if possible_role and possible_role.lower() != safe_text(name).lower():
+            role = possible_role
         cursor += 1
     while cursor < len(lines) and not lines[cursor]:
         cursor += 1
@@ -951,10 +955,10 @@ def build_resume_pdf(text):
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=58,
-        leftMargin=58,
-        topMargin=56,
-        bottomMargin=46,
+        rightMargin=44,
+        leftMargin=44,
+        topMargin=44,
+        bottomMargin=38,
         title="SQR Resume",
     )
     styles = getSampleStyleSheet()
@@ -965,8 +969,8 @@ def build_resume_pdf(text):
         "SQRResumeNormal",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=10.3,
-        leading=13.8,
+        fontSize=9.7,
+        leading=12.5,
         textColor=dark,
         spaceAfter=3,
     )
@@ -974,8 +978,8 @@ def build_resume_pdf(text):
         "SQRResumeName",
         parent=styles["Title"],
         fontName="Helvetica-Bold",
-        fontSize=24,
-        leading=28,
+        fontSize=22,
+        leading=25,
         alignment=TA_CENTER,
         textColor=dark,
         spaceAfter=5,
@@ -984,18 +988,18 @@ def build_resume_pdf(text):
         "SQRResumeRole",
         parent=styles["BodyText"],
         fontName="Helvetica-Bold",
-        fontSize=11.2,
-        leading=14,
+        fontSize=10.4,
+        leading=12.5,
         alignment=TA_CENTER,
         textColor=dark,
-        spaceAfter=20,
+        spaceAfter=12,
     )
     contact_style = ParagraphStyle(
         "SQRResumeContact",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=9.6,
-        leading=13,
+        fontSize=9.1,
+        leading=11.5,
         alignment=TA_CENTER,
         textColor=dark,
         spaceBefore=6,
@@ -1005,17 +1009,17 @@ def build_resume_pdf(text):
         "SQRResumeHeading",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
-        fontSize=11.2,
-        leading=13.5,
+        fontSize=10.3,
+        leading=12,
         textColor=dark,
-        spaceBefore=12,
-        spaceAfter=3,
+        spaceBefore=8,
+        spaceAfter=2,
     )
     bullet = ParagraphStyle(
         "SQRResumeBullet",
         parent=normal,
-        leftIndent=9,
-        firstLineIndent=-7,
+        leftIndent=13,
+        firstLineIndent=-9,
         spaceAfter=2,
     )
 
@@ -1037,7 +1041,7 @@ def build_resume_pdf(text):
     for raw in body_lines:
         line = raw.strip()
         if not line:
-            story.append(Spacer(1, 3))
+            story.append(Spacer(1, 2))
             continue
         kind = _resume_line_kind(line)
         if kind == "heading":
@@ -1096,15 +1100,15 @@ def build_resume_docx(text):
     doc = Document()
     section = doc.sections[0]
     if Inches:
-        section.top_margin = Inches(0.7)
-        section.bottom_margin = Inches(0.55)
-        section.left_margin = Inches(0.78)
-        section.right_margin = Inches(0.78)
+        section.top_margin = Inches(0.55)
+        section.bottom_margin = Inches(0.45)
+        section.left_margin = Inches(0.65)
+        section.right_margin = Inches(0.65)
 
     styles = doc.styles
     styles["Normal"].font.name = "Arial"
     if Pt:
-        styles["Normal"].font.size = Pt(10.5)
+        styles["Normal"].font.size = Pt(9.7)
     if RGBColor:
         styles["Normal"].font.color.rgb = RGBColor.from_string("27303d")
 
@@ -1118,15 +1122,15 @@ def build_resume_docx(text):
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.space_after = Pt(2) if Pt else None
     run = p.add_run(name.upper())
-    _set_docx_run(run, size=24, bold=True, all_caps=True)
+    _set_docx_run(run, size=22, bold=True, all_caps=True)
 
     if role:
         p = doc.add_paragraph()
         if WD_ALIGN_PARAGRAPH:
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_after = Pt(14) if Pt else None
+        p.paragraph_format.space_after = Pt(10) if Pt else None
         run = p.add_run(role.upper())
-        _set_docx_run(run, size=11.5, bold=True, all_caps=True)
+        _set_docx_run(run, size=10.4, bold=True, all_caps=True)
 
     if contact:
         p = doc.add_paragraph()
@@ -1134,9 +1138,9 @@ def build_resume_docx(text):
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         _docx_paragraph_border(p, top=True, bottom=True)
         p.paragraph_format.space_before = Pt(1) if Pt else None
-        p.paragraph_format.space_after = Pt(14) if Pt else None
+        p.paragraph_format.space_after = Pt(10) if Pt else None
         run = p.add_run(contact)
-        _set_docx_run(run, size=9.5, bold=False)
+        _set_docx_run(run, size=9.0, bold=False)
 
     for raw in body_lines:
         line = raw.strip()
@@ -1147,10 +1151,10 @@ def build_resume_docx(text):
         kind = _resume_line_kind(line)
         if kind == "heading":
             p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(7) if Pt else None
-            p.paragraph_format.space_after = Pt(2) if Pt else None
+            p.paragraph_format.space_before = Pt(5) if Pt else None
+            p.paragraph_format.space_after = Pt(1) if Pt else None
             run = p.add_run(_resume_export_heading(line))
-            _set_docx_run(run, size=11.2, bold=True, all_caps=True)
+            _set_docx_run(run, size=10.4, bold=True, all_caps=True)
             _docx_paragraph_border(p, bottom=True)
         elif kind == "bullet":
             cleaned = re.sub(r"^[•\-*]\s*", "", line)
@@ -1159,12 +1163,12 @@ def build_resume_docx(text):
             p.paragraph_format.first_line_indent = Inches(-0.1) if Inches else None
             p.paragraph_format.space_after = Pt(1) if Pt else None
             run = p.add_run("• " + cleaned)
-            _set_docx_run(run, size=10.2)
+            _set_docx_run(run, size=9.6)
         else:
             p = doc.add_paragraph()
             p.paragraph_format.space_after = Pt(2) if Pt else None
             run = p.add_run(line)
-            _set_docx_run(run, size=10.3)
+            _set_docx_run(run, size=9.7)
 
     buffer = BytesIO()
     doc.save(buffer)
@@ -3749,7 +3753,7 @@ def ats_check():
     fallback = {
         "ats_score": ats_score,
         "score": ats_score,
-        "summary": "ATS resume check completed from the uploaded resume only. Configure GEMINI_API_KEY to receive a fully AI-written critique.",
+        "summary": "ATS resume check completed from the uploaded resume only. When GROQ_API_KEY is configured, this route sends the extracted resume to Groq for an AI-written critique.",
         "detected_keywords": detected_keywords,
         "matched_keywords": detected_keywords,
         "missing_keywords": missing_sections,
@@ -3786,7 +3790,9 @@ Rules:
 - Score the resume for ATS readability, section structure, contact information, skill keywords, clarity, action verbs, and measurable achievements.
 - missing_keywords should list missing resume elements or missing skill areas found from the resume itself, not from a job description.
 - improvements must be specific, practical, and based on the uploaded resume.
+- Use professional ATS reviewer language, not generic template wording.
 - source must be "uploaded_resume_only".
+- Include ai_powered, ai_provider, and ai_model if available.
 
 Uploaded resume text:
 {safe_text(resume_text)[:9000]}
@@ -4121,22 +4127,55 @@ def sqr_summary_is_weak(value):
     return False
 
 
+def sqr_resume_clean_scalar(value):
+    """Turn AI/list/string fields into clean ATS-readable text instead of Python list syntax."""
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        items = [safe_text(x).strip(" .,-•*'") for x in value if safe_text(x)]
+        return "\n".join(["• " + item for item in items if item])
+    text_value = safe_text(value)
+    if not text_value:
+        return ""
+    # Convert strings like ['SQR', 'Security Plus'] into bullets.
+    if (text_value.startswith("[") and text_value.endswith("]")) or (text_value.startswith("(") and text_value.endswith(")")):
+        try:
+            parsed = ast.literal_eval(text_value)
+            if isinstance(parsed, (list, tuple, set)):
+                items = [safe_text(x).strip(" .,-•*'") for x in parsed if safe_text(x)]
+                return "\n".join(["• " + item for item in items if item])
+        except Exception:
+            pass
+    text_value = re.sub(r"\s+", " ", text_value).strip() if "\n" not in text_value else text_value.strip()
+    return text_value.replace("['", "").replace("']", "").replace("', '", ", ")
+
+
+def sqr_resume_headline(name, headline, target_role):
+    name_clean = safe_text(name)
+    headline_clean = safe_text(headline or target_role)
+    bad = {"", name_clean.lower(), "candidate", "student"}
+    if headline_clean.lower() in bad:
+        return safe_text(target_role) if safe_text(target_role).lower() not in bad else "Computer Science Student"
+    return headline_clean
+
+
 def sqr_build_resume_from_payload(data, payload, fallback, target_role):
     name = safe_text(data.get("name") or fallback.get("name") or "Candidate").upper()
-    sections = [name, safe_text(payload.get("headline") or target_role or fallback.get("headline") or "Technology Role")]
+    headline = sqr_resume_headline(name, payload.get("headline") or fallback.get("headline"), target_role)
+    sections = [name, headline]
     if payload.get("contact_line"):
         sections.append(payload["contact_line"])
-    summary = safe_text(payload.get("enhanced_summary") or payload.get("summary") or fallback.get("enhanced_summary") or fallback.get("summary"))
+    summary = sqr_resume_clean_scalar(payload.get("enhanced_summary") or payload.get("summary") or fallback.get("enhanced_summary") or fallback.get("summary"))
     if summary:
         sections.extend(["", "PROFESSIONAL SUMMARY", summary])
-    technical = payload.get("technical_skills") or fallback.get("technical_skills") or []
-    soft = payload.get("soft_skills") or fallback.get("soft_skills") or []
+    technical = sqr_compact_list(", ".join(payload.get("technical_skills") or fallback.get("technical_skills") or []), 18)
+    soft = sqr_compact_list(", ".join(payload.get("soft_skills") or fallback.get("soft_skills") or []), 12)
     if technical:
         sections.extend(["", "TECHNICAL SKILLS", ", ".join(technical)])
     if soft:
         sections.extend(["", "SOFT SKILLS", ", ".join(soft)])
     for label, key in (("PROJECTS", "projects"), ("EXPERIENCE", "experience"), ("EDUCATION", "education"), ("CERTIFICATIONS", "certifications")):
-        value = safe_text(payload.get(key) or fallback.get(key))
+        value = sqr_resume_clean_scalar(payload.get(key) or fallback.get(key))
         if value:
             sections.extend(["", label, value])
     return "\n".join([x for x in sections if x is not None]).strip()
@@ -6838,12 +6877,55 @@ def recommendation_jobs_alias():
             "reason": "Matched on the Jobs page using your latest specialization quiz result and job skill keywords.",
         })
     recommended_jobs.sort(key=lambda item: item.get("match_percentage", 0), reverse=True)
-
-    return jsonify({
-        "recommended_jobs": recommended_jobs[:8],
+    deterministic_top_jobs = recommended_jobs[:8]
+    fallback = {
+        "recommended_jobs": deterministic_top_jobs,
         "summary": "Job recommendations are separate from specialization recommendations and are shown only on the Jobs page.",
         "recommendation_source": "latest_quiz" if latest_result else "profile_or_current_answers",
         "recommended_specializations_used": recommended_specs[:3],
+        "ai_powered": False,
+        "ai_provider": "local_dynamic_fallback",
+    }
+
+    ai_payload = ai_json(
+        """
+Return valid JSON only with these keys: summary, recommended_jobs.
+You are the SQR AI job recommendation engine.
+Use ONLY the provided database job candidates, quiz scores, profile text, and latest specialization recommendations.
+Do not invent jobs, salaries, links, companies, or IDs.
+Choose and rank the best jobs for the student. Keep the original job_id/title/link when present.
+For every recommended_jobs item include: job_id, title, description, match_percentage, matched_skills, reason, salary, specialization_name, link.
+Give a clear student-friendly reason for each job.
+"""
+        + "\nProfile text: " + limit_text(profile_text, 1800)
+        + "\nQuiz scores: " + json.dumps(quiz_scores, ensure_ascii=False)
+        + "\nSpecialization recommendations: " + json.dumps(recommended_specs[:5], ensure_ascii=False)
+        + "\nJob candidates: " + json.dumps(deterministic_top_jobs, ensure_ascii=False),
+        fallback
+    )
+    result = ai_payload if isinstance(ai_payload, dict) else fallback
+    if not result.get("recommended_jobs"):
+        result["recommended_jobs"] = deterministic_top_jobs
+    result["recommended_jobs"] = result.get("recommended_jobs", [])[:8]
+    result["recommendation_source"] = fallback["recommendation_source"]
+    result["recommended_specializations_used"] = fallback["recommended_specializations_used"]
+    result["ai_powered"] = bool(result.get("ai_powered"))
+    result["ai_provider"] = safe_text(result.get("ai_provider") or ("groq" if result.get("ai_powered") else "local_dynamic_fallback"))
+    return jsonify(result)
+
+
+@app.route("/api/debug/ai-routes", methods=["GET"])
+@login_required
+def debug_ai_routes():
+    return jsonify({
+        "provider_mode": AI_PROVIDER,
+        "groq_configured": bool(GROQ_API_KEY),
+        "groq_model": GROQ_MODEL if GROQ_API_KEY else "",
+        "ats_generate_ai": True,
+        "ats_check_ai": True,
+        "specialization_recommendation_ai": True,
+        "job_recommendation_ai": True,
+        "message": "ATS generator, ATS checker, specialization recommendation, and job recommendation all call ai_json(). Use AI_PROVIDER=groq and GROQ_API_KEY on Render."
     })
 
 
