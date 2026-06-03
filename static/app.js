@@ -1432,12 +1432,12 @@
               <div class="recommendation-scale" role="radiogroup" aria-label="${escapeHTML(q.question || "Question")}">
                 ${[1, 2, 3, 4, 5].map((value) => `
                   <label class="scale-option">
-                    <input type="radio" name="q_${escapeHTML(q.id)}" value="${value}" data-question-id="${escapeHTML(q.id)}" ${value === 3 ? "checked" : ""} required>
+                    <input type="radio" name="q_${escapeHTML(q.id)}" value="${value}" data-question-id="${escapeHTML(q.id)}" required>
                     <span>${value}</span>
                   </label>
                 `).join("")}
               </div>
-              <p class="muted scale-help">1 = Not interested, 3 = Neutral, 5 = Strong match</p>
+              <p class="muted scale-help">1 = Not interested, 3 = Neutral, 5 = Strong match. Neutral answers do not increase your match.</p>
             </fieldset>
           `).join("")}
         </div>
@@ -1459,13 +1459,27 @@
       event.preventDefault();
       if (box) {
         revealBox(box);
-        box.innerHTML = `<div class="card sqr-card">Analyzing your quiz answers...</div>`;
+        box.innerHTML = `<div class="card sqr-card">Analyzing your non-neutral quiz answers with AI...</div>`;
       }
 
       const answers = [];
       $all("[data-question-id]:checked", form).forEach((el) => {
         answers.push({ id: el.dataset.questionId, value: el.value });
       });
+
+      const totalQuestionGroups = new Set($all("[data-question-id]", form).map((el) => el.name)).size;
+      if (totalQuestionGroups && answers.length < totalQuestionGroups) {
+        if (box) box.innerHTML = `<div class="card sqr-card error">Please answer every quiz question first.</div>`;
+        else message("Please answer every quiz question first.", "error");
+        return;
+      }
+
+      const meaningfulAnswers = answers.filter((answer) => String(answer.value) !== "3");
+      if (!meaningfulAnswers.length) {
+        if (box) box.innerHTML = `<div class="card sqr-card error">Choose 4 or 5 for topics you like, and 1 or 2 for topics you do not prefer. Neutral answers alone cannot create a recommendation.</div>`;
+        else message("Choose stronger quiz answers first.", "error");
+        return;
+      }
 
       try {
         const result = await apiFetch("/api/recommendations", {
