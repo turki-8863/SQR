@@ -9,4 +9,4 @@ python-docx
 PyPDF2
 gunicorn
 python-dotenv
-google-genai
+openai
