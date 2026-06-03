@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="SQR Skill Quest Road dynamic CS career guidance platform.">
+  <meta name="description" content="SQR Skill Quest Road ATS resume generator and checker.">
   <title>SQR | ATS Tools</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=200">
-  <script defer src="{{ url_for('static', filename='app.js') }}?v=200"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}?v=205"></script>
 </head>
 <body class="page-body ats-body colorful-page" data-page="ats">
   <main class="page-shell ats-shell">
@@ -18,158 +18,92 @@
     <section class="page-hero compact-hero gradient-cyan">
       <div>
         <span class="eyebrow">ATS Resume Tools</span>
-        <h1>Check your resume.</h1>
+        <h1>Generate and check your resume with AI.</h1>
+        <p class="muted">Create an ATS-friendly resume, include contact details and spoken languages, then export it as PDF or DOCX.</p>
       </div>
-      <div class="hero-actions"><a href="profile.html" class="btn btn-light">Profile</a><a href="jobs.html" class="btn btn-glass">Jobs</a></div>
+      <div class="hero-actions">
+        <a href="profile.html" class="btn btn-light">Profile</a>
+        <a href="jobs.html" class="btn btn-glass">Jobs</a>
+      </div>
     </section>
 
     <section class="ats-layout section-block">
       <article class="card color-card ats-panel">
         <span class="panel-kicker">Checker</span>
-        <h2>Upload resume for AI ATS check</h2>
-        <p class="muted">The checker analyzes only the uploaded resume file. No pasted resume text and no job description are required.</p>
-        <form id="atsCheckForm" class="stack-form" enctype="multipart/form-data">
+        <h2>Upload resume for ATS check</h2>
+        <form id="atsCheckForm" class="stack-form" enctype="multipart/form-data" data-ats="check">
+          <label class="required" for="target_job_check">Target job or job description</label>
+          <textarea id="target_job_check" name="target_job" required placeholder="Paste target job title or job description"></textarea>
+
           <label class="required" for="resume_file">Resume file</label>
-          <input id="resume_file" name="resume" type="file" accept=".pdf,.docx" required>
-          <button type="submit" class="btn btn-primary">Check Uploaded Resume</button>
+          <input id="resume_file" name="resume" type="file" accept=".pdf,.docx,.txt" required>
+
+          <button type="submit" class="btn btn-primary">Check Resume</button>
         </form>
       </article>
 
       <article class="card color-card ats-panel">
         <span class="panel-kicker">Generator</span>
         <h2>Generate ATS resume</h2>
-        <form id="atsGenerateForm" class="stack-form">
+        <form id="atsGenerateForm" class="stack-form" enctype="multipart/form-data" data-ats="generate">
           <label class="required" for="name">Full name</label>
           <input id="name" name="name" required placeholder="Your full name">
-          <label class="required" for="target_job">Target role</label>
-          <input id="target_job" name="target_job" required placeholder="Entry Level Software Engineer, SOC Analyst...">
-          <label for="phone">Phone number</label>
-          <input id="phone" name="phone" type="tel" placeholder="+966 5X XXX XXXX">
+
+          <label class="required" for="target_job">Target job</label>
+          <input id="target_job" name="target_job" required placeholder="Software Engineer, SOC Analyst, Data Engineer...">
+
+          <label for="phone">Phone</label>
+          <input id="phone" name="phone" placeholder="+966 5X XXX XXXX">
+
           <label for="email">Email</label>
-          <input id="email" name="email" type="email" placeholder="your.email@example.com">
-          <label for="location">Location / Address</label>
-          <input id="location" name="location" placeholder="Dammam, Saudi Arabia">
-          <label class="required" for="summary">Professional summary</label>
-          <textarea id="summary" name="summary" required placeholder="Short summary about your background"></textarea>
-          <label class="required" for="technical_skills">Technical Skills</label>
-          <textarea id="technical_skills" name="technical_skills" required placeholder="Python, SQL, Flask, MySQL, Git, REST APIs..."></textarea>
-          <label class="required" for="soft_skills">Soft Skills</label>
-          <textarea id="soft_skills" name="soft_skills" required placeholder="Communication, teamwork, problem solving, time management..."></textarea>
+          <input id="email" name="email" type="email" placeholder="yourname@email.com">
+
+          <label for="address">Address / Location</label>
+          <input id="address" name="address" placeholder="Dammam, Saudi Arabia">
+
           <label for="linkedin">LinkedIn</label>
           <input id="linkedin" name="linkedin" type="url" placeholder="https://www.linkedin.com/in/yourname">
+
           <label for="github">GitHub</label>
           <input id="github" name="github" type="url" placeholder="https://github.com/yourname">
+
           <label for="portfolio">Portfolio</label>
           <input id="portfolio" name="portfolio" type="url" placeholder="https://yourportfolio.com">
+
+          <label class="required" for="summary">Professional summary</label>
+          <textarea id="summary" name="summary" required placeholder="Short summary about your background, goal, and strongest skills"></textarea>
+
+          <label class="required" for="technical_skills">Technical Skills</label>
+          <textarea id="technical_skills" name="technical_skills" required placeholder="Python, SQL, Flask, MySQL, Git, REST APIs..."></textarea>
+
+          <label class="required" for="soft_skills">Soft Skills</label>
+          <textarea id="soft_skills" name="soft_skills" required placeholder="Communication, teamwork, problem solving, time management..."></textarea>
+
+          <label for="languages">Languages</label>
+          <input id="languages" name="languages" placeholder="Arabic (Native), English (Professional)">
+
           <label for="education">Education</label>
           <textarea id="education" name="education" placeholder="Degree, college, graduation year"></textarea>
+
           <label for="experience">Experience</label>
           <textarea id="experience" name="experience" placeholder="Internships, work, training"></textarea>
+
           <label for="projects">Projects</label>
           <textarea id="projects" name="projects" placeholder="Project names, technologies, results"></textarea>
+
           <label for="certifications">Certifications</label>
           <textarea id="certifications" name="certifications" placeholder="Certificates, training, courses"></textarea>
+
+          <label for="resume_upload">Optional resume file</label>
+          <input id="resume_upload" name="resume" type="file" accept=".pdf,.docx,.txt">
+
           <button type="submit" class="btn btn-primary">Generate Professional Resume</button>
         </form>
       </article>
     </section>
 
-    <section id="atsResult" class="result-zone hidden"></section>
+    <section id="atsResult" class="result-zone hidden" data-ats-output></section>
     <section id="generatedResume" class="result-zone hidden"></section>
-
-
-    <section class="hidden-template-bank" hidden aria-hidden="true">
-      <template data-template="database-card">
-        <article class="card colorful-card dynamic-card clickable">
-          <div class="card-media media-placeholder">
-            <span>SQR</span>
-          </div>
-          <div class="card-content">
-            <span class="badge">Dynamic</span>
-            <h3 data-field="title"></h3>
-            <p data-field="description"></p>
-            <div class="details-actions">
-              <a class="btn btn-secondary" data-field="link" href="#">Open</a>
-            </div>
-          </div>
-        </article>
-      </template>
-
-      <template data-template="empty-state">
-        <article class="card empty-state">
-          <div class="empty-state-icon">◇</div>
-        </article>
-      </template>
-
-      <template data-template="loading-card">
-        <article class="card skeleton-card">
-          <div class="skeleton-media"></div>
-          <div class="skeleton-line wide"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </article>
-      </template>
-
-      <template data-template="detail-view">
-        <article class="card colorful-card detail-card">
-          <div class="detail-media media-placeholder">
-            <span>SQR</span>
-          </div>
-          <div class="detail-content">
-            <span class="badge" data-field="type">Details</span>
-            <h2 data-field="title"></h2>
-            <p data-field="description"></p>
-            <div class="detail-meta">
-              <span data-field="meta_one"></span>
-              <span data-field="meta_two"></span>
-              <span data-field="meta_three"></span>
-            </div>
-          </div>
-        </article>
-      </template>
-
-      <template data-template="progress-profile-only">
-        <article class="profile-progress-item only-profile-progress">
-          <div class="progress-head">
-            <div>
-              <h3 data-field="specialization"></h3>
-              <p data-field="summary"></p>
-            </div>
-            <strong data-field="percentage">0%</strong>
-          </div>
-          <div class="progress">
-            <div class="progress-fill" data-field="fill" style="width:0%"></div>
-          </div>
-          <div class="progress-meta">
-            <span data-field="courses"></span>
-            <span data-field="quizzes"></span>
-          </div>
-        </article>
-      </template>
-
-      <template data-template="admin-row">
-        <article class="admin-row">
-          <div>
-            <strong data-field="title"></strong>
-            <span data-field="subtitle"></span>
-          </div>
-          <div class="row-actions">
-            <button type="button" class="btn btn-mini btn-secondary" data-action="edit">Edit</button>
-            <button type="button" class="btn btn-mini btn-danger" data-action="delete">Delete</button>
-          </div>
-        </article>
-      </template>
-
-      <template data-template="circle-stat">
-        <div class="score-circle" style="--score:0">
-          <div class="score-circle-inner">
-            <strong data-field="score">0%</strong>
-            <span data-field="label">Score</span>
-          </div>
-        </div>
-      </template>
-    </section>
-
   </main>
 </body>
 </html>
