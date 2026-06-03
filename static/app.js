@@ -563,9 +563,72 @@
 
   function difficultyClass(value) {
     const text = String(value || "beginner").toLowerCase();
-    if (text.includes("advanced") || text.includes("hard")) return "difficulty-advanced";
-    if (text.includes("intermediate") || text.includes("medium")) return "difficulty-intermediate";
-    return "difficulty-beginner";
+    if (text.includes("advanced") || text.includes("hard") || text.includes("difficult")) return "difficulty-advanced difficulty-hard difficulty-red";
+    if (text.includes("intermediate") || text.includes("medium") || text.includes("normal")) return "difficulty-intermediate difficulty-medium difficulty-yellow";
+    return "difficulty-beginner difficulty-easy difficulty-green";
+  }
+
+  function difficultyLabel(value) {
+    const text = String(value || "beginner").trim();
+    const lower = text.toLowerCase();
+    if (lower.includes("advanced") || lower.includes("hard") || lower.includes("difficult")) return "Hard";
+    if (lower.includes("intermediate") || lower.includes("medium") || lower.includes("normal")) return "Medium";
+    if (lower.includes("easy") || lower.includes("beginner")) return "Easy";
+    return text || "Easy";
+  }
+
+  function ensureDifficultyStyles() {
+    if (document.getElementById("sqrDifficultyColorPatch")) return;
+    const style = document.createElement("style");
+    style.id = "sqrDifficultyColorPatch";
+    style.textContent = `
+      .difficulty-badge,
+      .course-difficulty-badge {
+        border: 1px solid rgba(255,255,255,.16);
+        font-weight: 900;
+        letter-spacing: .03em;
+        text-transform: uppercase;
+      }
+      .difficulty-green,
+      .difficulty-easy,
+      .difficulty-beginner {
+        color: #bbf7d0 !important;
+        background: rgba(34, 197, 94, .16) !important;
+        border-color: rgba(34, 197, 94, .55) !important;
+        box-shadow: 0 0 0 1px rgba(34, 197, 94, .12), 0 0 18px rgba(34, 197, 94, .10);
+      }
+      .difficulty-yellow,
+      .difficulty-medium,
+      .difficulty-intermediate {
+        color: #fef08a !important;
+        background: rgba(234, 179, 8, .17) !important;
+        border-color: rgba(234, 179, 8, .58) !important;
+        box-shadow: 0 0 0 1px rgba(234, 179, 8, .12), 0 0 18px rgba(234, 179, 8, .10);
+      }
+      .difficulty-red,
+      .difficulty-hard,
+      .difficulty-advanced {
+        color: #fecaca !important;
+        background: rgba(239, 68, 68, .17) !important;
+        border-color: rgba(239, 68, 68, .58) !important;
+        box-shadow: 0 0 0 1px rgba(239, 68, 68, .12), 0 0 18px rgba(239, 68, 68, .10);
+      }
+      .job-link-btn {
+        background: linear-gradient(135deg, rgba(37, 99, 235, .92), rgba(124, 58, 237, .88)) !important;
+        color: #fff !important;
+        border-color: rgba(147, 197, 253, .45) !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function buildJobSearchLink(job) {
+    const raw = String(job?.job_link || job?.link || "").trim();
+    if (raw) return raw;
+    const title = String(job?.title || "IT Job").trim();
+    const specialization = String(job?.specialization_name || job?.specialization || "Saudi Arabia").trim();
+    const query = `${title} ${specialization} Saudi Arabia`;
+    return `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query)}`;
   }
 
   function specCard(spec) {
@@ -587,12 +650,13 @@
   function courseCard(course) {
     const id = idOf(course, "course_id");
     const level = course.level || course.difficulty || "Beginner";
+    const levelLabel = difficultyLabel(level);
     return `
       <article class="card sqr-card sqr-click-card" data-href="courses.html?id=${escapeHTML(id)}">
         ${cardImage(course)}
         <div class="sqr-card-body">
           <div class="sqr-card-top">
-            <span class="badge difficulty-badge ${difficultyClass(level)}">${escapeHTML(level)}</span>
+            <span class="badge difficulty-badge course-difficulty-badge ${difficultyClass(level)}">${escapeHTML(levelLabel)}</span>
             ${course.specialization_name ? `<span class="badge badge-soft">${escapeHTML(course.specialization_name)}</span>` : ""}
           </div>
           <h3>${escapeHTML(course.title || "Course")}</h3>
@@ -607,6 +671,8 @@
 
   function jobCard(job) {
     const id = idOf(job, "job_id");
+    const jobLink = buildJobSearchLink(job);
+    const linkLabel = job.job_link || job.link ? "Open Job" : "Search Job";
     return `
       <article class="card sqr-card">
         <div class="sqr-card-body">
@@ -618,7 +684,7 @@
           <p>${escapeHTML(job.description || "")}</p>
           <p class="muted">${escapeHTML(job.required_skills || job.skills || "")}</p>
           <div class="sqr-card-actions">
-            ${job.job_link || job.link ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(job.job_link || job.link)}">Open Job</a>` : ""}
+            <a class="btn btn-primary job-link-btn" target="_blank" rel="noopener" href="${escapeHTML(jobLink)}">${escapeHTML(linkLabel)}</a>
             <a class="btn" href="jobs.html?id=${escapeHTML(id)}">Details</a>
           </div>
         </div>
@@ -818,7 +884,7 @@
           ${cardImage(course)}
           <div class="sqr-card-body">
             <div class="sqr-card-top">
-              <span class="badge difficulty-badge ${difficultyClass(course.level || course.difficulty || "Beginner")}">${escapeHTML(course.level || course.difficulty || "Beginner")}</span>
+              <span class="badge difficulty-badge course-difficulty-badge ${difficultyClass(course.level || course.difficulty || "Beginner")}">${escapeHTML(difficultyLabel(course.level || course.difficulty || "Beginner"))}</span>
               ${course.specialization_name ? `<span class="badge badge-soft">${escapeHTML(course.specialization_name)}</span>` : ""}
             </div>
             <h1>${escapeHTML(course.title || "Course")}</h1>
@@ -1003,7 +1069,8 @@
     const salary = job.average_salary || job.salary || "Not specified";
     const skills = job.required_skills || job.skills || "Not specified";
     const description = job.description || "No description available.";
-    const link = job.job_link || job.link || "";
+    const link = buildJobSearchLink(job);
+    const linkLabel = job.job_link || job.link ? "Open Job Link" : "Search This Job on LinkedIn";
     const aiReason = job.reason || job.explanation || job.match_reason || "";
     const score = job.match_percentage || job.match_score || job.score || "";
 
@@ -1039,7 +1106,7 @@
           ` : ""}
 
           <div class="sqr-card-actions">
-            ${link ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(link)}">Open Job Link</a>` : ""}
+            <a class="btn btn-primary job-link-btn" target="_blank" rel="noopener" href="${escapeHTML(link)}">${escapeHTML(linkLabel)}</a>
             <button class="btn" type="button" data-run-job-recommendation>Refresh AI Job Recommendations</button>
           </div>
         </div>
@@ -1809,6 +1876,7 @@
   }
 
   async function boot() {
+    ensureDifficultyStyles();
     navbar();
     ensurePageMounts();
     await populatePublicSpecializationFilters();
@@ -1870,6 +1938,8 @@
     loadAdmin,
     loadHomeDashboard,
     trackCourseOpened,
+    buildJobSearchLink,
+    difficultyLabel,
     populatePublicSpecializationFilters,
   };
   const adminState = {
