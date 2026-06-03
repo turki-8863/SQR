@@ -189,6 +189,7 @@
     const shell = ensureMainShell();
     const hasSpecDetailId = getParam("id", "specialization_id", "spec_id");
     const hasCourseDetailId = getParam("id", "course_id");
+    const hasJobDetailId = getParam("id", "job_id");
 
     if (pageName.includes("specialization") && !hasSpecDetailId) {
       if (!first("#specializationsBox", "#specializationGrid", "#specializationsList", "#specializationList", "#specializationsContainer", "#specializationsGrid", "[data-specializations]")) {
@@ -240,6 +241,33 @@
         const section = document.createElement("section");
         section.className = "sqr-section";
         section.innerHTML = `<div id="courseDetails" data-course-details></div>`;
+        shell.appendChild(section);
+      }
+    }
+
+    if (pageName.includes("job") && hasJobDetailId) {
+      if (!first("#jobDetails", "#jobDetail", "[data-job-details]")) {
+        const section = document.createElement("section");
+        section.className = "sqr-section";
+        section.innerHTML = `<div id="jobDetails" data-job-details></div>`;
+        shell.prepend(section);
+      }
+    }
+
+    if (pageName.includes("job") && !hasJobDetailId) {
+      if (!first("#jobsBox", "#jobsList", "#jobList", "#jobsContainer", "#jobsGrid", "[data-jobs]")) {
+        const section = document.createElement("section");
+        section.className = "sqr-section";
+        section.innerHTML = `
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Career opportunities</span>
+              <h2>Jobs</h2>
+              <p class="muted">Browse jobs and open the details page for salary, skills, and links.</p>
+            </div>
+          </div>
+          <div id="jobsGrid" class="sqr-grid" data-jobs></div>
+        `;
         shell.appendChild(section);
       }
     }
@@ -955,7 +983,101 @@
     }
   }
 
+  async function fetchJobDetails(jobId) {
+    try {
+      const detailData = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+      return detailData.job || detailData.data || detailData;
+    } catch (detailErr) {
+      const listData = await apiFetch("/api/jobs");
+      const jobs = asArray(listData, "jobs");
+      const found = jobs.find((job) => String(idOf(job, "job_id")) === String(jobId));
+      if (found) return found;
+      throw detailErr;
+    }
+  }
+
+  function jobDetailHTML(job) {
+    const id = idOf(job, "job_id");
+    const title = job.title || "Job Details";
+    const specialization = job.specialization_name || job.specialization || "Not specified";
+    const salary = job.average_salary || job.salary || "Not specified";
+    const skills = job.required_skills || job.skills || "Not specified";
+    const description = job.description || "No description available.";
+    const link = job.job_link || job.link || "";
+    const aiReason = job.reason || job.explanation || job.match_reason || "";
+    const score = job.match_percentage || job.match_score || job.score || "";
+
+    return `
+      <section class="card sqr-card job-details-card">
+        <div class="sqr-card-top">
+          <a class="btn btn-secondary" href="jobs.html">← Back to Jobs</a>
+          ${score ? `<span class="badge badge-soft">${escapeHTML(pct(score))}% match</span>` : ""}
+        </div>
+        <div class="sqr-card-body">
+          <span class="eyebrow">Job #${escapeHTML(id || "")}</span>
+          <h1>${escapeHTML(title)}</h1>
+          <div class="sqr-card-top">
+            <span class="badge">${escapeHTML(specialization)}</span>
+            <span class="badge badge-soft">${escapeHTML(salary)}</span>
+          </div>
+
+          <article class="detail-block">
+            <h2>Description</h2>
+            <p>${escapeHTML(description)}</p>
+          </article>
+
+          <article class="detail-block">
+            <h2>Required Skills</h2>
+            <p>${escapeHTML(skills)}</p>
+          </article>
+
+          ${aiReason ? `
+            <article class="detail-block">
+              <h2>AI Recommendation Reason</h2>
+              <p>${escapeHTML(aiReason)}</p>
+            </article>
+          ` : ""}
+
+          <div class="sqr-card-actions">
+            ${link ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(link)}">Open Job Link</a>` : ""}
+            <button class="btn" type="button" data-run-job-recommendation>Refresh AI Job Recommendations</button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  async function loadJobDetails(forcedId) {
+    const jobId = forcedId || getParam("id", "job_id");
+    const box = first("#jobDetails", "#jobDetail", "[data-job-details]", "#jobsBox", "#jobsList", "#jobList", "#jobsContainer", "#jobsGrid", "[data-jobs]");
+    if (!box || !jobId) return;
+    setLoading(box, "Loading job details...");
+    try {
+      const job = await fetchJobDetails(jobId);
+      if (!job || Object.keys(job).length === 0) {
+        box.innerHTML = `<div class="card sqr-card error">Job details not found.</div>`;
+        return;
+      }
+      box.innerHTML = jobDetailHTML(job);
+      setupJobRecommendation();
+    } catch (err) {
+      box.innerHTML = `
+        <div class="card sqr-card error">
+          <h2>Job details not found</h2>
+          <p>${escapeHTML(err.message || "Could not load this job.")}</p>
+          <a class="btn btn-primary" href="jobs.html">Back to Jobs</a>
+        </div>
+      `;
+    }
+  }
+
   async function loadJobs() {
+    const detailId = getParam("id", "job_id");
+    if (detailId && pageName.includes("job")) {
+      await loadJobDetails(detailId);
+      return;
+    }
+
     const box = first("#jobsBox", "#jobsList", "#jobList", "#jobsContainer", "#jobsGrid", "[data-jobs]");
     if (!box) return;
     setLoading(box);
@@ -1725,6 +1847,7 @@
     loadSpecializationDetails,
     loadCourses,
     loadCourseDetails,
+    loadJobDetails,
     loadJobs,
     setupRecommendation,
     setupJobRecommendation,
@@ -2253,6 +2376,7 @@
   window.loadSpecializationDetails = loadSpecializationDetails;
   window.loadCourses = loadCourses;
   window.loadCourseDetails = loadCourseDetails;
+  window.loadJobDetails = loadJobDetails;
   window.loadJobs = loadJobs;
   window.setupRecommendation = setupRecommendation;
   window.setupATS = setupATS;
